@@ -287,6 +287,7 @@ pub fn create_window(
 
 /// Rebuild the content area from the current workspace layout.
 pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>) {
+    tracing::debug!("rebuild_content triggered");
     // Unparent cached GL surfaces and browser widgets first
     for surface in state.terminal_cache.borrow().values() {
         if let Some(parent) = surface.parent() {
@@ -363,8 +364,10 @@ fn refresh_ui(list_box: &gtk4::ListBox, content_box: &gtk4::Box, state: &Rc<AppS
 /// Updates the sidebar and window title without touching the content layout,
 /// so browser panels are not unparented/reparented.
 pub fn refresh_metadata(list_box: &gtk4::ListBox, content_box: &gtk4::Box, state: &Rc<AppState>) {
+    tracing::debug!("refresh_metadata: start");
     sidebar::refresh_sidebar(list_box, state);
     update_window_title(content_box, state);
+    tracing::debug!("refresh_metadata: done");
 }
 
 fn update_window_title(content_box: &gtk4::Box, state: &Rc<AppState>) {

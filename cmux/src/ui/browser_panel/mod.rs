@@ -349,10 +349,13 @@ pub fn create_browser_widget_with_profile(
     // Enable developer extras for inspector + set user agent
     if let Some(ws) = webkit6::prelude::WebViewExt::settings(&web_view) {
         ws.set_enable_developer_extras(true);
-        // Force a Safari-compatible UA to avoid bot detection / degraded content
+        // Use a Chrome-on-Linux UA — claiming Safari on Linux is an
+        // impossible combination that triggers inconsistency detection in
+        // fingerprinting-heavy sites (e.g. reCAPTCHA), causing erratic
+        // click / challenge reload behaviour.
         ws.set_user_agent(Some(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 \
-             (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+             (KHTML, like Gecko) Chrome/131.0.0.0 Safari/605.1.15",
         ));
     }
 

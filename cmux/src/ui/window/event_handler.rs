@@ -34,6 +34,10 @@ pub(super) fn bind_shared_state_updates(
     let notif_panel = notif_panel.clone();
     let toast_overlay = toast_overlay.clone();
 
+    // Debounce flag: prevents scheduling multiple idle callbacks for
+    // metadata-only refreshes (SetTitle/SetPwd).  Cleared inside the callback.
+    let metadata_idle_scheduled = Rc::new(Cell::new(false));
+
     glib::MainContext::default().spawn_local(async move {
         while let Some(event) = ui_events.recv().await {
             let mut pending = Some(event);
@@ -50,6 +54,7 @@ pub(super) fn bind_shared_state_updates(
 
                 match event {
                     UiEvent::Refresh => needs_refresh = true,
+                    UiEvent::MetadataRefresh => needs_metadata_refresh = true,
                     UiEvent::SendInput { panel_id, text } => {
                         let sent = state.send_input_to_panel(panel_id, &text);
                         if !sent {
@@ -424,7 +429,8 @@ pub(super) fn bind_shared_state_updates(
                             }
                         }
 
-                        needs_refresh = true;
+                        // Sidebar badge update only — no layout change needed.
+                        needs_metadata_refresh = true;
                     }
                     UiEvent::OpenSshDialog => {
                         if let Some(window) = window_weak.upgrade() {
@@ -560,10 +566,28 @@ pub(super) fn bind_shared_state_updates(
 
             if needs_refresh {
                 tracing::trace!("refresh_ui (full layout rebuild)");
+                // Full refresh runs synchronously — layout changes must
+                // take effect immediately.
+                metadata_idle_scheduled.set(false);
                 super::refresh_ui(&list_box, &content_box, &state);
-            } else if needs_metadata_refresh {
-                tracing::trace!("refresh_metadata (sidebar + title only, no layout rebuild)");
-                super::refresh_metadata(&list_box, &content_box, &state);
+            } else if needs_metadata_refresh && !metadata_idle_scheduled.get() {
+                tracing::trace!("refresh_metadata (sidebar + title only, deferred to idle)");
+                // Defer metadata refresh to a GTK idle callback so
+                // pending key-release events are processed first.
+                // On Wayland the compositor generates key-repeat events
+                // independently; if refresh_metadata blocks the main
+                // loop, those repeats queue up and create a feedback
+                // loop (Enter → shell redraw → SetTitle → block →
+                // repeat queued → repeat processed → more Enters …).
+                metadata_idle_scheduled.set(true);
+                let lb = list_box.clone();
+                let cb = content_box.clone();
+                let st = state.clone();
+                let flag = metadata_idle_scheduled.clone();
+                glib::idle_add_local_once(move || {
+                    flag.set(false);
+                    super::refresh_metadata(&lb, &cb, &st);
+                });
             }
         }
     });
@@ -639,7 +663,9 @@ fn event_refresh_kind(event: &UiEvent) -> RefreshKind {
     match event {
         // Metadata changes: only sidebar labels + window title need updating.
         // Must NOT trigger rebuild_content — browser panels would unparent.
-        UiEvent::SetTitle { .. } | UiEvent::SetPwd { .. } => RefreshKind::MetadataOnly,
+        UiEvent::SetTitle { .. }
+        | UiEvent::SetPwd { .. }
+        | UiEvent::DesktopNotification { .. } => RefreshKind::MetadataOnly,
 
         // No UI refresh — handled via dedicated callbacks or state only.
         UiEvent::StartSearch
@@ -740,5 +766,20 @@ mod tests {
         assert_eq!(event_refresh_kind(&UiEvent::ToggleNotifications), RefreshKind::Full);
         assert_eq!(event_refresh_kind(&UiEvent::OpenFolderAsWorkspace), RefreshKind::Full);
         assert_eq!(event_refresh_kind(&UiEvent::CreateWindow), RefreshKind::Full);
+    }
+
+    #[test]
+    fn desktop_notification_is_metadata_only() {
+        // Notifications update sidebar badge only — must not unparent browser panels.
+        let event = UiEvent::DesktopNotification {
+            surface: null_surface(),
+            title: "Done".to_string(),
+            body: "cargo build finished".to_string(),
+        };
+        assert_eq!(
+            event_refresh_kind(&event),
+            RefreshKind::MetadataOnly,
+            "DesktopNotification must not trigger rebuild_content — browser panels would reload"
+        );
     }
 }

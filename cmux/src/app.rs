@@ -155,6 +155,7 @@ impl AppState {
             self.terminal_surface_for(panel_id, working_directory.as_deref(), command.as_deref())
         };
 
+        tracing::debug!(%panel_id, text_len = text.len(), "send_input_to_panel");
         surface.send_text(text)
     }
 
@@ -209,6 +210,9 @@ impl AppState {
 #[derive(Debug)]
 pub enum UiEvent {
     Refresh,
+    /// Metadata-only refresh — sidebar + window title, no layout rebuild.
+    /// Used by socket handlers that update directory, git branch, ports, etc.
+    MetadataRefresh,
     SendInput {
         panel_id: Uuid,
         text: String,
@@ -372,6 +376,14 @@ impl SharedState {
 
     pub fn notify_ui_refresh(&self) {
         let _ = self.send_ui_event(UiEvent::Refresh);
+    }
+
+    /// Request a metadata-only UI refresh (sidebar + window title).
+    /// Does NOT trigger `rebuild_content`, so browser/terminal panels
+    /// are not unparented.  Use for directory, git branch, ports, and
+    /// other sidebar-displayed metadata updates from socket handlers.
+    pub fn notify_metadata_refresh(&self) {
+        let _ = self.send_ui_event(UiEvent::MetadataRefresh);
     }
 
     /// Push a closed browser URL onto the reopen stack (max 20).

@@ -475,7 +475,7 @@ pub(super) fn handle_workspace_set_status(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -500,7 +500,7 @@ pub(super) fn handle_workspace_clear_status(
     if let Some(ws) = ws {
         ws.status_entries.clear();
         drop(tm);
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -603,7 +603,7 @@ pub(super) fn handle_workspace_report_git(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -650,7 +650,7 @@ pub(super) fn handle_workspace_set_progress(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -675,7 +675,7 @@ pub(super) fn handle_workspace_clear_progress(
     if let Some(ws) = ws {
         ws.progress = None;
         drop(tm);
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -723,7 +723,7 @@ pub(super) fn handle_workspace_append_log(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -748,7 +748,7 @@ pub(super) fn handle_workspace_clear_log(
     if let Some(ws) = ws {
         ws.log_entries.clear();
         drop(tm);
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -837,7 +837,7 @@ pub(super) fn handle_workspace_report_meta(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -868,7 +868,7 @@ pub(super) fn handle_workspace_clear_meta(
             ws.metadata_entries.clear();
         }
         drop(tm);
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -961,7 +961,7 @@ pub(super) fn handle_workspace_report_meta_block(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -992,7 +992,7 @@ pub(super) fn handle_workspace_clear_meta_block(
             ws.metadata_blocks.clear();
         }
         drop(tm);
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -1101,7 +1101,7 @@ pub(super) fn handle_workspace_rename(
     };
 
     if updated {
-        state.notify_ui_refresh();
+        state.notify_metadata_refresh();
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -1178,19 +1178,19 @@ pub(super) fn handle_workspace_action(
             ws.mark_notifications_read();
             drop(tm);
             mark_workspace_read(state, ws_id);
-            state.notify_ui_refresh();
+            state.notify_metadata_refresh();
             return Response::success(id, serde_json::json!({"ok": true}));
         }
         "mark_unread" => {
             ws.unread_count = ws.unread_count.max(1);
             drop(tm);
-            state.notify_ui_refresh();
+            state.notify_metadata_refresh();
             return Response::success(id, serde_json::json!({"ok": true}));
         }
         "clear_name" => {
             ws.custom_title = None;
             drop(tm);
-            state.notify_ui_refresh();
+            state.notify_metadata_refresh();
             return Response::success(id, serde_json::json!({"ok": true}));
         }
         "set_color" => {
@@ -1204,13 +1204,13 @@ pub(super) fn handle_workspace_action(
             };
             ws.custom_color = Some(truncate_str(color, MAX_STATUS_LEN).to_string());
             drop(tm);
-            state.notify_ui_refresh();
+            state.notify_metadata_refresh();
             return Response::success(id, serde_json::json!({"ok": true}));
         }
         "clear_color" => {
             ws.custom_color = None;
             drop(tm);
-            state.notify_ui_refresh();
+            state.notify_metadata_refresh();
             return Response::success(id, serde_json::json!({"ok": true}));
         }
         "rename" => {
@@ -1224,7 +1224,7 @@ pub(super) fn handle_workspace_action(
             };
             ws.custom_title = Some(truncate_str(title, MAX_METHOD_LEN).to_string());
             drop(tm);
-            state.notify_ui_refresh();
+            state.notify_metadata_refresh();
             return Response::success(id, serde_json::json!({"ok": true}));
         }
         "move_up" => {
@@ -1292,7 +1292,7 @@ pub(super) fn handle_workspace_action(
 
     let pinned = ws.is_pinned;
     drop(tm);
-    state.notify_ui_refresh();
+    state.notify_metadata_refresh();
 
     Response::success(id, serde_json::json!({"is_pinned": pinned}))
 }
@@ -1352,7 +1352,7 @@ pub(super) fn handle_workspace_report_pwd(
     }
 
     drop(tm);
-    state.notify_ui_refresh();
+    state.notify_metadata_refresh();
     Response::success(id, serde_json::json!({"ok": true}))
 }
 
@@ -1399,7 +1399,7 @@ pub(super) fn handle_workspace_report_ports(
     }
 
     drop(tm);
-    state.notify_ui_refresh();
+    state.notify_metadata_refresh();
     Response::success(id, serde_json::json!({"ok": true}))
 }
 
@@ -1433,7 +1433,7 @@ pub(super) fn handle_workspace_clear_ports(
     }
 
     drop(tm);
-    state.notify_ui_refresh();
+    state.notify_metadata_refresh();
     Response::success(id, serde_json::json!({"ok": true}))
 }
 
@@ -1518,7 +1518,7 @@ pub(super) fn handle_workspace_report_pr(
     ws.pr_url = url.map(|s| truncate_str(s, MAX_URL_LEN).to_string());
 
     drop(tm);
-    state.notify_ui_refresh();
+    state.notify_metadata_refresh();
     Response::success(id, serde_json::json!({"updated": true}))
 }
 
@@ -1566,7 +1566,7 @@ pub(super) fn handle_workspace_report_pr_checks(
 
     ws.pr_checks = parsed;
     drop(tm);
-    state.notify_ui_refresh();
+    state.notify_metadata_refresh();
     Response::success(id, serde_json::json!({"updated": true}))
 }
 
