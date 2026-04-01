@@ -342,6 +342,32 @@ fn build_actions(state: &Rc<AppState>) -> Rc<Vec<PaletteAction>> {
         }
     }
 
+    // Load custom commands from cmux.json in the current workspace directory
+    let workspace_dir = {
+        let tm = lock_or_recover(&state.shared.tab_manager);
+        tm.selected().map(|ws| ws.current_directory.clone()).unwrap_or_default()
+    };
+    let cmux_json_path = std::path::Path::new(&workspace_dir).join("cmux.json");
+    if let Ok(content) = std::fs::read_to_string(&cmux_json_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(commands) = json.get("commands").and_then(|c| c.as_array()) {
+                for entry in commands {
+                    let name = entry.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    let command = entry.get("command").and_then(|c| c.as_str()).unwrap_or("");
+                    if !name.is_empty() && !command.is_empty() {
+                        actions.push(PaletteAction {
+                            name: format!("custom_cmd:{command}"),
+                            label: format!("\u{25b6} {name}"),
+                            shortcut: None,
+                            is_workspace: false,
+                            is_search_result: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     Rc::new(actions)
 }
 
@@ -845,6 +871,17 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
             if let Ok(index) = name[17..].parse::<usize>() {
                 lock_or_recover(&state.shared.tab_manager).select(index);
             }
+        }
+        name if name.starts_with("custom_cmd:") => {
+            let command = &name["custom_cmd:".len()..];
+            if let Some(ws) = lock_or_recover(&state.shared.tab_manager).selected() {
+                if let Some(panel_id) = ws.focused_panel_id {
+                    if let Some(surface) = state.terminal_cache.borrow().get(&panel_id) {
+                        surface.send_text(&format!("{command}\n"));
+                    }
+                }
+            }
+            return;
         }
         name if name.starts_with("surface.search.") => {
             // Format: surface.search.<ws_idx>.<panel_id>

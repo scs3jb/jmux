@@ -17,16 +17,24 @@
 _CMUX_ZSH_INTEGRATION_LOADED=1
 
 # ── Socket transport ──────────────────────────────────────────────────
-# Try ncat (nmap's netcat, reliable for Unix sockets), then socat, then nc.
+# Detect which socket client is available once at load time to avoid
+# running `command -v` on every send (reduces prompt latency).
+_cmux_send_cmd=""
+if command -v ncat >/dev/null 2>&1; then
+  _cmux_send_cmd="ncat"
+elif command -v socat >/dev/null 2>&1; then
+  _cmux_send_cmd="socat"
+elif command -v nc >/dev/null 2>&1; then
+  _cmux_send_cmd="nc"
+fi
+
 _cmux_send() {
   local msg="$1"
-  if command -v ncat >/dev/null 2>&1; then
-    echo "$msg" | ncat -U "$CMUX_SOCKET" 2>/dev/null
-  elif command -v socat >/dev/null 2>&1; then
-    echo "$msg" | socat - UNIX-CONNECT:"$CMUX_SOCKET" 2>/dev/null
-  elif command -v nc >/dev/null 2>&1; then
-    echo "$msg" | nc -U "$CMUX_SOCKET" -w 1 2>/dev/null
-  fi
+  case "$_cmux_send_cmd" in
+    ncat)  echo "$msg" | ncat  -U "$CMUX_SOCKET" 2>/dev/null ;;
+    socat) echo "$msg" | socat - UNIX-CONNECT:"$CMUX_SOCKET" 2>/dev/null ;;
+    nc)    echo "$msg" | nc    -U "$CMUX_SOCKET" -w 1 2>/dev/null ;;
+  esac
 }
 
 _cmux_send_fire_forget() {
@@ -267,8 +275,10 @@ _cmux_start_pr_poll() {
         pr_output=$(timeout 20 gh pr view --json state,statusCheckRollup 2>&1)
         pr_exit=$?
         if [[ "$pr_exit" -eq 0 && -n "$pr_output" ]]; then
-          pr_state=$(echo "$pr_output" \
-                     | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+          # Extract "state" value using zsh native expansion (avoids subprocess)
+          local _tmp="${pr_output#*\"state\":\"}"
+          pr_state="${_tmp%%\"*}"
+          [[ "$pr_state" == "$pr_output" ]] && pr_state=""
           if [[ -n "$pr_state" ]]; then
             _cmux_pr_last_status="$pr_state"
             _cmux_send "report_pr $pr_state $(_cmux_flags)" >/dev/null 2>&1
