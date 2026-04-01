@@ -136,6 +136,7 @@ pub fn build_omnibar_full(
             // programmatically (e.g. load-changed updating the URL bar).
             // The external_suppress flag is set by set_url_quiet().
             if is_externally_suppressed(entry) {
+                ghost_label.set_text("");
                 return;
             }
 
@@ -184,6 +185,7 @@ pub fn build_omnibar_full(
         let suppress = suppress_suggestions.clone();
         let entry_for_keys = entry.clone();
         let ghost_label = ghost_label.clone();
+        let debounce_gen_keys = debounce_gen.clone();
 
         let key_controller = gtk4::EventControllerKey::new();
         key_controller.connect_key_pressed(move |_, keyval, _, modifier| {
@@ -238,6 +240,10 @@ pub fn build_omnibar_full(
                     glib::Propagation::Proceed
                 }
                 gdk4::Key::Return | gdk4::Key::KP_Enter => {
+                    // Cancel any pending debounced suggestion popup so
+                    // it doesn't re-show after we dismiss the popover.
+                    debounce_gen_keys.set(debounce_gen_keys.get().wrapping_add(1));
+
                     // Ctrl+Enter: accept ghost text and navigate
                     if modifier.contains(gdk4::ModifierType::CONTROL_MASK) {
                         let ghost = ghost_label.text();
@@ -314,6 +320,16 @@ pub fn build_omnibar_full(
                 suppress.set(false);
                 entry_for_click.emit_activate();
             }
+        });
+    }
+
+    // ── Dismiss popover on activate (Enter → navigate) ──
+    {
+        let popover = popover.clone();
+        let ghost_label = ghost_label.clone();
+        entry.connect_activate(move |_| {
+            popover.popdown();
+            ghost_label.set_text("");
         });
     }
 

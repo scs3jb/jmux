@@ -447,7 +447,11 @@ fn build_tab_button(
                 ws.focus_panel(panel_id);
             }
             drop(tm);
-            state.shared.notify_ui_refresh();
+            // Focus change only — stack.set_visible_child_name() already
+            // switched the visible panel. A full rebuild would cause
+            // GLArea unrealize/realize and swallow input events (Enter key).
+            // Metadata refresh updates sidebar + title without layout teardown.
+            state.shared.notify_metadata_refresh();
         });
     }
     tab.add_controller(click);

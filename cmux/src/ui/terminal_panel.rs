@@ -209,7 +209,8 @@ fn create_terminal_widget(
                 }
             };
             if needs_refresh {
-                state.shared.notify_ui_refresh();
+                // Focus change only — no layout change needed.
+                state.shared.notify_metadata_refresh();
             }
         });
     }
@@ -255,7 +256,9 @@ fn create_terminal_widget(
             }
 
             if was_unfocused {
-                state.shared.notify_ui_refresh();
+                // Focus change only — no layout change. Full rebuild would
+                // cause GLArea unrealize/realize and swallow input events.
+                state.shared.notify_metadata_refresh();
             }
         });
     }

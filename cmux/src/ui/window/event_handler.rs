@@ -37,6 +37,21 @@ pub(super) fn bind_shared_state_updates(
     // Debounce flag: prevents scheduling multiple idle callbacks for
     // metadata-only refreshes (SetTitle/SetPwd).  Cleared inside the callback.
     let metadata_idle_scheduled = Rc::new(Cell::new(false));
+    // Throttle: track when the last metadata refresh actually ran.
+    // If a refresh was done within METADATA_THROTTLE_MS, defer the next
+    // one to avoid saturating the main loop with sidebar rebuilds when
+    // shell integration fires SetTitle/SetPwd at high frequency (~22/s).
+    let last_metadata_refresh = Rc::new(Cell::new(
+        std::time::Instant::now() - std::time::Duration::from_secs(1),
+    ));
+    // Throttle for full rebuilds: panel switching fires notify_ui_refresh()
+    // from multiple sites (tab click, click-to-focus) within ~500ms,
+    // causing 3 rapid rebuild_content calls that starve input events.
+    // After the first immediate rebuild, defer additional ones by 300ms.
+    let full_refresh_scheduled = Rc::new(Cell::new(false));
+    let last_full_refresh = Rc::new(Cell::new(
+        std::time::Instant::now() - std::time::Duration::from_secs(1),
+    ));
 
     glib::MainContext::default().spawn_local(async move {
         while let Some(event) = ui_events.recv().await {
@@ -564,30 +579,75 @@ pub(super) fn bind_shared_state_updates(
                 }
             }
 
-            if needs_refresh {
-                tracing::trace!("refresh_ui (full layout rebuild)");
-                // Full refresh runs synchronously — layout changes must
-                // take effect immediately.
-                metadata_idle_scheduled.set(false);
-                super::refresh_ui(&list_box, &content_box, &state);
+            if needs_refresh && !full_refresh_scheduled.get() {
+                const FULL_REFRESH_THROTTLE: std::time::Duration =
+                    std::time::Duration::from_millis(300);
+                let elapsed = std::time::Instant::now()
+                    .duration_since(last_full_refresh.get());
+                if elapsed >= FULL_REFRESH_THROTTLE {
+                    // Enough time since last full rebuild — run immediately.
+                    tracing::trace!("refresh_ui (full layout rebuild, immediate)");
+                    last_full_refresh.set(std::time::Instant::now());
+                    metadata_idle_scheduled.set(false);
+                    super::refresh_ui(&list_box, &content_box, &state);
+                } else {
+                    // Rapid-fire rebuild detected (panel switching fires
+                    // notify_ui_refresh from tab-click + click-to-focus).
+                    // Defer to collapse into a single rebuild.
+                    tracing::trace!("refresh_ui deferred (throttle, {}ms elapsed)", elapsed.as_millis());
+                    full_refresh_scheduled.set(true);
+                    let delay = FULL_REFRESH_THROTTLE - elapsed;
+                    let lb = list_box.clone();
+                    let cb = content_box.clone();
+                    let st = state.clone();
+                    let flag = full_refresh_scheduled.clone();
+                    let ts = last_full_refresh.clone();
+                    let mflag = metadata_idle_scheduled.clone();
+                    glib::timeout_add_local_once(delay, move || {
+                        flag.set(false);
+                        ts.set(std::time::Instant::now());
+                        mflag.set(false);
+                        tracing::trace!("refresh_ui (full layout rebuild, deferred)");
+                        super::refresh_ui(&lb, &cb, &st);
+                    });
+                }
             } else if needs_metadata_refresh && !metadata_idle_scheduled.get() {
-                tracing::trace!("refresh_metadata (sidebar + title only, deferred to idle)");
-                // Defer metadata refresh to a GTK idle callback so
-                // pending key-release events are processed first.
-                // On Wayland the compositor generates key-repeat events
-                // independently; if refresh_metadata blocks the main
-                // loop, those repeats queue up and create a feedback
-                // loop (Enter → shell redraw → SetTitle → block →
-                // repeat queued → repeat processed → more Enters …).
+                // Throttle metadata refreshes to at most once per 200ms.
+                // Shell integration can fire SetTitle/SetPwd at ~22/s;
+                // without throttling the sidebar rebuilds saturate the
+                // main loop and starve input events (causing missed
+                // Enter presses, etc.).
+                const METADATA_THROTTLE: std::time::Duration =
+                    std::time::Duration::from_millis(200);
+                let elapsed = std::time::Instant::now()
+                    .duration_since(last_metadata_refresh.get());
                 metadata_idle_scheduled.set(true);
-                let lb = list_box.clone();
-                let cb = content_box.clone();
-                let st = state.clone();
-                let flag = metadata_idle_scheduled.clone();
-                glib::idle_add_local_once(move || {
-                    flag.set(false);
-                    super::refresh_metadata(&lb, &cb, &st);
-                });
+                if elapsed >= METADATA_THROTTLE {
+                    // Enough time since last refresh — run on next idle.
+                    let lb = list_box.clone();
+                    let cb = content_box.clone();
+                    let st = state.clone();
+                    let flag = metadata_idle_scheduled.clone();
+                    let ts = last_metadata_refresh.clone();
+                    glib::idle_add_local_once(move || {
+                        flag.set(false);
+                        ts.set(std::time::Instant::now());
+                        super::refresh_metadata(&lb, &cb, &st);
+                    });
+                } else {
+                    // Throttled — defer until the throttle window expires.
+                    let delay = METADATA_THROTTLE - elapsed;
+                    let lb = list_box.clone();
+                    let cb = content_box.clone();
+                    let st = state.clone();
+                    let flag = metadata_idle_scheduled.clone();
+                    let ts = last_metadata_refresh.clone();
+                    glib::timeout_add_local_once(delay, move || {
+                        flag.set(false);
+                        ts.set(std::time::Instant::now());
+                        super::refresh_metadata(&lb, &cb, &st);
+                    });
+                }
             }
         }
     });

@@ -32,14 +32,15 @@ fn main() {
 }
 
 fn prefer_desktop_opengl() {
-    // Prefer desktop GL over GLES — ghostty's embedded renderer uses desktop
-    // OpenGL via GLAD, which is incompatible with GLES and Vulkan backends.
+    // Ghostty's embedded renderer uses desktop OpenGL via GLAD, which
+    // requires GDK to use GL (not Vulkan) for compositing. When GDK
+    // picks Vulkan, GtkGLArea can't get a compatible desktop GL context,
+    // causing realize/unrealize instability.
     append_env_flag("GDK_DEBUG", "gl-prefer-gl");
-    // Disable GLES and Vulkan backends entirely to prevent GDK from selecting
-    // them on hardware where they're available but cause rendering issues.
-    for flag in ["gles-api", "vulkan"] {
-        append_env_flag("GDK_DISABLE", flag);
-    }
+    append_env_flag("GDK_DISABLE", "vulkan");
+    // Note: we intentionally do NOT disable gles-api — WebKitGTK's GPU
+    // compositor needs GLES/EGL, and gl-prefer-gl is sufficient to ensure
+    // ghostty's GtkGLArea gets a desktop GL context.
 }
 
 fn append_env_flag(var: &str, flag: &str) {

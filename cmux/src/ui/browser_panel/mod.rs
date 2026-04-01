@@ -9,7 +9,7 @@ pub(crate) use actions::execute_action;
 pub use actions::BrowserActionKind;
 pub(crate) use registry::*;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -559,6 +559,9 @@ pub fn create_browser_widget_with_profile(
         let wv_policy = web_view.clone();
         let shared_for_policy = shared.clone();
         let settings_for_policy = browser_settings.clone();
+        // Redirect loop detection: track (last_url, first_seen, count).
+        let redirect_state: Rc<RefCell<(String, std::time::Instant, u32)>> =
+            Rc::new(RefCell::new((String::new(), std::time::Instant::now(), 0)));
         web_view.connect_decide_policy(move |_wv, decision, decision_type| {
             tracing::trace!(?decision_type, "decide_policy fired");
 
@@ -631,6 +634,32 @@ pub fn create_browser_widget_with_profile(
                             if let Some(request) = nav_action.request() {
                                 if let Some(uri) = request.uri() {
                                     let url = uri.to_string();
+
+                                    // Redirect loop detection: if the same URL
+                                    // fires as NavigationType::Other more than 5
+                                    // times within 2 seconds, cancel to break
+                                    // infinite redirect loops (e.g. /sorry/index).
+                                    if nav_type == webkit6::NavigationType::Other {
+                                        let mut rs = redirect_state.borrow_mut();
+                                        let now = std::time::Instant::now();
+                                        if url == rs.0
+                                            && now.duration_since(rs.1).as_secs() < 2
+                                        {
+                                            rs.2 += 1;
+                                            if rs.2 > 5 {
+                                                tracing::warn!(
+                                                    %url,
+                                                    count = rs.2,
+                                                    "decide_policy: redirect loop, cancelling"
+                                                );
+                                                drop(rs);
+                                                decision.ignore();
+                                                return true;
+                                            }
+                                        } else {
+                                            *rs = (url.clone(), now, 1);
+                                        }
+                                    }
 
                                     // Deep link / custom scheme -> xdg-open
                                     // Extract scheme: split on ":" (not "://")
