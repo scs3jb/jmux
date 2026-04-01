@@ -186,7 +186,7 @@ pub fn refresh_sidebar(list_box: &gtk4::ListBox, state: &Rc<AppState>) {
             .iter()
             .enumerate()
             .map(|(index, workspace)| {
-                let row = create_workspace_row(workspace, index, &sidebar_settings);
+                let row = create_workspace_row(workspace, index, &sidebar_settings, state);
                 setup_row_context_menu(
                     &row,
                     index,
@@ -259,6 +259,7 @@ fn create_workspace_row(
     workspace: &Workspace,
     index: usize,
     sidebar: &SidebarDisplaySettings,
+    state: &Rc<AppState>,
 ) -> gtk4::ListBoxRow {
     let row = gtk4::ListBoxRow::new();
 
@@ -550,6 +551,21 @@ fn create_workspace_row(
                 let port_label = gtk4::Label::new(Some(&format!(":{port}")));
                 port_label.add_css_class("port-badge");
                 port_label.add_css_class("caption");
+                // Click to open localhost:PORT in a browser panel
+                let url = format!("http://localhost:{port}");
+                let gesture = gtk4::GestureClick::new();
+                gesture.set_button(1);
+                {
+                    let state = state.clone();
+                    gesture.connect_pressed(move |gesture, _, _, _| {
+                        gesture.set_state(gtk4::EventSequenceState::Claimed);
+                        state.shared.send_ui_event(crate::app::UiEvent::OpenUrlInBrowser {
+                            url: url.clone(),
+                        });
+                    });
+                }
+                port_label.set_can_focus(false);
+                port_label.add_controller(gesture);
                 ports_box.append(&port_label);
             }
             if sorted_ports.len() > 5 {
@@ -993,7 +1009,26 @@ fn setup_row_context_menu(
     let close_action = gtk4::gio::SimpleAction::new(&format!("close.{index}"), None);
     {
         let state = state.clone();
+        let row_weak = row.downgrade();
         close_action.connect_activate(move |_, _| {
+            let (is_pinned, title) = {
+                let tm = lock_or_recover(&state.shared.tab_manager);
+                tm.get(index)
+                    .map(|ws| (ws.is_pinned, ws.display_title().to_string()))
+                    .unwrap_or((false, String::new()))
+            };
+            if is_pinned {
+                if let Some(row) = row_weak.upgrade() {
+                    if let Some(root) = row.root() {
+                        if let Some(window) =
+                            root.downcast_ref::<libadwaita::ApplicationWindow>()
+                        {
+                            show_close_pinned_dialog(window, &state, index, &title);
+                            return;
+                        }
+                    }
+                }
+            }
             lock_or_recover(&state.shared.tab_manager).remove(index);
             state.shared.notify_ui_refresh();
         });
@@ -1179,6 +1214,36 @@ fn show_rename_for_index(
     dialog.present();
 }
 
+/// Show a confirmation dialog before closing a pinned workspace.
+fn show_close_pinned_dialog(
+    window: &libadwaita::ApplicationWindow,
+    state: &Rc<AppState>,
+    index: usize,
+    title: &str,
+) {
+    use libadwaita::prelude::*;
+
+    let heading = format!("Close '{title}'?");
+    let dialog = libadwaita::MessageDialog::new(
+        Some(window),
+        Some(&heading),
+        Some("This workspace is pinned. Are you sure you want to close it?"),
+    );
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("close", "Close");
+    dialog.set_default_response(Some("cancel"));
+    dialog.set_response_appearance("close", libadwaita::ResponseAppearance::Destructive);
+
+    let state = state.clone();
+    dialog.connect_response(None::<&str>, move |_, response| {
+        if response == "close" {
+            lock_or_recover(&state.shared.tab_manager).remove(index);
+            state.shared.notify_ui_refresh();
+        }
+    });
+    dialog.present();
+}
+
 fn color_css_value(name: &str) -> &str {
     match name {
         "red" => "#e01b24",
@@ -1219,7 +1284,23 @@ fn setup_row_close_button(row: &gtk4::ListBoxRow, index: usize, state: &Rc<AppSt
         if c.has_css_class("sidebar-close-btn") {
             if let Some(btn) = c.downcast_ref::<gtk4::Button>() {
                 let state = state.clone();
-                btn.connect_clicked(move |_| {
+                btn.connect_clicked(move |btn| {
+                    let (is_pinned, title) = {
+                        let tm = lock_or_recover(&state.shared.tab_manager);
+                        tm.get(index)
+                            .map(|ws| (ws.is_pinned, ws.display_title().to_string()))
+                            .unwrap_or((false, String::new()))
+                    };
+                    if is_pinned {
+                        if let Some(root) = btn.root() {
+                            if let Some(window) =
+                                root.downcast_ref::<libadwaita::ApplicationWindow>()
+                            {
+                                show_close_pinned_dialog(window, &state, index, &title);
+                                return;
+                            }
+                        }
+                    }
                     lock_or_recover(&state.shared.tab_manager).remove(index);
                     state.shared.notify_ui_refresh();
                 });

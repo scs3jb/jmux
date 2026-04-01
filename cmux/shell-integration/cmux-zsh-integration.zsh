@@ -256,6 +256,11 @@ _cmux_start_pr_poll() {
     setopt NO_XTRACE NO_VERBOSE 2>/dev/null
     while true; do
       sleep 45
+      # Skip PR lookup on main/master — they don't have associated PRs
+      current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+      if [[ "$current_branch" == "main" || "$current_branch" == "master" ]]; then
+        continue
+      fi
       if command -v gh >/dev/null 2>&1 \
          && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         # No `local` — already in a subshell so no scope leak

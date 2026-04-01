@@ -298,7 +298,20 @@ case "$command" in
 
   # ── SSH ──
   ssh)
-    _cmux_send "ssh ${*}"
+    no_focus=false
+    ssh_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --no-focus) no_focus=true; shift ;;
+        *) ssh_args+=("$1"); shift ;;
+      esac
+    done
+    if $no_focus && [[ ${#ssh_args[@]} -gt 0 ]]; then
+      dest="${ssh_args[0]}"
+      _cmux_json "workspace.create_ssh" "{\"destination\":\"$dest\",\"no_focus\":true}"
+    else
+      _cmux_send "ssh ${ssh_args[*]}"
+    fi
     ;;
 
   # ── Workspaces ──
@@ -307,6 +320,21 @@ case "$command" in
     ;;
   new)
     _cmux_send "new ${*}"
+    ;;
+  new-workspace)
+    ws_name=""
+    ws_dir=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --name|-n) shift; ws_name="${1:-}"; shift ;;
+        *) ws_dir="$1"; shift ;;
+      esac
+    done
+    params="{"
+    [[ -n "$ws_dir" ]] && params="${params}\"directory\":\"$ws_dir\","
+    [[ -n "$ws_name" ]] && params="${params}\"title\":\"$ws_name\","
+    params="${params%,}}"
+    _cmux_json "workspace.new" "$params"
     ;;
   select|sel)
     _cmux_send "select ${1:-}"
@@ -464,6 +492,11 @@ case "$command" in
   popup|bind-key|unbind-key|copy-mode|set-buffer|paste-buffer|list-buffers)
     echo "error: $command is not supported in cmux tmux compatibility mode" >&2
     exit 1
+    ;;
+
+  # ── Remote control aliases ──
+  rc|remote-control)
+    _cmux_send "remote_control ${*}"
     ;;
 
   # ── Pass-through: any unrecognized command is sent as V1 text ──

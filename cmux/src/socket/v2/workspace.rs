@@ -185,7 +185,11 @@ pub(super) fn handle_workspace_create_ssh(
         create_params["title"] = serde_json::json!(destination);
     }
 
-    let response = create_workspace(id, &create_params, state, false);
+    let no_focus = params
+        .get("no_focus")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let response = create_workspace(id, &create_params, state, no_focus);
 
     // Store remote config on the workspace
     if response.ok {
