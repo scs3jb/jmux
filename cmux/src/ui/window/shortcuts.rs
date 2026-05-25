@@ -747,7 +747,32 @@ pub(super) fn setup_shortcuts(
                 }
                 glib::Propagation::Stop
             }
-            _ => glib::Propagation::Proceed,
+            _ => {
+                // Check user-configurable shortcuts that have no hardcoded binding.
+                let shortcuts = crate::settings::shortcuts::load();
+                if let Some(binding) = shortcuts.get("agent.resume") {
+                    let key_str = binding.key.to_lowercase();
+                    let key_matches = keyval
+                        .name()
+                        .map(|n| n.to_lowercase() == key_str)
+                        .unwrap_or(false)
+                        || keyval
+                            .to_unicode()
+                            .map(|c| c.to_lowercase().to_string() == key_str)
+                            .unwrap_or(false);
+                    if key_matches
+                        && ctrl == binding.ctrl
+                        && shift == binding.shift
+                        && alt == binding.alt
+                    {
+                        state
+                            .shared
+                            .send_ui_event(crate::app::UiEvent::AgentResume);
+                        return glib::Propagation::Stop;
+                    }
+                }
+                glib::Propagation::Proceed
+            }
         }
     });
 

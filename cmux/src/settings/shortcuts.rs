@@ -228,6 +228,8 @@ impl Default for ShortcutConfig {
         // Notification shortcuts — no default key; users bind these manually.
         bindings.insert("notification.defer_unread".into(), None);
         bindings.insert("notification.toggle_unread".into(), None);
+        // Agent resume — unbound by default; users configure this in shortcuts.json
+        bindings.insert("agent.resume".into(), None);
 
         Self { bindings }
     }

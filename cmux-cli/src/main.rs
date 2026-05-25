@@ -82,9 +82,63 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Agent hook events may involve multiple socket calls; handle them before
+    // the single-dispatch main match below.
+    if let Commands::Agent(AgentCommands::Hook { event, cli: agent_cli, message }) = &cli.command {
+        match event.as_str() {
+            "session-start" => {
+                rpc::send_request(
+                    &cli.socket,
+                    "workspace.set_status",
+                    serde_json::json!({"key": agent_cli, "value": "running", "icon": null, "color": null}),
+                    cli.window.as_deref(),
+                )?;
+            }
+            "session-stop" | "session-end" => {
+                rpc::send_request(
+                    &cli.socket,
+                    "workspace.clear_status",
+                    serde_json::json!({"key": agent_cli}),
+                    cli.window.as_deref(),
+                )?;
+            }
+            "notification" => {
+                let (title, body) = if let Some(msg) = message {
+                    (agent_cli.clone(), msg.clone())
+                } else {
+                    // Read JSON from stdin
+                    let mut input = String::new();
+                    use std::io::Read;
+                    let _ = std::io::stdin().read_to_string(&mut input);
+                    let v: serde_json::Value = serde_json::from_str(&input).unwrap_or(serde_json::json!({}));
+                    let t = v.get("title").and_then(|x| x.as_str()).unwrap_or(agent_cli).to_string();
+                    let b = v.get("body").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    (t, b)
+                };
+                rpc::send_request(
+                    &cli.socket,
+                    "notification.create",
+                    serde_json::json!({"title": title, "body": body, "send_desktop": true}),
+                    cli.window.as_deref(),
+                )?;
+            }
+            other => {
+                eprintln!("Unknown agent hook event: {other}");
+                eprintln!("Valid events: session-start, session-stop, session-end, notification");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
     let (method, params) = match &cli.command {
         Commands::Themes { .. } => unreachable!(),
         Commands::Config(_) => unreachable!(),
+        Commands::Agent(AgentCommands::Hook { .. }) => unreachable!(), // handled above
+        Commands::Agent(AgentCommands::Fork { message, name }) => (
+            "agent.fork_conversation",
+            serde_json::json!({"message": message, "workspace_name": name}),
+        ),
         Commands::Ping => ("system.ping", serde_json::json!({})),
         Commands::Capabilities => ("system.capabilities", serde_json::json!({})),
         Commands::Identify => ("system.identify", serde_json::json!({})),

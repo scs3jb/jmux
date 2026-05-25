@@ -343,6 +343,8 @@ pub enum UiEvent {
     /// Toggle unread: if there are unread notifications for the current workspace,
     /// mark them all read; otherwise mark the most recent one unread.
     ToggleUnread,
+    /// Detect the agent running in the focused panel and send its resume command.
+    AgentResume,
 }
 
 /// Wrapper to send a raw ghostty_surface_t across threads.

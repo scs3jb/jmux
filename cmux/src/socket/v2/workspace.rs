@@ -12,7 +12,7 @@ use crate::model::Workspace;
 use super::helpers::*;
 use super::{
     Response, MAX_BRANCH_LEN, MAX_DIRECTORY_LEN, MAX_METHOD_LEN, MAX_NAME_LEN, MAX_STATUS_LEN,
-    MAX_TITLE_LEN, MAX_URL_LEN,
+    MAX_SURFACE_INPUT_LEN, MAX_TITLE_LEN, MAX_URL_LEN,
 };
 
 // -----------------------------------------------------------------------
@@ -1721,6 +1721,87 @@ pub(super) fn handle_settings_open(id: Value, state: &Arc<SharedState>) -> Respo
 pub(super) fn handle_settings_reload(id: Value, state: &Arc<SharedState>) -> Response {
     state.send_ui_event(UiEvent::ReloadTheme);
     Response::success(id, serde_json::json!({"reloaded": true}))
+}
+
+// -----------------------------------------------------------------------
+// agent.fork_conversation
+// -----------------------------------------------------------------------
+
+pub(super) fn handle_agent_fork_conversation(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    // Optional message to pre-populate in the new terminal.
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .map(|s| truncate_str(s, MAX_SURFACE_INPUT_LEN).to_string());
+
+    // Optional workspace name.
+    let workspace_name = params
+        .get("workspace_name")
+        .or_else(|| params.get("name"))
+        .and_then(|v| v.as_str())
+        .map(|s| truncate_str(s, MAX_TITLE_LEN).to_string());
+
+    // Inherit cwd from the currently selected workspace.
+    let cwd = {
+        let tm = lock_or_recover(&state.tab_manager);
+        tm.selected()
+            .map(|ws| ws.current_directory.clone())
+            .unwrap_or_default()
+    };
+
+    // Build create params.
+    let mut create_params = serde_json::json!({});
+    if !cwd.is_empty() {
+        create_params["directory"] = serde_json::json!(cwd);
+    }
+    if let Some(ref name) = workspace_name {
+        create_params["title"] = serde_json::json!(name);
+    }
+
+    // Create the new workspace (preserve selection so the source stays selected).
+    let create_resp = create_workspace(id.clone(), &create_params, state, true);
+    if !create_resp.ok {
+        return create_resp;
+    }
+
+    let ws_id_str = match create_resp
+        .result
+        .as_ref()
+        .and_then(|r| r.get("workspace_id"))
+        .and_then(|v| v.as_str())
+    {
+        Some(s) => s.to_string(),
+        None => return Response::error(id, "internal", "workspace_id missing from create response"),
+    };
+
+    // If a message was provided, send it to the new workspace's terminal.
+    if let Some(ref msg) = message {
+        if let Ok(ws_id) = Uuid::parse_str(&ws_id_str) {
+            let panel_id = {
+                let tm = lock_or_recover(&state.tab_manager);
+                tm.workspace(ws_id)
+                    .and_then(|ws| ws.focused_panel_id.or_else(|| ws.panel_ids().into_iter().next()))
+            };
+            if let Some(panel_id) = panel_id {
+                state.send_ui_event(crate::app::UiEvent::SendInput {
+                    panel_id,
+                    text: msg.clone(),
+                });
+            }
+        }
+    }
+
+    Response::success(
+        id,
+        serde_json::json!({
+            "workspace_id": ws_id_str,
+            "workspace": ws_id_str,
+        }),
+    )
 }
 
 // -----------------------------------------------------------------------

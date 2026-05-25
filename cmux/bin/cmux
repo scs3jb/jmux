@@ -515,6 +515,110 @@ case "$command" in
     esac
     ;;
 
+  # ── Generic agent hook (namespaced by --cli) ──
+  agent)
+    agent_sub="${1:-}"
+    shift || true
+    case "$agent_sub" in
+      hook)
+        hook_event="${1:-}"
+        shift || true
+        agent_cli="agent"
+        # Parse --cli <name> option
+        remaining_args=()
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --cli) shift; agent_cli="${1:-agent}"; shift ;;
+            --cli=*) agent_cli="${1#--cli=}"; shift ;;
+            *) remaining_args+=("$1"); shift ;;
+          esac
+        done
+        set -- "${remaining_args[@]+"${remaining_args[@]}"}"
+        case "$hook_event" in
+          session-start)
+            _cmux_send "set_status ${agent_cli} running \"${agent_cli} running\""
+            ;;
+          session-stop|session-end)
+            _cmux_send "clear_status ${agent_cli}"
+            ;;
+          notification)
+            # Parse --message option or read JSON from stdin
+            notif_message=""
+            while [[ $# -gt 0 ]]; do
+              case "$1" in
+                --message) shift; notif_message="${1:-}"; shift ;;
+                --message=*) notif_message="${1#--message=}"; shift ;;
+                *) shift ;;
+              esac
+            done
+            if [[ -n "$notif_message" ]]; then
+              _cmux_send "notify \"${agent_cli}\" \"${notif_message}\""
+            elif hook_json="$(cat)"; then
+              title="$(printf '%s' "$hook_json" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+              body="$(printf '%s' "$hook_json" | sed -n 's/.*"body"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+              _cmux_send "notify \"${title:-${agent_cli}}\" \"${body:-}\""
+            fi
+            ;;
+          fork)
+            # Fork the current agent conversation into a new workspace
+            fork_message=""
+            fork_name=""
+            while [[ $# -gt 0 ]]; do
+              case "$1" in
+                --message) shift; fork_message="${1:-}"; shift ;;
+                --message=*) fork_message="${1#--message=}"; shift ;;
+                --name) shift; fork_name="${1:-}"; shift ;;
+                --name=*) fork_name="${1#--name=}"; shift ;;
+                *) shift ;;
+              esac
+            done
+            params="{"
+            [[ -n "$fork_message" ]] && params="${params}\"message\":\"${fork_message}\","
+            [[ -n "$fork_name" ]] && params="${params}\"workspace_name\":\"${fork_name}\","
+            params="${params%,}}"
+            _cmux_json "agent.fork_conversation" "$params"
+            ;;
+          *)
+            echo "Unknown agent hook event: $hook_event" >&2
+            echo "Usage: cmux agent hook <session-start|session-stop|session-end|notification|fork> [--cli <name>] [--message <msg>]" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      fork)
+        # Shorthand: cmux agent fork [--message "text"] [--name "workspace name"]
+        fork_message=""
+        fork_name=""
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --message) shift; fork_message="${1:-}"; shift ;;
+            --message=*) fork_message="${1#--message=}"; shift ;;
+            --name) shift; fork_name="${1:-}"; shift ;;
+            --name=*) fork_name="${1#--name=}"; shift ;;
+            *) shift ;;
+          esac
+        done
+        params="{"
+        [[ -n "$fork_message" ]] && params="${params}\"message\":\"${fork_message}\","
+        [[ -n "$fork_name" ]] && params="${params}\"workspace_name\":\"${fork_name}\","
+        params="${params%,}}"
+        _cmux_json "agent.fork_conversation" "$params"
+        ;;
+      resume)
+        # Send AgentResume event via socket — trigger agent.resume shortcut programmatically
+        _cmux_json "agent.fork_conversation" "{}"
+        ;;
+      *)
+        echo "Usage: cmux agent <hook|fork|resume> [args...]" >&2
+        echo "  cmux agent hook session-start --cli <name>" >&2
+        echo "  cmux agent hook session-stop --cli <name>" >&2
+        echo "  cmux agent hook notification --cli <name> --message <msg>" >&2
+        echo "  cmux agent fork [--message \"text\"] [--name \"workspace name\"]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
   # ── OpenCode / oh-my-opencode integration ──
   omo)
     if ! command -v opencode >/dev/null 2>&1; then

@@ -650,6 +650,41 @@ pub(super) fn bind_shared_state_updates(
                         drop(tm);
                         needs_refresh = true;
                     }
+                    UiEvent::AgentResume => {
+                        // Detect which agent (if any) is running in the focused
+                        // terminal and send its resume command.
+                        let panel_info = {
+                            let tm = lock_or_recover(&state.shared.tab_manager);
+                            tm.selected().and_then(|ws| {
+                                ws.focused_panel_id.and_then(|pid| {
+                                    ws.panels.get(&pid).map(|p| {
+                                        (pid, p.title.clone(), p.command.clone())
+                                    })
+                                })
+                            })
+                        };
+
+                        if let Some((panel_id, title, command)) = panel_info {
+                            let resume_cmd =
+                                crate::session::snapshot::detect_agent_resume_command(
+                                    title.as_deref(),
+                                    command.as_deref(),
+                                );
+                            if let Some(cmd) = resume_cmd {
+                                let agent_restore = crate::settings::load().agent_restore;
+                                if agent_restore.is_enabled_for(&cmd) {
+                                    let text = format!("{}\n", cmd);
+                                    let sent = state.send_input_to_panel(panel_id, &text);
+                                    if !sent {
+                                        tracing::warn!(
+                                            %panel_id,
+                                            "AgentResume: panel not ready"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // directly via its own callbacks.
                     UiEvent::StartSearch
                     | UiEvent::EndSearch

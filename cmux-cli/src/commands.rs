@@ -67,6 +67,10 @@ pub enum Commands {
     #[command(subcommand)]
     Markdown(MarkdownCommands),
 
+    /// Agent conversation management
+    #[command(subcommand)]
+    Agent(AgentCommands),
+
     /// List available Ghostty terminal themes
     Themes {
         /// Filter themes by name (case-insensitive substring match)
@@ -1124,5 +1128,29 @@ pub enum MarkdownCommands {
         /// Target workspace UUID
         #[arg(long)]
         workspace: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentCommands {
+    /// Fork the current agent conversation into a new workspace
+    Fork {
+        /// Initial message to pre-populate in the new terminal
+        #[arg(long)]
+        message: Option<String>,
+        /// Name for the new workspace
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Dispatch an agent lifecycle hook (namespaced by --cli)
+    Hook {
+        /// Hook event: session-start, session-stop, session-end, notification
+        event: String,
+        /// Agent CLI name used to namespace status keys (e.g. claude, codex)
+        #[arg(long, default_value = "agent")]
+        cli: String,
+        /// Notification message (for notification events; overrides stdin JSON)
+        #[arg(long)]
+        message: Option<String>,
     },
 }

@@ -195,6 +195,11 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
             workspace::handle_workspace_move_to_window(id, &req.params, state)
         }
 
+        // Agent commands
+        "agent.fork_conversation" => {
+            workspace::handle_agent_fork_conversation(id, &req.params, state)
+        }
+
         // App commands
         "app.focus_override.set" => workspace::handle_app_focus_override(id, &req.params, state),
         "app.simulate_active" => workspace::handle_app_simulate_active(id, &req.params, state),
