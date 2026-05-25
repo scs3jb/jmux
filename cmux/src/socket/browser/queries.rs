@@ -1,6 +1,7 @@
 //! Element queries, finders, storage, cookies, console, injection, and dialog handlers.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -782,4 +783,61 @@ pub(super) fn handle_offline_set(id: Value, params: &Value, state: &Arc<SharedSt
         event = if offline { "offline" } else { "online" }
     );
     send_eval_action(&id, params, state, js)
+}
+
+// ---------------------------------------------------------------------------
+// browser.import_cookies — import cookies from a local browser profile
+// ---------------------------------------------------------------------------
+
+pub(super) fn handle_import_cookies(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let source_str = params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("firefox");
+
+    let source = match source_str {
+        "firefox" => crate::browser_import::ImportSource::Firefox,
+        "chrome" => crate::browser_import::ImportSource::Chrome,
+        "chromium" => crate::browser_import::ImportSource::Chromium,
+        other => {
+            return Response::error(
+                id,
+                "invalid_params",
+                &format!("Unknown source '{other}'. Use: firefox, chrome, chromium"),
+            )
+        }
+    };
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.send_ui_event(UiEvent::ImportBrowserCookies { source, reply: tx });
+
+    // Poll with timeout — import reads sqlite and injects cookies synchronously.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let mut rx = rx;
+    loop {
+        match rx.try_recv() {
+            Ok((count, None)) => {
+                return Response::success(
+                    id,
+                    serde_json::json!({"imported": count, "source": source_str}),
+                )
+            }
+            Ok((_, Some(err))) => {
+                return Response::error(id, "import_failed", &err)
+            }
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                return Response::error(id, "channel_closed", "UI event channel closed")
+            }
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                if std::time::Instant::now() >= deadline {
+                    return Response::error(id, "timeout", "Cookie import timed out");
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
 }

@@ -307,6 +307,13 @@ pub enum UiEvent {
     ReloadConfig,
     /// Show the SSH workspace creation dialog.
     OpenSshDialog,
+    /// Import browser cookies from a local profile (Firefox/Chrome/Chromium).
+    /// Must be handled on the GTK main thread.
+    #[cfg(feature = "webkit")]
+    ImportBrowserCookies {
+        source: crate::browser_import::ImportSource,
+        reply: tokio::sync::oneshot::Sender<(usize, Option<String>)>,
+    },
     /// Connect a remote SSH workspace.
     RemoteConnect {
         workspace_id: Uuid,

@@ -133,6 +133,9 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         }
         "workspace.append_log" => workspace::handle_workspace_append_log(id, &req.params, state),
         "workspace.reorder" => workspace::handle_workspace_reorder(id, &req.params, state),
+        "workspace.reorder_workspaces" => {
+            workspace::handle_workspace_reorder_workspaces(id, &req.params, state)
+        }
         "workspace.clear_status" => {
             workspace::handle_workspace_clear_status(id, &req.params, state)
         }

@@ -147,6 +147,14 @@ pub enum WorkspaceCommands {
         /// Destination index
         to: usize,
     },
+    /// Batch-reorder workspaces by name or index
+    ReorderWorkspaces {
+        /// Desired workspace order (names or 0-based indices). Unlisted workspaces keep their relative position at the end.
+        workspaces: Vec<String>,
+        /// Print the proposed change without applying it
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Set status metadata
     SetStatus {
         /// Status key
@@ -1075,6 +1083,16 @@ pub enum BrowserCommands {
         /// Panel UUID
         #[arg(long)]
         panel: String,
+    },
+
+    /// Import cookies from a local browser profile into cmux's browser
+    ImportCookies {
+        /// Browser to import from: firefox, chrome, chromium (default: firefox)
+        #[arg(long, default_value = "firefox")]
+        source: String,
+        /// Profile name (reserved for future use; currently ignored)
+        #[arg(long)]
+        profile: Option<String>,
     },
 }
 

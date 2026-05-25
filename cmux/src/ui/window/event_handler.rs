@@ -401,6 +401,11 @@ pub(super) fn bind_shared_state_updates(
                     UiEvent::BrowserAction { panel_id, action } => {
                         crate::ui::browser_panel::execute_action(panel_id, action);
                     }
+                    #[cfg(feature = "webkit")]
+                    UiEvent::ImportBrowserCookies { source, reply } => {
+                        let result = crate::browser_import::import_from(source);
+                        let _ = reply.send(result);
+                    }
                     UiEvent::CreateWindow => {
                         if let Some(win) = window_weak.upgrade() {
                             if let Some(app) = win.application() {

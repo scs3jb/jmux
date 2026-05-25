@@ -31,6 +31,33 @@ fn main() -> anyhow::Result<()> {
         return format::run_themes(filter.as_deref());
     }
 
+    // Dry-run for reorder-workspaces: fetch current order, print diff, exit.
+    if let Commands::Workspace(WorkspaceCommands::ReorderWorkspaces { workspaces, dry_run: true }) =
+        &cli.command
+    {
+        let current_resp = rpc::send_request(&cli.socket, "workspace.list", serde_json::json!({}))?;
+        if current_resp.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+            eprintln!("Failed to fetch workspace list for dry-run.");
+            std::process::exit(1);
+        }
+        let empty = vec![];
+        let current: Vec<&str> = current_resp["result"]["workspaces"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .filter_map(|ws| ws["title"].as_str())
+            .collect();
+        println!("Current order:");
+        for (i, name) in current.iter().enumerate() {
+            println!("  [{i}] {name}");
+        }
+        println!("Proposed order:");
+        for (i, name) in workspaces.iter().enumerate() {
+            println!("  [{i}] {name}");
+        }
+        return Ok(());
+    }
+
     if let Commands::Config(cmd) = &cli.command {
         match cmd {
             ConfigCommands::Path => return config::run_path(),
@@ -343,6 +370,10 @@ fn main() -> anyhow::Result<()> {
                 "browser.remove_injected",
                 serde_json::json!({"panel": panel}),
             ),
+            BrowserCommands::ImportCookies { source, .. } => (
+                "browser.import_cookies",
+                serde_json::json!({"source": source}),
+            ),
         },
 
         Commands::Markdown(cmd) => match cmd {
@@ -384,6 +415,10 @@ fn main() -> anyhow::Result<()> {
             WorkspaceCommands::Reorder { from, to } => (
                 "workspace.reorder",
                 serde_json::json!({"from": from, "to": to}),
+            ),
+            WorkspaceCommands::ReorderWorkspaces { workspaces, .. } => (
+                "workspace.reorder_workspaces",
+                serde_json::json!({"workspaces": workspaces}),
             ),
             WorkspaceCommands::SetStatus {
                 key,

@@ -1113,6 +1113,95 @@ pub(super) fn handle_workspace_rename(
 }
 
 // -----------------------------------------------------------------------
+// workspace.reorder_workspaces (batch reorder by name/index)
+// -----------------------------------------------------------------------
+
+pub(super) fn handle_workspace_reorder_workspaces(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let names = match params.get("workspaces").and_then(|v| v.as_array()) {
+        Some(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<_>>(),
+        None => return Response::error(id, "invalid_params", "Provide 'workspaces' array of names"),
+    };
+
+    if names.is_empty() {
+        return Response::error(id, "invalid_params", "'workspaces' array must not be empty");
+    }
+
+    let mut tm = lock_or_recover(&state.tab_manager);
+
+    // Build the target order: resolve each name to a workspace index.
+    // Names that match no workspace are rejected immediately.
+    let mut target_ids: Vec<uuid::Uuid> = Vec::with_capacity(names.len());
+    for name in &names {
+        // Try numeric index first
+        if let Ok(idx) = name.parse::<usize>() {
+            match tm.get(idx) {
+                Some(ws) => target_ids.push(ws.id),
+                None => {
+                    return Response::error(
+                        id,
+                        "not_found",
+                        &format!("No workspace at index {idx}"),
+                    )
+                }
+            }
+        } else {
+            // Match by display title (case-sensitive, first match)
+            match tm.iter().find(|ws| ws.display_title() == *name) {
+                Some(ws) => target_ids.push(ws.id),
+                None => {
+                    return Response::error(
+                        id,
+                        "not_found",
+                        &format!("No workspace named '{name}'"),
+                    )
+                }
+            }
+        }
+    }
+
+    // Deduplicate while preserving first-occurrence order
+    {
+        let mut seen = std::collections::HashSet::new();
+        target_ids.retain(|id| seen.insert(*id));
+    }
+
+    // Build the new workspace order: listed workspaces first (in requested
+    // order), then any remaining workspaces that were not mentioned.
+    let all_ids: Vec<uuid::Uuid> = tm.iter().map(|ws| ws.id).collect();
+    let mut new_order: Vec<uuid::Uuid> = target_ids.clone();
+    for ws_id in &all_ids {
+        if !new_order.contains(ws_id) {
+            new_order.push(*ws_id);
+        }
+    }
+
+    // Apply the order via sequential move_workspace calls (stable sort by
+    // placing each element at its desired position left-to-right).
+    for (desired_idx, ws_id) in new_order.iter().enumerate() {
+        if let Some(current_idx) = tm.workspace_index(*ws_id) {
+            if current_idx != desired_idx {
+                tm.move_workspace(current_idx, desired_idx);
+            }
+        }
+    }
+
+    drop(tm);
+    state.notify_ui_refresh();
+
+    Response::success(
+        id,
+        serde_json::json!({"reordered": new_order.iter().map(|id| id.to_string()).collect::<Vec<_>>()}),
+    )
+}
+
+// -----------------------------------------------------------------------
 // workspace.reorder
 // -----------------------------------------------------------------------
 

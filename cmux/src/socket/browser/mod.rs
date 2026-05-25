@@ -135,6 +135,8 @@ pub fn dispatch(
         "browser.viewport.set" => tabs::handle_viewport_set(id, params, state),
         "browser.download.wait" => tabs::handle_download_wait(id, params, state),
         "browser.errors.list" => tabs::handle_errors_list(id, params, state),
+        // Cookie import from local browser profiles
+        "browser.import_cookies" => queries::handle_import_cookies(id, params, state),
         // macOS cmux-compatible aliases
         "browser.eval" => navigation::handle_execute_js(id, params, state),
         "browser.select" => interaction::handle_select_option(id, params, state),
@@ -287,6 +289,7 @@ pub fn method_names() -> Vec<&'static str> {
         "browser.storage.get",
         "browser.storage.set",
         "browser.console.list",
+        "browser.import_cookies",
     ]
 }
 
