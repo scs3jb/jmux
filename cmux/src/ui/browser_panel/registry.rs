@@ -53,6 +53,15 @@ thread_local! {
     /// Per-panel pending discard timer source ID. Cancelled when the panel is
     /// re-shown before the 60-second timeout fires.
     pub(super) static DISCARD_TIMERS: RefCell<HashMap<uuid::Uuid, glib::SourceId>> = RefCell::new(HashMap::new());
+
+    /// Per-panel find bar container widget (shown/hidden by toggle_browser_find).
+    pub(super) static FIND_BARS: RefCell<HashMap<uuid::Uuid, gtk4::Box>> = RefCell::new(HashMap::new());
+
+    /// Per-panel find bar toggle button (kept in sync with find bar visibility).
+    pub(super) static FIND_TOGGLE_BTNS: RefCell<HashMap<uuid::Uuid, gtk4::ToggleButton>> = RefCell::new(HashMap::new());
+
+    /// Per-panel find entry widget (to grab focus when opening find bar).
+    pub(super) static FIND_ENTRIES: RefCell<HashMap<uuid::Uuid, gtk4::SearchEntry>> = RefCell::new(HashMap::new());
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +159,18 @@ pub(crate) fn toggle_console(panel_id: uuid::Uuid) {
     CONSOLE_PANELS.with(|c| {
         if let Some(pane) = c.borrow().get(&panel_id) {
             pane.set_visible(!pane.is_visible());
+        }
+    });
+}
+
+/// Toggle the browser find bar for a panel open/closed.
+/// Called from the window-level Ctrl+F handler when a browser panel is focused.
+pub(crate) fn toggle_browser_find(panel_id: uuid::Uuid) {
+    // Toggle the find toggle button — this triggers the connect_toggled handler
+    // in mod.rs which shows/hides the find bar and focuses the entry.
+    FIND_TOGGLE_BTNS.with(|btns| {
+        if let Some(btn) = btns.borrow().get(&panel_id) {
+            btn.set_active(!btn.is_active());
         }
     });
 }

@@ -121,6 +121,48 @@ pub(super) fn setup_shortcuts(
 
         // Ctrl+Alt combinations (no shift)
         if ctrl && alt && !shift {
+            // Workspace color presets: Ctrl+Alt+0..9
+            // 0 = reset to default, 1-9 = preset colors
+            const PRESET_COLORS: &[&str] = &[
+                "#ef4444", // 1 red
+                "#f97316", // 2 orange
+                "#eab308", // 3 yellow
+                "#22c55e", // 4 green
+                "#14b8a6", // 5 teal
+                "#3b82f6", // 6 blue
+                "#8b5cf6", // 7 purple
+                "#ec4899", // 8 pink
+                "#64748b", // 9 slate
+            ];
+            let color_index: Option<usize> = match keyval {
+                gdk4::Key::_0 => Some(0),
+                gdk4::Key::_1 => Some(1),
+                gdk4::Key::_2 => Some(2),
+                gdk4::Key::_3 => Some(3),
+                gdk4::Key::_4 => Some(4),
+                gdk4::Key::_5 => Some(5),
+                gdk4::Key::_6 => Some(6),
+                gdk4::Key::_7 => Some(7),
+                gdk4::Key::_8 => Some(8),
+                gdk4::Key::_9 => Some(9),
+                _ => None,
+            };
+            if let Some(idx) = color_index {
+                let new_color = if idx == 0 {
+                    None
+                } else {
+                    PRESET_COLORS.get(idx - 1).map(|s| s.to_string())
+                };
+                {
+                    let mut tm = lock_or_recover(&state.shared.tab_manager);
+                    if let Some(ws) = tm.selected_mut() {
+                        ws.custom_color = new_color;
+                    }
+                }
+                super::refresh_ui(&list_box, &content_box, &state);
+                return glib::Propagation::Stop;
+            }
+
             #[cfg(feature = "webkit")]
             match keyval {
                 // Ctrl+Alt+D: Split browser horizontal
@@ -227,15 +269,40 @@ pub(super) fn setup_shortcuts(
                 let _ = crate::settings::save(&settings);
                 glib::Propagation::Stop
             }
-            // Ctrl+F: Toggle terminal find
+            // Ctrl+F: Toggle terminal find, or open browser find if browser panel is focused
             (gdk4::Key::f, true, false) => {
-                if search_bar.is_visible() {
-                    search_bar.set_visible(false);
-                    // Return focus to terminal content
-                    content_box.grab_focus();
-                } else {
-                    search_bar.set_visible(true);
-                    search_entry.grab_focus();
+                // Check if the focused panel is a browser — if so, delegate to
+                // the browser's built-in find bar rather than the terminal search overlay.
+                let focused_is_browser = {
+                    let tm = lock_or_recover(&state.shared.tab_manager);
+                    tm.selected().is_some_and(|ws| {
+                        ws.focused_panel_id.is_some_and(|pid| {
+                            ws.panels
+                                .get(&pid)
+                                .is_some_and(|p| p.panel_type == PanelType::Browser)
+                        })
+                    })
+                };
+                #[cfg(feature = "webkit")]
+                if focused_is_browser {
+                    let panel_id = {
+                        let tm = lock_or_recover(&state.shared.tab_manager);
+                        tm.selected().and_then(|ws| ws.focused_panel_id)
+                    };
+                    if let Some(pid) = panel_id {
+                        crate::ui::browser_panel::toggle_browser_find(pid);
+                    }
+                    return glib::Propagation::Stop;
+                }
+                if !focused_is_browser {
+                    if search_bar.is_visible() {
+                        search_bar.set_visible(false);
+                        // Return focus to terminal content
+                        content_box.grab_focus();
+                    } else {
+                        search_bar.set_visible(true);
+                        search_entry.grab_focus();
+                    }
                 }
                 glib::Propagation::Stop
             }

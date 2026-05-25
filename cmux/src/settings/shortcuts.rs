@@ -47,7 +47,8 @@ impl Keybinding {
         if self.alt {
             parts.push("Alt");
         }
-        parts.push(&self.key);
+        let key_display = if self.key == "space" { "Space" } else { &self.key };
+        parts.push(key_display);
         parts.join("+")
     }
 }
@@ -230,6 +231,19 @@ impl Default for ShortcutConfig {
         bindings.insert("notification.toggle_unread".into(), None);
         // Agent resume — unbound by default; users configure this in shortcuts.json
         bindings.insert("agent.resume".into(), None);
+
+        // Workspace color presets: Ctrl+Alt+0 resets to default, Ctrl+Alt+1-9 set preset colors
+        for i in 0u8..=9 {
+            bindings.insert(
+                format!("workspace.color.{i}"),
+                Some(Keybinding {
+                    key: i.to_string(),
+                    ctrl: true,
+                    shift: false,
+                    alt: true,
+                }),
+            );
+        }
 
         Self { bindings }
     }

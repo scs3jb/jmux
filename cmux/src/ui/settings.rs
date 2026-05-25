@@ -567,11 +567,40 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
         conflict_label.set_visible(false);
         row.add_suffix(&conflict_label);
 
+        // Clear button — unbinds the shortcut when clicked
+        let clear_btn = gtk4::Button::from_icon_name("edit-clear-symbolic");
+        clear_btn.set_tooltip_text(Some("Clear shortcut"));
+        clear_btn.add_css_class("flat");
+        clear_btn.add_css_class("circular");
+        clear_btn.set_valign(gtk4::Align::Center);
+        // Only show/enable when there is a binding
+        clear_btn.set_sensitive(opt_binding.is_some());
+        {
+            let action_name_clear = (*action).clone();
+            let label_clear = shortcut_label.clone();
+            let conflict_clear = conflict_label.clone();
+            let state_clear = shortcuts_state.clone();
+            let btn_weak = clear_btn.downgrade();
+            clear_btn.connect_clicked(move |_| {
+                state_clear
+                    .borrow_mut()
+                    .bindings
+                    .insert(action_name_clear.clone(), None);
+                label_clear.set_text("unbound");
+                conflict_clear.set_visible(false);
+                if let Some(btn) = btn_weak.upgrade() {
+                    btn.set_sensitive(false);
+                }
+            });
+        }
+        row.add_suffix(&clear_btn);
+
         // Click-to-record: when the row is activated, listen for a key press
         let action_name = (*action).clone();
         let label_clone = shortcut_label.clone();
         let conflict_clone = conflict_label.clone();
         let state = shortcuts_state.clone();
+        let clear_btn_weak = clear_btn.downgrade();
         row.connect_activated(move |row| {
             label_clone.set_text("Press shortcut...");
             label_clone.remove_css_class("dim-label");
@@ -584,6 +613,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
             let action_inner = action_name.clone();
             let state_inner = state.clone();
             let row_weak = row.downgrade();
+            let clear_btn_inner = clear_btn_weak.clone();
             key_controller.connect_key_pressed(move |ctl, keyval, _keycode, modifiers| {
                 // Escape cancels
                 if keyval == gdk4::Key::Escape {
@@ -622,7 +652,16 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                 let ctrl = modifiers.contains(gdk4::ModifierType::CONTROL_MASK);
                 let shift = modifiers.contains(gdk4::ModifierType::SHIFT_MASK);
                 let alt = modifiers.contains(gdk4::ModifierType::ALT_MASK);
-                let key_name = keyval.name().map(|n| n.to_string()).unwrap_or_default();
+                // Normalize the key name: GTK may return " " or an empty string
+                // for the space bar; canonicalize to "space".
+                let raw_key_name = keyval.name().map(|n| n.to_string()).unwrap_or_default();
+                let key_name = if raw_key_name.trim().is_empty()
+                    || keyval == gdk4::Key::space
+                {
+                    "space".to_string()
+                } else {
+                    raw_key_name
+                };
 
                 let new_binding = settings::shortcuts::Keybinding {
                     key: key_name,
@@ -660,6 +699,11 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                     .borrow_mut()
                     .bindings
                     .insert(action_inner.clone(), Some(new_binding));
+
+                // Re-enable the clear button now that a binding exists
+                if let Some(btn) = clear_btn_inner.upgrade() {
+                    btn.set_sensitive(true);
+                }
 
                 if let Some(row) = row_weak.upgrade() {
                     row.remove_controller(ctl);

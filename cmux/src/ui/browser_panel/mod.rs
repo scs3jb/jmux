@@ -468,6 +468,11 @@ pub fn create_browser_widget_with_profile(
     registry::CONSOLE_TEXT_VIEWS
         .with(|c| c.borrow_mut().insert(panel_id, console_text_view.clone()));
 
+    // Register find bar widgets for Ctrl+F routing from the window-level shortcut handler
+    registry::FIND_BARS.with(|fb| fb.borrow_mut().insert(panel_id, find_bar.clone()));
+    registry::FIND_TOGGLE_BTNS.with(|fb| fb.borrow_mut().insert(panel_id, find_toggle_btn.clone()));
+    registry::FIND_ENTRIES.with(|fe| fe.borrow_mut().insert(panel_id, find_entry.clone()));
+
     // -- Download bar (hidden by default, shown when a download starts) --
     let download_bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     download_bar.add_css_class("browser-download-bar");
@@ -937,6 +942,22 @@ pub fn create_browser_widget_with_profile(
         web_view.connect_permission_request(|_wv, request| {
             // Deny all permission requests by default. Granting camera, microphone,
             // or geolocation to arbitrary web pages is a security/privacy risk.
+            //
+            // NOTE on WebAuthn / Passkeys / FIDO2:
+            // WebKitGTK 6.0 (2.52) handles WebAuthn internally when built with
+            // ENABLE_WEB_AUTHN=ON in the distro package (Arch's webkitgtk-6.0 has
+            // it enabled). When supported, the engine drives its own UI for
+            // hardware security keys via libfido2 — it does NOT route through
+            // WebKitPermissionRequest, so this blanket deny does not block it.
+            //
+            // The webkit6 0.6.1 Rust bindings currently expose no WebAuthn API
+            // surface (no WebAuthnPermissionRequest type, no WebSettings flag,
+            // no FFI symbols). Full feature parity with the macOS cmux bridge
+            // (custom navigator.credentials.{create,get} bridge via
+            // AuthenticationServices) would require linking libfido2 directly,
+            // implementing a CTAP2 transport, and providing a custom UI — that
+            // is intentionally out of scope here. See CHANGELOG cmux PRs
+            // #2660, #2727, #2905, #2908 for the macOS reference implementation.
             request.deny();
             true
         });
