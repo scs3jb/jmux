@@ -172,6 +172,22 @@ pub(super) fn bind_shared_state_updates(
                             showing_notifications.set(true);
                         }
                     }
+                    UiEvent::ShowSidebar(show) => {
+                        // Restore the workspace sidebar page first (in case notifications
+                        // panel was active) then set the collapsed state.
+                        if show && showing_notifications.get() {
+                            nav_split_view.set_sidebar(Some(&sidebar_page));
+                            showing_notifications.set(false);
+                        }
+                        nav_split_view.set_collapsed(!show);
+                    }
+                    UiEvent::ToggleSidebar => {
+                        let currently_collapsed = nav_split_view.is_collapsed();
+                        if !currently_collapsed && showing_notifications.get() {
+                            // Collapsing: notifications panel stays as-is, just hide
+                        }
+                        nav_split_view.set_collapsed(!currently_collapsed);
+                    }
                     UiEvent::DeferUnread => {
                         // Mark all unread notifications for the current workspace as read,
                         // clearing the unread badge (defer effect without a timer).
@@ -864,6 +880,9 @@ fn event_refresh_kind(event: &UiEvent) -> RefreshKind {
 
         // Task Manager opens a secondary window — no layout rebuild needed.
         UiEvent::OpenTaskManager => RefreshKind::None,
+
+        // ShowSidebar/ToggleSidebar collapse/expand the NavigationSplitView only.
+        UiEvent::ShowSidebar(_) | UiEvent::ToggleSidebar => RefreshKind::None,
 
         // Everything else may require a full layout rebuild.
         _ => RefreshKind::Full,

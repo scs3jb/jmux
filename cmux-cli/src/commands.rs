@@ -88,6 +88,22 @@ pub enum Commands {
         #[arg(long, short, default_value_t = 2)]
         interval: u64,
     },
+
+    /// Control the sidebar visibility
+    #[command(subcommand)]
+    Sidebar(SidebarCommands),
+}
+
+#[derive(Subcommand)]
+pub enum SidebarCommands {
+    /// Show the sidebar
+    Show,
+    /// Hide the sidebar
+    Hide,
+    /// Toggle sidebar visibility
+    Toggle,
+    /// Show current sidebar state
+    Status,
 }
 
 #[derive(Subcommand)]

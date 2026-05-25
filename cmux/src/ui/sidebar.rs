@@ -721,6 +721,58 @@ fn create_workspace_row(
         outer.append(&expander);
     }
 
+    // ── Rich tooltip: workspace name + panel count + directory + status ──
+    {
+        let panel_count = workspace.panels.len();
+        let active_label = workspace
+            .sidebar_status_label()
+            .map(|s| format!("\nStatus: {s}"))
+            .unwrap_or_default();
+        let git_label = workspace
+            .git_branch
+            .as_ref()
+            .map(|gb| {
+                if gb.is_dirty {
+                    format!("\nBranch: {} *", gb.branch)
+                } else {
+                    format!("\nBranch: {}", gb.branch)
+                }
+            })
+            .unwrap_or_default();
+        let dir_label = if workspace.current_directory.is_empty() {
+            String::new()
+        } else {
+            format!("\nDirectory: {}", compact_path(&workspace.current_directory))
+        };
+        let ports_label = {
+            let ports: Vec<u16> = workspace
+                .panels
+                .values()
+                .flat_map(|p| &p.listening_ports)
+                .copied()
+                .collect();
+            if ports.is_empty() {
+                String::new()
+            } else {
+                let mut sorted = ports;
+                sorted.sort_unstable();
+                sorted.dedup();
+                let port_strs: Vec<String> = sorted.iter().take(5).map(|p| p.to_string()).collect();
+                format!("\nPorts: {}", port_strs.join(", "))
+            }
+        };
+        let tooltip = format!(
+            "{}\nPanels: {}{}{}{}{}",
+            workspace.display_title(),
+            panel_count,
+            dir_label,
+            git_label,
+            active_label,
+            ports_label,
+        );
+        row.set_tooltip_text(Some(&tooltip));
+    }
+
     // ── Hover show/hide close button ──
     let motion = gtk4::EventControllerMotion::new();
     {

@@ -298,18 +298,44 @@ fn build_actions(state: &Rc<AppState>) -> Rc<Vec<PaletteAction>> {
         }
     }
 
-    // Add dynamic workspace switcher entries (shown in default mode)
+    // Add dynamic workspace switcher entries (shown in default mode).
+    // When multiple windows are open, annotate each entry with "(Window N)".
     {
         let tm = lock_or_recover(&state.shared.tab_manager);
+        let window_count = state.shared.window_ids().len();
+
+        // Build a stable window-index map: sort window IDs so the numbering is
+        // deterministic across rebuilds (window_ids() returns an unordered Vec).
+        let mut sorted_windows = state.shared.window_ids();
+        sorted_windows.sort();
+
         for (i, ws) in tm.iter().enumerate() {
             let shortcut = if i < 9 {
                 Some(format!("Ctrl+{}", i + 1))
             } else {
                 None
             };
+
+            // Append "(Window N)" suffix when more than one window is open.
+            let window_suffix = if window_count > 1 {
+                let win_idx = ws
+                    .window_id
+                    .and_then(|wid| sorted_windows.iter().position(|w| *w == wid))
+                    .map(|idx| idx + 1)
+                    .unwrap_or(1);
+                format!(" (Window {win_idx})")
+            } else {
+                String::new()
+            };
+
             actions.push(PaletteAction {
                 name: format!("workspace.select.{i}"),
-                label: format!("{} — {}", ws.display_title(), ws.current_directory),
+                label: format!(
+                    "{}{} — {}",
+                    ws.display_title(),
+                    window_suffix,
+                    ws.current_directory
+                ),
                 shortcut,
                 is_workspace: true,
                 is_search_result: false,

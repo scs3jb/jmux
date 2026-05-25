@@ -14,6 +14,7 @@ mod helpers;
 mod markdown;
 mod notification;
 mod pane;
+mod sidebar;
 mod surface;
 mod system;
 mod tab;
@@ -307,6 +308,12 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "window.current" => window::handle_window_current(id, state),
         "window.focus" => window::handle_window_focus(id, &req.params, state),
         "window.close" => window::handle_window_close(id, &req.params, state),
+
+        // Sidebar commands
+        "sidebar.show" => sidebar::handle_sidebar_show(id, state),
+        "sidebar.hide" => sidebar::handle_sidebar_hide(id, state),
+        "sidebar.toggle" => sidebar::handle_sidebar_toggle(id, state),
+        "sidebar.status" => sidebar::handle_sidebar_status(id, state),
 
         _ => Response::error(
             id,

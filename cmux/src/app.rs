@@ -347,6 +347,11 @@ pub enum UiEvent {
     AgentResume,
     /// Open the Task Manager window.
     OpenTaskManager,
+    /// Show or hide the left sidebar.
+    /// `true` = show (expand), `false` = hide (collapse).
+    ShowSidebar(bool),
+    /// Toggle the left sidebar visibility (flip current state).
+    ToggleSidebar,
 }
 
 /// Wrapper to send a raw ghostty_surface_t across threads.

@@ -727,6 +727,13 @@ fn main() -> anyhow::Result<()> {
                 "surface": surface, "send_desktop": !no_desktop,
             }),
         ),
+
+        Commands::Sidebar(cmd) => match cmd {
+            SidebarCommands::Show => ("sidebar.show", serde_json::json!({})),
+            SidebarCommands::Hide => ("sidebar.hide", serde_json::json!({})),
+            SidebarCommands::Toggle => ("sidebar.toggle", serde_json::json!({})),
+            SidebarCommands::Status => ("sidebar.status", serde_json::json!({})),
+        },
     };
 
     let response = rpc::send_request(&cli.socket, method, params, cli.window.as_deref())?;
