@@ -498,26 +498,39 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
 
     let mut sorted_bindings: Vec<_> = current_settings.shortcuts.bindings.iter().collect();
     sorted_bindings.sort_by_key(|(action, _)| (*action).clone());
-    for (action, binding) in &sorted_bindings {
+    for (action, opt_binding) in &sorted_bindings {
         let row = adw::ActionRow::new();
         row.set_title(action.as_str());
         row.set_activatable(true);
 
-        let shortcut_label = gtk4::Label::new(Some(&binding.display()));
+        let binding_text = opt_binding
+            .as_ref()
+            .map(|b| b.display())
+            .unwrap_or_else(|| "unbound".to_string());
+        let shortcut_label = gtk4::Label::new(Some(&binding_text));
         shortcut_label.add_css_class("dim-label");
         row.add_suffix(&shortcut_label);
+
+        // Conflict warning label (hidden by default)
+        let conflict_label = gtk4::Label::new(None);
+        conflict_label.add_css_class("warning");
+        conflict_label.set_visible(false);
+        row.add_suffix(&conflict_label);
 
         // Click-to-record: when the row is activated, listen for a key press
         let action_name = (*action).clone();
         let label_clone = shortcut_label.clone();
+        let conflict_clone = conflict_label.clone();
         let state = shortcuts_state.clone();
         row.connect_activated(move |row| {
             label_clone.set_text("Press shortcut...");
             label_clone.remove_css_class("dim-label");
             label_clone.add_css_class("accent");
+            conflict_clone.set_visible(false);
 
             let key_controller = gtk4::EventControllerKey::new();
             let label_inner = label_clone.clone();
+            let conflict_inner = conflict_clone.clone();
             let action_inner = action_name.clone();
             let state_inner = state.clone();
             let row_weak = row.downgrade();
@@ -525,11 +538,16 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                 // Escape cancels
                 if keyval == gdk4::Key::Escape {
                     let current = state_inner.borrow();
-                    if let Some(b) = current.bindings.get(&action_inner) {
-                        label_inner.set_text(&b.display());
-                    }
+                    let text = current
+                        .bindings
+                        .get(&action_inner)
+                        .and_then(|opt| opt.as_ref())
+                        .map(|b| b.display())
+                        .unwrap_or_else(|| "unbound".to_string());
+                    label_inner.set_text(&text);
                     label_inner.remove_css_class("accent");
                     label_inner.add_css_class("dim-label");
+                    conflict_inner.set_visible(false);
                     if let Some(row) = row_weak.upgrade() {
                         row.remove_controller(ctl);
                     }
@@ -563,6 +581,27 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                     alt,
                 };
 
+                // Conflict detection: check if this binding is already used by
+                // a different action.
+                let conflict_action = {
+                    let current = state_inner.borrow();
+                    current
+                        .bindings
+                        .iter()
+                        .find(|(other_action, opt)| {
+                            *other_action != &action_inner
+                                && opt.as_ref() == Some(&new_binding)
+                        })
+                        .map(|(other_action, _)| other_action.clone())
+                };
+
+                if let Some(conflict) = conflict_action {
+                    conflict_inner.set_text(&format!("Already used by: {conflict}"));
+                    conflict_inner.set_visible(true);
+                } else {
+                    conflict_inner.set_visible(false);
+                }
+
                 label_inner.set_text(&new_binding.display());
                 label_inner.remove_css_class("accent");
                 label_inner.add_css_class("dim-label");
@@ -570,7 +609,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                 state_inner
                     .borrow_mut()
                     .bindings
-                    .insert(action_inner.clone(), new_binding);
+                    .insert(action_inner.clone(), Some(new_binding));
 
                 if let Some(row) = row_weak.upgrade() {
                     row.remove_controller(ctl);
@@ -587,9 +626,13 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
             let row_focus_weak = row.downgrade();
             focus_controller.connect_leave(move |ctl| {
                 let current = state_focus.borrow();
-                if let Some(b) = current.bindings.get(&action_focus) {
-                    label_focus.set_text(&b.display());
-                }
+                let text = current
+                    .bindings
+                    .get(&action_focus)
+                    .and_then(|opt| opt.as_ref())
+                    .map(|b| b.display())
+                    .unwrap_or_else(|| "unbound".to_string());
+                label_focus.set_text(&text);
                 label_focus.remove_css_class("accent");
                 label_focus.add_css_class("dim-label");
                 if let Some(row) = row_focus_weak.upgrade() {
@@ -620,7 +663,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                 while let Some(widget) = child {
                     if let Ok(row) = widget.clone().downcast::<adw::ActionRow>() {
                         let action_name = row.title().to_string();
-                        if let Some(binding) = defaults.bindings.get(&action_name) {
+                        if let Some(binding) = defaults.bindings.get(&action_name).and_then(|opt| opt.as_ref()) {
                             // Find the suffix label
                             let mut suffix = row.first_child();
                             while let Some(s) = suffix {

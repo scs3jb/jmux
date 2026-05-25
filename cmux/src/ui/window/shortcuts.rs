@@ -669,6 +669,50 @@ pub(super) fn setup_shortcuts(
                 }
                 glib::Propagation::Stop
             }
+            // Ctrl+R: Context-aware reload —
+            //   Browser pane focused → reload the web page
+            //   Terminal pane focused → reload ghostty configuration
+            (gdk4::Key::r, true, false) => {
+                let info = {
+                    let tm = lock_or_recover(&state.shared.tab_manager);
+                    tm.selected().and_then(|ws| {
+                        ws.focused_panel_id
+                            .and_then(|pid| ws.panels.get(&pid).map(|p| (pid, p.panel_type)))
+                    })
+                };
+                match info {
+                    Some((panel_id, PanelType::Browser)) => {
+                        #[cfg(feature = "webkit")]
+                        state
+                            .shared
+                            .send_ui_event(crate::app::UiEvent::BrowserAction {
+                                panel_id,
+                                action: crate::ui::browser_panel::BrowserActionKind::Reload,
+                            });
+                    }
+                    Some((_, _)) => {
+                        // Terminal or other pane: reload ghostty config
+                        state
+                            .shared
+                            .send_ui_event(crate::app::UiEvent::ReloadConfig);
+                    }
+                    None => {}
+                }
+                glib::Propagation::Stop
+            }
+            // F2: Rename the focused panel tab
+            (gdk4::Key::F2, false, false) => {
+                let panel_id = {
+                    let tm = lock_or_recover(&state.shared.tab_manager);
+                    tm.selected().and_then(|ws| ws.focused_panel_id)
+                };
+                if let Some(panel_id) = panel_id {
+                    if let Some(window) = window_weak.upgrade() {
+                        super::dialogs::show_rename_tab_dialog(&window, &state, panel_id);
+                    }
+                }
+                glib::Propagation::Stop
+            }
             _ => glib::Propagation::Proceed,
         }
     });

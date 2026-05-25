@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// A keyboard shortcut binding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Keybinding {
-    /// GTK key name (e.g., "t", "d", "f", "1")
+    /// GTK key name (e.g., "t", "d", "f", "1", "space")
     pub key: String,
     /// Whether Ctrl is required.
     pub ctrl: bool,
@@ -56,8 +56,9 @@ impl Keybinding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShortcutConfig {
-    /// Action name → keybinding map.
-    pub bindings: HashMap<String, Keybinding>,
+    /// Action name → optional keybinding map.
+    /// A `null` or missing value means the shortcut is disabled/unbound.
+    pub bindings: HashMap<String, Option<Keybinding>>,
 }
 
 impl Default for ShortcutConfig {
@@ -65,133 +66,164 @@ impl Default for ShortcutConfig {
         let mut bindings = HashMap::new();
 
         // Workspace management
-        bindings.insert("workspace.new".into(), Keybinding::ctrl_shift("T"));
-        bindings.insert("workspace.close".into(), Keybinding::ctrl_shift("W"));
+        bindings.insert("workspace.new".into(), Some(Keybinding::ctrl_shift("T")));
+        bindings.insert("workspace.close".into(), Some(Keybinding::ctrl_shift("W")));
         bindings.insert(
             "workspace.latest_unread".into(),
-            Keybinding::ctrl_shift("U"),
+            Some(Keybinding::ctrl_shift("U")),
         );
-        bindings.insert("workspace.rename".into(), Keybinding::ctrl_shift("R"));
+        bindings.insert("workspace.rename".into(), Some(Keybinding::ctrl_shift("R")));
         bindings.insert(
             "workspace.move_up".into(),
-            Keybinding::ctrl_shift("Page_Up"),
+            Some(Keybinding::ctrl_shift("Page_Up")),
         );
         bindings.insert(
             "workspace.move_down".into(),
-            Keybinding::ctrl_shift("Page_Down"),
+            Some(Keybinding::ctrl_shift("Page_Down")),
         );
 
         // Pane management
-        bindings.insert("pane.close".into(), Keybinding::ctrl_shift("Q"));
-        bindings.insert("pane.split_horizontal".into(), Keybinding::ctrl_shift("D"));
-        bindings.insert("pane.split_vertical".into(), Keybinding::ctrl_shift("E"));
+        bindings.insert("pane.close".into(), Some(Keybinding::ctrl_shift("Q")));
+        bindings.insert(
+            "pane.split_horizontal".into(),
+            Some(Keybinding::ctrl_shift("D")),
+        );
+        bindings.insert(
+            "pane.split_vertical".into(),
+            Some(Keybinding::ctrl_shift("E")),
+        );
         bindings.insert(
             "pane.focus_prev".into(),
-            Keybinding::ctrl_shift("bracketleft"),
+            Some(Keybinding::ctrl_shift("bracketleft")),
         );
         bindings.insert(
             "pane.focus_next".into(),
-            Keybinding::ctrl_shift("bracketright"),
+            Some(Keybinding::ctrl_shift("bracketright")),
+        );
+
+        // Pane rename (F2)
+        bindings.insert(
+            "pane.rename".into(),
+            Some(Keybinding {
+                key: "F2".to_string(),
+                ctrl: false,
+                shift: false,
+                alt: false,
+            }),
         );
 
         // Pane directional focus
         bindings.insert(
             "pane.focus_left".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "Left".to_string(),
                 ctrl: false,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
         bindings.insert(
             "pane.focus_right".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "Right".to_string(),
                 ctrl: false,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
         bindings.insert(
             "pane.focus_up".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "Up".to_string(),
                 ctrl: false,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
         bindings.insert(
             "pane.focus_down".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "Down".to_string(),
                 ctrl: false,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
 
         // UI toggles
-        bindings.insert("find".into(), Keybinding::ctrl("f"));
-        bindings.insert("find.next".into(), Keybinding::ctrl("g"));
-        bindings.insert("find.previous".into(), Keybinding::ctrl_shift("G"));
-        bindings.insert("find.use_selection".into(), Keybinding::ctrl("e"));
-        bindings.insert("notifications.toggle".into(), Keybinding::ctrl_shift("I"));
-        bindings.insert("settings".into(), Keybinding::ctrl("comma"));
+        bindings.insert("find".into(), Some(Keybinding::ctrl("f")));
+        bindings.insert("find.next".into(), Some(Keybinding::ctrl("g")));
+        bindings.insert("find.previous".into(), Some(Keybinding::ctrl_shift("G")));
+        bindings.insert("find.use_selection".into(), Some(Keybinding::ctrl("e")));
+        bindings.insert(
+            "notifications.toggle".into(),
+            Some(Keybinding::ctrl_shift("I")),
+        );
+        bindings.insert("settings".into(), Some(Keybinding::ctrl("comma")));
 
         // Terminal font size
-        bindings.insert("font.increase".into(), Keybinding::ctrl("equal"));
-        bindings.insert("font.decrease".into(), Keybinding::ctrl("minus"));
-        bindings.insert("font.reset".into(), Keybinding::ctrl("0"));
+        bindings.insert("font.increase".into(), Some(Keybinding::ctrl("equal")));
+        bindings.insert("font.decrease".into(), Some(Keybinding::ctrl("minus")));
+        bindings.insert("font.reset".into(), Some(Keybinding::ctrl("0")));
 
         // Clear scrollback
-        bindings.insert("surface.clear".into(), Keybinding::ctrl("k"));
+        bindings.insert("surface.clear".into(), Some(Keybinding::ctrl("k")));
+
+        // Context-aware reload: browser reload or terminal config reload
+        bindings.insert(
+            "reload".into(),
+            Some(Keybinding {
+                key: "r".to_string(),
+                ctrl: true,
+                shift: false,
+                alt: false,
+            }),
+        );
 
         // Browser-specific splits
         bindings.insert(
             "browser.split_horizontal".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "d".to_string(),
                 ctrl: true,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
         bindings.insert(
             "browser.split_vertical".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "e".to_string(),
                 ctrl: true,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
 
         // Close other pane tabs
         bindings.insert(
             "tab.close_others".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "W".to_string(),
                 ctrl: true,
                 shift: true,
                 alt: true,
-            },
+            }),
         );
 
         // Browser console toggle
         bindings.insert(
             "browser.console_toggle".into(),
-            Keybinding {
+            Some(Keybinding {
                 key: "c".to_string(),
                 ctrl: true,
                 shift: false,
                 alt: true,
-            },
+            }),
         );
 
         // Reload ghostty configuration
-        bindings.insert("config.reload".into(), Keybinding::ctrl_shift("comma"));
+        bindings.insert("config.reload".into(), Some(Keybinding::ctrl_shift("comma")));
 
         Self { bindings }
     }
@@ -199,8 +231,9 @@ impl Default for ShortcutConfig {
 
 impl ShortcutConfig {
     /// Get the keybinding for an action.
+    /// Returns `None` if the action is unknown or explicitly unbound (`null`).
     pub fn get(&self, action: &str) -> Option<&Keybinding> {
-        self.bindings.get(action)
+        self.bindings.get(action).and_then(|opt| opt.as_ref())
     }
 }
 
