@@ -345,6 +345,8 @@ pub enum UiEvent {
     ToggleUnread,
     /// Detect the agent running in the focused panel and send its resume command.
     AgentResume,
+    /// Open the Task Manager window.
+    OpenTaskManager,
 }
 
 /// Wrapper to send a raw ghostty_surface_t across threads.

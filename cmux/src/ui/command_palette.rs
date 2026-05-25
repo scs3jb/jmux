@@ -189,6 +189,7 @@ fn shortcut_for_action(
         "tab.close_others" => "tab.close_others",
         "pane.split_browser_h" => "browser.split_horizontal",
         "pane.split_browser_v" => "browser.split_vertical",
+        "task_manager.open" => return Some("Ctrl+Shift+A".to_string()),
         _ => return None,
     };
     shortcuts.get(key).map(|kb| kb.display())
@@ -258,6 +259,7 @@ fn build_actions(state: &Rc<AppState>) -> Rc<Vec<PaletteAction>> {
         cmd("font.increase", "Increase Font Size"),
         cmd("font.decrease", "Decrease Font Size"),
         cmd("font.reset", "Reset Font Size"),
+        cmd("task_manager.open", "Open Task Manager"),
     ];
 
     // Add SSH workspace command if enabled in settings
@@ -780,6 +782,12 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
             state
                 .shared
                 .send_ui_event(crate::app::UiEvent::OpenMarkdownFile);
+            return; // UiEvent handled
+        }
+        "task_manager.open" => {
+            state
+                .shared
+                .send_ui_event(crate::app::UiEvent::OpenTaskManager);
             return; // UiEvent handled
         }
         "tab.close_others" => {

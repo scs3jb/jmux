@@ -82,6 +82,11 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    // `cmux top` — live refreshing process table.
+    if let Commands::Top { interval } = &cli.command {
+        return run_top(&cli.socket, *interval);
+    }
+
     // Agent hook events may involve multiple socket calls; handle them before
     // the single-dispatch main match below.
     if let Commands::Agent(AgentCommands::Hook { event, cli: agent_cli, message }) = &cli.command {
@@ -134,6 +139,7 @@ fn main() -> anyhow::Result<()> {
     let (method, params) = match &cli.command {
         Commands::Themes { .. } => unreachable!(),
         Commands::Config(_) => unreachable!(),
+        Commands::Top { .. } => unreachable!(), // handled above
         Commands::Agent(AgentCommands::Hook { .. }) => unreachable!(), // handled above
         Commands::Agent(AgentCommands::Fork { message, name }) => (
             "agent.fork_conversation",
@@ -737,4 +743,121 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Run the live `cmux top` process viewer, refreshing at `interval` seconds.
+/// Exits cleanly on Ctrl+C (SIGINT).
+fn run_top(socket: &str, interval: u64) -> anyhow::Result<()> {
+    use std::sync::atomic::Ordering;
+
+    static INTERRUPTED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    extern "C" fn handle_sigint(_: libc::c_int) {
+        INTERRUPTED.store(true, Ordering::Relaxed);
+    }
+
+    // Install SIGINT handler so Ctrl+C exits cleanly.
+    // SAFETY: signal handler only writes an AtomicBool — async-signal-safe.
+    #[allow(clippy::fn_to_numeric_cast)]
+    unsafe {
+        libc::signal(libc::SIGINT, handle_sigint as *const () as libc::sighandler_t);
+    }
+
+    loop {
+        if INTERRUPTED.load(Ordering::Relaxed) {
+            // Restore cursor (in case we hid it) and exit.
+            print!("\x1b[?25h"); // show cursor
+            break;
+        }
+
+        let response = rpc::send_request(socket, "system.processes", serde_json::json!({}), None);
+        match response {
+            Err(e) => {
+                eprintln!("cmux top: {e}");
+                std::process::exit(1);
+            }
+            Ok(resp) => {
+                // Clear screen and render table.
+                print!("\x1b[2J\x1b[H"); // clear screen, cursor home
+                println!(
+                    "cmux top — refreshing every {}s  (Ctrl+C to quit)\n",
+                    interval
+                );
+
+                let processes = resp
+                    .get("result")
+                    .and_then(|r| r.get("processes"))
+                    .and_then(|p| p.as_array());
+
+                match processes {
+                    None => println!("(no data — is cmux running?)"),
+                    Some(procs) if procs.is_empty() => {
+                        println!("(no terminal panels with TTY information)")
+                    }
+                    Some(procs) => {
+                        // Sort by cpu_percent descending.
+                        let mut rows: Vec<&serde_json::Value> = procs.iter().collect();
+                        rows.sort_by(|a, b| {
+                            let ca = a["cpu_percent"].as_f64().unwrap_or(0.0);
+                            let cb = b["cpu_percent"].as_f64().unwrap_or(0.0);
+                            cb.partial_cmp(&ca).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+
+                        println!(
+                            "{:<20} {:<16} {:<16} {:>7} {:>10} {:>8}  Status",
+                            "Workspace", "Panel", "Command", "CPU%", "Mem (MB)", "PID",
+                        );
+                        println!("{}", "-".repeat(92));
+
+                        for row in &rows {
+                            let ws = row["workspace_name"].as_str().unwrap_or("");
+                            let panel = row["panel_id"].as_str().unwrap_or("");
+                            let cmd = row["command"].as_str().unwrap_or("");
+                            let cpu = row["cpu_percent"].as_f64().unwrap_or(0.0);
+                            let mem = row["rss_mb"].as_f64().unwrap_or(0.0);
+                            let pid = row["pid"].as_u64().unwrap_or(0);
+                            let status = row["status"].as_str().unwrap_or("");
+                            let ws_name = row["workspace_name"].as_str().unwrap_or(ws);
+                            println!(
+                                "{:<20} {:<16} {:<16} {:>7.1} {:>10.1} {:>8}  {}",
+                                trunc(ws_name, 20),
+                                trunc(panel, 16),
+                                trunc(cmd, 16),
+                                cpu,
+                                mem,
+                                pid,
+                                status,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sleep for interval, waking up every 100ms to check for Ctrl+C.
+        let ticks = interval * 10;
+        for _ in 0..ticks {
+            if INTERRUPTED.load(Ordering::Relaxed) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
+    Ok(())
+}
+
+fn trunc(s: &str, max: usize) -> &str {
+    let bytes = s.as_bytes();
+    if bytes.len() <= max {
+        s
+    } else {
+        // Find last char boundary at or before max.
+        let mut end = max;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        &s[..end]
+    }
 }

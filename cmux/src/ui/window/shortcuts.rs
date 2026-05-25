@@ -456,6 +456,13 @@ pub(super) fn setup_shortcuts(
                     .send_ui_event(crate::app::UiEvent::ReopenClosedBrowser);
                 glib::Propagation::Stop
             }
+            // Ctrl+Shift+A: Open Task Manager
+            (gdk4::Key::A, true, true) => {
+                state
+                    .shared
+                    .send_ui_event(crate::app::UiEvent::OpenTaskManager);
+                glib::Propagation::Stop
+            }
             // Ctrl+Shift+M: Enter terminal copy mode
             (gdk4::Key::M, true, true) => {
                 let panel_id = {

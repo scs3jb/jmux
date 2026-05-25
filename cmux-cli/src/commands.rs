@@ -81,6 +81,13 @@ pub enum Commands {
     /// Configuration management
     #[command(subcommand)]
     Config(ConfigCommands),
+
+    /// Show a live process table for all workspace terminals (like top)
+    Top {
+        /// Refresh interval in seconds (default: 2)
+        #[arg(long, short, default_value_t = 2)]
+        interval: u64,
+    },
 }
 
 #[derive(Subcommand)]

@@ -650,6 +650,11 @@ pub(super) fn bind_shared_state_updates(
                         drop(tm);
                         needs_refresh = true;
                     }
+                    UiEvent::OpenTaskManager => {
+                        if let Some(window) = window_weak.upgrade() {
+                            crate::ui::task_manager::show_task_manager(&window, &state);
+                        }
+                    }
                     UiEvent::AgentResume => {
                         // Detect which agent (if any) is running in the focused
                         // terminal and send its resume command.
@@ -856,6 +861,9 @@ fn event_refresh_kind(event: &UiEvent) -> RefreshKind {
         | UiEvent::ClearHistory { .. }
         | UiEvent::TriggerFlash { .. }
         | UiEvent::ToggleMinimalMode => RefreshKind::None,
+
+        // Task Manager opens a secondary window — no layout rebuild needed.
+        UiEvent::OpenTaskManager => RefreshKind::None,
 
         // Everything else may require a full layout rebuild.
         _ => RefreshKind::Full,
