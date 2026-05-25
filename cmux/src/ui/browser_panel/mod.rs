@@ -676,6 +676,7 @@ pub fn create_browser_widget_with_profile(
                                                 "vscode-insiders", "cursor", "zed",
                                                 "obsidian", "notion", "slack",
                                                 "discord", "spotify", "steam",
+                                                "zoom", "zoommtg", "zoomus",
                                             ];
                                             if !ALLOWED_SCHEMES.contains(&scheme.as_str()) {
                                                 tracing::warn!(%url, %scheme, "decide_policy: blocked unknown scheme");
@@ -1253,6 +1254,59 @@ pub fn create_browser_widget_with_profile(
         if url != "about:blank" {
             web_view.load_uri(url);
         }
+    }
+
+    // -- Memory Saver: discard hidden tabs after 60 s, reload on re-show --
+    //
+    // connect_unmap fires when the widget is removed from the screen (workspace
+    // switch or panel close). connect_map fires when it re-appears.  We guard
+    // both with the `memory_saver_enabled` setting read at signal time so the
+    // behaviour follows a toggle in settings without requiring a restart.
+    {
+        let wv_unmap = web_view.clone();
+        container.connect_unmap(move |_| {
+            if !crate::settings::load().browser.memory_saver_enabled {
+                return;
+            }
+            // Cancel any existing timer for this panel.
+            if let Some(src) = registry::DISCARD_TIMERS.with(|t| t.borrow_mut().remove(&panel_id)) {
+                src.remove();
+            }
+            // Snapshot current URL before the timer fires.
+            let current_url = wv_unmap
+                .uri()
+                .map(|u| u.to_string())
+                .unwrap_or_default();
+            // Schedule a new discard after 60 s.
+            let wv = wv_unmap.clone();
+            let src = glib::timeout_add_seconds_local(60, move || {
+                tracing::debug!(%panel_id, "memory_saver: discarding hidden browser panel");
+                if !current_url.is_empty() && current_url != "about:blank" {
+                    registry::DISCARDED_URL
+                        .with(|d| d.borrow_mut().insert(panel_id, current_url.clone()));
+                }
+                wv.stop_loading();
+                wv.load_uri("about:blank");
+                // Remove ourselves from the timer map.
+                registry::DISCARD_TIMERS.with(|t| t.borrow_mut().remove(&panel_id));
+                glib::ControlFlow::Break
+            });
+            registry::DISCARD_TIMERS.with(|t| t.borrow_mut().insert(panel_id, src));
+        });
+    }
+    {
+        let wv_map = web_view.clone();
+        container.connect_map(move |_| {
+            // Cancel any pending discard timer.
+            if let Some(src) = registry::DISCARD_TIMERS.with(|t| t.borrow_mut().remove(&panel_id)) {
+                src.remove();
+            }
+            // If the panel was already discarded, reload the saved URL.
+            if let Some(url) = registry::DISCARDED_URL.with(|d| d.borrow_mut().remove(&panel_id)) {
+                tracing::debug!(%panel_id, %url, "memory_saver: reloading discarded panel");
+                wv_map.load_uri(&url);
+            }
+        });
     }
 
     container.set_widget_name(&panel_id.to_string());

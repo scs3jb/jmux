@@ -44,6 +44,15 @@ thread_local! {
 
     /// Per-panel last downloaded file path (for "Open" button).
     pub(super) static DOWNLOAD_PATHS: RefCell<HashMap<uuid::Uuid, String>> = RefCell::new(HashMap::new());
+
+    /// Per-panel memory-saver: the URL that was active when the panel was
+    /// discarded, so it can be reloaded when the panel is re-shown.
+    /// `None` means the panel is not currently discarded.
+    pub(super) static DISCARDED_URL: RefCell<HashMap<uuid::Uuid, String>> = RefCell::new(HashMap::new());
+
+    /// Per-panel pending discard timer source ID. Cancelled when the panel is
+    /// re-shown before the 60-second timeout fires.
+    pub(super) static DISCARD_TIMERS: RefCell<HashMap<uuid::Uuid, glib::SourceId>> = RefCell::new(HashMap::new());
 }
 
 // ---------------------------------------------------------------------------

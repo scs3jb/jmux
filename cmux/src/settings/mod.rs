@@ -267,6 +267,9 @@ pub struct BrowserSettings {
     pub http_allowlist: Vec<String>,
     /// Browser color scheme override (separate from app theme).
     pub browser_theme: BrowserThemeMode,
+    /// Suspend hidden browser tabs after 60 seconds to free memory.
+    /// When the tab is re-shown it reloads automatically.
+    pub memory_saver_enabled: bool,
 }
 
 impl Default for BrowserSettings {
@@ -277,6 +280,7 @@ impl Default for BrowserSettings {
             search_suggestions: true,
             http_allowlist: Vec::new(),
             browser_theme: BrowserThemeMode::System,
+            memory_saver_enabled: true,
         }
     }
 }

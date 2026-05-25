@@ -403,6 +403,13 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     browser_theme_row.set_selected(current_settings.browser.browser_theme.to_index());
     browser_group.add(&browser_theme_row);
 
+    let memory_saver_row = adw::SwitchRow::new();
+    memory_saver_row.set_title("Memory Saver");
+    memory_saver_row
+        .set_subtitle("Suspend hidden browser tabs after 60 seconds to free memory");
+    memory_saver_row.set_active(current_settings.browser.memory_saver_enabled);
+    browser_group.add(&memory_saver_row);
+
     browser_page.add(&browser_group);
 
     // ── Browser data import ──
@@ -699,6 +706,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
         let home_row = home_row.clone();
         let suggestions_row = suggestions_row.clone();
         let browser_theme_row = browser_theme_row.clone();
+        let memory_saver_row = memory_saver_row.clone();
         let shortcuts_state = shortcuts_state.clone();
         let sound_preset_row = sound_preset_row.clone();
         let confirm_quit_row = confirm_quit_row.clone();
@@ -792,6 +800,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                     browser_theme: crate::settings::BrowserThemeMode::from_index(
                         browser_theme_row.selected(),
                     ),
+                    memory_saver_enabled: memory_saver_row.is_active(),
                 },
                 pane_attention_ring: attention_ring_row.is_active(),
                 pane_flash_enabled: flash_row.is_active(),
