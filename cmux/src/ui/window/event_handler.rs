@@ -132,8 +132,30 @@ pub(super) fn bind_shared_state_updates(
                         keycode,
                         mods,
                     } => {
-                        if let Some(surface) = state.terminal_cache.borrow().get(&panel_id) {
+                        // If the ghostty surface is already in the cache, deliver immediately.
+                        // Otherwise schedule a single retry on the next idle cycle so keystrokes
+                        // sent immediately after a panel is focused (e.g. via the send-key socket
+                        // command) are not silently dropped before the surface is initialized.
+                        //
+                        // Note: interactive keystrokes (keyboard → GTK → Ghostty) take a
+                        // direct path and are never lost; only socket-driven SendKey events
+                        // can arrive before surface initialisation.
+                        if let Some(surface) = state.terminal_cache.borrow().get(&panel_id).cloned() {
                             surface.send_key(keyval, keycode, mods);
+                        } else {
+                            let state_weak = Rc::downgrade(&state);
+                            glib::idle_add_local_once(move || {
+                                let Some(state) = state_weak.upgrade() else { return };
+                                let surface = state.terminal_cache.borrow().get(&panel_id).cloned();
+                                if let Some(surface) = surface {
+                                    surface.send_key(keyval, keycode, mods);
+                                } else {
+                                    tracing::warn!(
+                                        %panel_id,
+                                        "SendKey dropped: surface not ready after idle retry"
+                                    );
+                                }
+                            });
                         }
                     }
                     UiEvent::ReadText { panel_id, reply } => {

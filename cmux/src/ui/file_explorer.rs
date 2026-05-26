@@ -136,17 +136,39 @@ impl FileExplorer {
     }
 
     /// Build an SSH-workspace placeholder (no tree).
-    pub fn new_ssh_placeholder() -> Self {
-        let label = gtk4::Label::new(Some(
-            "File browsing not available\nfor SSH workspaces.",
-        ));
-        label.add_css_class("dim-label");
-        label.add_css_class("caption");
-        label.set_justify(gtk4::Justification::Center);
-        label.set_margin_top(8);
-        label.set_margin_bottom(8);
+    ///
+    /// When `current_directory` is non-empty, it is displayed as a read-only
+    /// path label (tracked remotely via shell integration PWD/OSC reporting).
+    /// This gives users the remote CWD at a glance without requiring a live
+    /// file-listing RPC call to the remote daemon.
+    pub fn new_ssh_placeholder(current_directory: &str) -> Self {
+        let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        vbox.set_margin_top(6);
+        vbox.set_margin_bottom(6);
+        vbox.set_margin_start(4);
+        vbox.set_margin_end(4);
+
+        let info_label = gtk4::Label::new(Some("SSH remote — file browsing unavailable"));
+        info_label.add_css_class("dim-label");
+        info_label.add_css_class("caption");
+        info_label.set_justify(gtk4::Justification::Center);
+        info_label.set_wrap(true);
+        vbox.append(&info_label);
+
+        // Show the remote CWD when available (updated by shell integration).
+        if !current_directory.is_empty() {
+            let cwd_label = gtk4::Label::new(Some(current_directory));
+            cwd_label.add_css_class("dim-label");
+            cwd_label.add_css_class("caption");
+            cwd_label.set_selectable(true); // allow copying the path
+            cwd_label.set_wrap(true);
+            cwd_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+            cwd_label.set_xalign(0.0);
+            vbox.append(&cwd_label);
+        }
+
         Self {
-            root: label.upcast(),
+            root: vbox.upcast(),
             store: None,
             tree_view: None,
         }

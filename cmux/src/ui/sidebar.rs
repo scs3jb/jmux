@@ -755,7 +755,9 @@ fn create_workspace_row(
         expander.set_margin_top(2);
 
         if workspace.remote_config.is_some() {
-            let placeholder = crate::ui::file_explorer::FileExplorer::new_ssh_placeholder();
+            let placeholder = crate::ui::file_explorer::FileExplorer::new_ssh_placeholder(
+                &workspace.current_directory,
+            );
             expander.set_child(Some(placeholder.widget()));
         } else {
             let explorer = crate::ui::file_explorer::FileExplorer::new();
