@@ -19,7 +19,8 @@ const COL_HAS_DUMMY: u32 = 4; // whether the dummy child sentinel is present
 const MAX_DEPTH: u32 = 3;
 
 /// Sentinel value stored as the path of a dummy child row.
-const DUMMY_PATH: &str = "\x00dummy";
+/// Must not start with \x00 — GTK TreeStore rejects strings with interior NUL bytes.
+const DUMMY_PATH: &str = "\x01__cmux_dummy__";
 
 pub struct FileExplorer {
     /// The outer container (either the tree view or the SSH placeholder).
