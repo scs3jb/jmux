@@ -470,6 +470,19 @@ fn build_tab_button(
                 return;
             }
             stack.set_visible_child_name(&panel_id.to_string());
+            // Move the selection highlight without a full rebuild: the
+            // metadata refresh below does not touch the tab bar, so clear
+            // `pane-tab-selected` from sibling tabs and apply it to this one.
+            if let Some(parent) = tab_widget.parent() {
+                let mut sibling = parent.first_child();
+                while let Some(child) = sibling {
+                    if child.has_css_class("pane-tab") {
+                        child.remove_css_class("pane-tab-selected");
+                    }
+                    sibling = child.next_sibling();
+                }
+            }
+            tab_widget.add_css_class("pane-tab-selected");
             // Update model
             let mut tm = lock_or_recover(&state.shared.tab_manager);
             if let Some(ws) = tm.find_workspace_with_panel_mut(panel_id) {
