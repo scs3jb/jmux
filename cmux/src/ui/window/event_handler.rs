@@ -158,12 +158,31 @@ pub(super) fn bind_shared_state_updates(
                             });
                         }
                     }
-                    UiEvent::ReadText { panel_id, reply } => {
+                    UiEvent::ReadText {
+                        panel_id,
+                        scrollback,
+                        lines,
+                        reply,
+                    } => {
                         let text = state
                             .terminal_cache
                             .borrow()
                             .get(&panel_id)
-                            .and_then(|s| s.read_screen_text());
+                            .and_then(|s| {
+                                if scrollback {
+                                    s.read_scrollback_text()
+                                } else {
+                                    s.read_screen_text()
+                                }
+                            })
+                            .map(|t| match lines {
+                                Some(n) if n > 0 => {
+                                    let all: Vec<&str> = t.lines().collect();
+                                    let start = all.len().saturating_sub(n);
+                                    all[start..].join("\n")
+                                }
+                                _ => t,
+                            });
                         let _ = reply.send(text);
                     }
                     UiEvent::RefreshSurface { panel_id } => {

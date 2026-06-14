@@ -465,6 +465,12 @@ pub fn dispatch(line: &str, state: &Arc<SharedState>) -> String {
             if let Some(point) = flags.get("point") {
                 p["point"] = json!(point);
             }
+            if flags.contains_key("scrollback") {
+                p["scrollback"] = json!(true);
+            }
+            if let Some(n) = flags.get("lines").and_then(|v| v.parse::<u64>().ok()) {
+                p["lines"] = json!(n);
+            }
             ("surface.read_text", p)
         }
         "clear_history" => {

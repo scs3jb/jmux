@@ -92,6 +92,17 @@ pub(super) fn handle_workspace_new_project(
     create_workspace(id, &p, state, false)
 }
 
+/// Create a workspace whose initial panel is an editable notes scratchpad.
+pub(super) fn handle_workspace_new_notes(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let mut p = params.clone();
+    p["kind"] = serde_json::json!("notes");
+    create_workspace(id, &p, state, false)
+}
+
 pub(super) fn handle_workspace_create(
     id: Value,
     params: &Value,
@@ -249,12 +260,18 @@ pub(super) fn create_workspace(
     // diff viewer rooted at the workspace directory.
     if params.get("kind").and_then(|v| v.as_str()) == Some("diff") {
         let diff_dir = ws.current_directory.clone();
+        // Diff source: "staged" or "branch:<ref>"; absent = working tree.
+        let diff_source = params
+            .get("source")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
         let pid = ws
             .focused_panel_id
             .or_else(|| ws.panels.keys().next().copied());
         if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
             panel.panel_type = crate::model::PanelType::Diff;
-            panel.command = None;
+            panel.command = diff_source;
             panel.directory = Some(diff_dir);
             panel.title = Some("Diff".to_string());
         }
@@ -272,6 +289,26 @@ pub(super) fn create_workspace(
             panel.command = None;
             panel.directory = Some(proj_dir);
             panel.title = Some("Project".to_string());
+        }
+    }
+
+    // If a notes workspace is requested, convert the initial panel to an
+    // editable notes scratchpad backed by a file.
+    if params.get("kind").and_then(|v| v.as_str()) == Some("notes") {
+        let file = params
+            .get("file")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(crate::ui::notes_panel::default_notes_path);
+        let pid = ws
+            .focused_panel_id
+            .or_else(|| ws.panels.keys().next().copied());
+        if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
+            panel.panel_type = crate::model::PanelType::Notes;
+            panel.command = None;
+            panel.markdown_file = Some(file);
+            panel.title = Some("Notes".to_string());
         }
     }
 

@@ -70,9 +70,11 @@ pub fn create_panel_widget(
             label.upcast()
         }
         // Diff panels use a plain GTK TextView, so they work regardless of webkit.
+        // The `command` field carries the diff source (staged/branch:<ref>).
         PanelType::Diff => super::diff_panel::create_diff_widget(
             panel.id,
             panel.directory.as_deref(),
+            panel.command.as_deref(),
             is_attention_source,
         ),
         // Project visualizer is plain GTK too.
@@ -83,6 +85,12 @@ pub fn create_panel_widget(
         ),
         // File preview (plain GTK).
         PanelType::FilePreview => super::file_preview_panel::create_file_preview_widget(
+            panel.id,
+            panel.markdown_file.as_deref(),
+            is_attention_source,
+        ),
+        // Editable notes (plain GTK).
+        PanelType::Notes => super::notes_panel::create_notes_widget(
             panel.id,
             panel.markdown_file.as_deref(),
             is_attention_source,

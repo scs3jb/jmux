@@ -341,6 +341,7 @@ impl SessionPanelSnapshot {
             crate::model::PanelType::Diff => "diff".to_string(),
             crate::model::PanelType::Project => "project".to_string(),
             crate::model::PanelType::FilePreview => "file_preview".to_string(),
+            crate::model::PanelType::Notes => "notes".to_string(),
         };
 
         // Detect agent resume command from live process title and stored command.

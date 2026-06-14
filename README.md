@@ -67,6 +67,8 @@ cargo build --release --no-default-features --features cmux/link-ghostty
 - **Diff viewer** — `cmux diff [path]` opens a git diff CodeView panel (colored add/remove/hunk lines, working-tree/staged toggle, reload); plain-GTK so it works without WebKit
 - **Project visualizer** — `cmux project [path]` opens a structure pane: bounded directory tree (skips .git/node_modules/target/…) plus a file-type/size summary; plain-GTK, no WebKit
 - **`cmux open <path-or-url>...`** — opens files in a viewer (markdown → markdown panel, else → file-preview panel), directories as new workspaces, and URLs in a browser split (`file.open` socket method)
+- **Notes scratchpad** — `cmux notes [file]` opens an editable, auto-saved notes panel
+- **Diff sources** — `cmux diff --staged` / `--branch <ref>` select what the diff viewer shows; `cmux read --scrollback --lines N` reads terminal history
 - **Welcome screen** — first-launch getting-started tips
 
 ## Architecture

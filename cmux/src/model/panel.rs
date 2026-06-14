@@ -20,6 +20,9 @@ pub enum PanelType {
     Project,
     /// Read-only file preview. The `markdown_file` field holds the file path.
     FilePreview,
+    /// Editable notes / scratchpad. The `markdown_file` field holds the notes
+    /// file path (auto-saved).
+    Notes,
 }
 
 /// A panel within a workspace pane.
@@ -144,6 +147,33 @@ impl Panel {
         }
     }
 
+    /// Create a new editable notes panel backed by `file_path`.
+    pub fn new_notes(file_path: &str) -> Self {
+        let title = std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(String::from)
+            .or_else(|| Some("Notes".to_string()));
+        Self {
+            id: Uuid::new_v4(),
+            panel_type: PanelType::Notes,
+            title,
+            custom_title: None,
+            directory: None,
+            is_pinned: false,
+            is_manually_unread: false,
+            git_branch: None,
+            listening_ports: Vec::new(),
+            tty_name: None,
+            browser_url: None,
+            markdown_file: Some(file_path.to_string()),
+            command: None,
+            pending_scrollback: None,
+            pending_zoom: None,
+            parent_panel_id: None,
+        }
+    }
+
     /// Create a new read-only file-preview panel for `file_path`.
     pub fn new_file_preview(file_path: &str) -> Self {
         let title = std::path::Path::new(file_path)
@@ -229,6 +259,7 @@ impl Panel {
                 }
                 "Preview"
             }
+            PanelType::Notes => "Notes",
         }
     }
 }

@@ -280,6 +280,10 @@ pub enum UiEvent {
     },
     ReadText {
         panel_id: Uuid,
+        /// Read the full scrollback buffer instead of just the visible screen.
+        scrollback: bool,
+        /// Keep only the last N lines of the result (None = all).
+        lines: Option<usize>,
         reply: tokio::sync::oneshot::Sender<Option<String>>,
     },
     RefreshSurface {
@@ -914,6 +918,7 @@ fn restore_session(state: &Rc<AppState>) -> Vec<Uuid> {
                     "diff" => crate::model::PanelType::Diff,
                     "project" => crate::model::PanelType::Project,
                     "file_preview" => crate::model::PanelType::FilePreview,
+                    "notes" => crate::model::PanelType::Notes,
                     _ => crate::model::PanelType::Terminal,
                 };
                 let panel = crate::model::panel::Panel {

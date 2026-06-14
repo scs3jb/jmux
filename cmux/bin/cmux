@@ -349,8 +349,9 @@ Workspaces
                              Create a named workspace
   new-browser [url]          Create a browser workspace
   open <path-or-url>...       Open files (viewer by type), dirs (new workspace), URLs (browser)
-  diff [path]                Open a git diff viewer workspace (default: $PWD)
+  diff [--staged|--branch <ref>] [path]   Git diff viewer (working tree by default)
   project [path]             Open a project-structure visualizer (default: $PWD)
+  notes [file]               Open an editable notes scratchpad
   select, sel <id|index>     Select a workspace
   current                    Show the current workspace
   rename <name>              Rename the current workspace
@@ -375,7 +376,7 @@ Panes / terminals
   send <text>                Send text to the focused terminal
   send-key <key> [mods...]   Send a key chord (e.g. send-key Enter, send-key c ctrl)
   split [-h|-v]              Split the focused pane
-  read, read-screen          Read the focused terminal's visible text
+  read [--scrollback] [--lines N]  Read terminal text (visible or full scrollback)
 
 Browser
   browser <action> [args]    Browser automation (navigate, click, eval, …)
@@ -493,14 +494,37 @@ case "$command" in
     fi
     ;;
   diff)
-    # Open a git diff viewer workspace for a directory (defaults to $PWD).
-    diff_dir="${1:-$PWD}"
-    _cmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\"}"
+    # Open a git diff viewer. --staged / --branch <ref> select the source.
+    diff_source=""; diff_dir=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --staged|--cached) diff_source="staged"; shift ;;
+        --unstaged) diff_source=""; shift ;;
+        --branch) shift; diff_source="branch:${1:-HEAD}"; shift ;;
+        --branch=*) diff_source="branch:${1#--branch=}"; shift ;;
+        *) diff_dir="$1"; shift ;;
+      esac
+    done
+    [[ -z "$diff_dir" ]] && diff_dir="$PWD"
+    if [[ -n "$diff_source" ]]; then
+      _cmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\",\"source\":\"$diff_source\"}"
+    else
+      _cmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\"}"
+    fi
     ;;
   project)
     # Open a project-structure visualizer workspace (defaults to $PWD).
     proj_dir="${1:-$PWD}"
     _cmux_json "workspace.new_project" "{\"directory\":\"$proj_dir\"}"
+    ;;
+  notes)
+    # Open an editable notes scratchpad (optional file path).
+    if [[ $# -gt 0 ]]; then
+      nf=$(realpath -m "$1" 2>/dev/null || echo "$1")
+      _cmux_json "workspace.new_notes" "{\"file\":\"$nf\"}"
+    else
+      _cmux_json "workspace.new_notes" "{}"
+    fi
     ;;
   open)
     # Open paths/URLs: URL → browser split, directory → new workspace,
@@ -619,7 +643,19 @@ case "$command" in
     _cmux_send "split ${*}"
     ;;
   read|read-screen)
-    _cmux_send "read_screen ${*}"
+    # Flags: --scrollback (full history), --lines N (last N lines), --panel ID.
+    rs=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --scrollback) rs="$rs --scrollback"; shift ;;
+        --lines) shift; rs="$rs --lines=${1:-}"; shift ;;
+        --lines=*) rs="$rs $1"; shift ;;
+        --panel) shift; rs="$rs --panel=${1:-}"; shift ;;
+        --panel=*|--surface=*) rs="$rs $1"; shift ;;
+        *) shift ;;
+      esac
+    done
+    _cmux_query_v1 "read_screen${rs}"
     ;;
 
   # ── Status ──

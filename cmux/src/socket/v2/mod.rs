@@ -145,6 +145,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "workspace.new_browser" => workspace::handle_workspace_new_browser(id, &req.params, state),
         "workspace.new_diff" => workspace::handle_workspace_new_diff(id, &req.params, state),
         "workspace.new_project" => workspace::handle_workspace_new_project(id, &req.params, state),
+        "workspace.new_notes" => workspace::handle_workspace_new_notes(id, &req.params, state),
         "workspace.group.create" => group::handle_group_create(id, &req.params, state),
         "workspace.group.list" => group::handle_group_list(id, state),
         "workspace.group.assign" => group::handle_group_assign(id, &req.params, state),

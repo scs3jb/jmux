@@ -18,11 +18,32 @@ use gtk4::prelude::*;
 ///   ├─ toolbar (HBox): [icon] [label] [spacer] [Staged toggle] [reload]
 ///   └─ ScrolledWindow → TextView (monospace, colored diff)
 /// ```
+/// What the diff panel shows. Encoded in the panel's `command` field:
+/// absent/empty = working tree, "staged" = index, "branch:<ref>" = vs <ref>.
+enum DiffSpec {
+    Working,
+    Staged,
+    Branch(String),
+}
+
+fn parse_spec(source: Option<&str>) -> DiffSpec {
+    let s = source.unwrap_or("");
+    if s == "staged" {
+        DiffSpec::Staged
+    } else if let Some(r) = s.strip_prefix("branch:") {
+        DiffSpec::Branch(r.to_string())
+    } else {
+        DiffSpec::Working
+    }
+}
+
 pub fn create_diff_widget(
     panel_id: uuid::Uuid,
     dir: Option<&str>,
+    source: Option<&str>,
     is_attention_source: bool,
 ) -> gtk4::Widget {
+    let initial_spec = parse_spec(source);
     let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     container.set_hexpand(true);
     container.set_vexpand(true);
@@ -91,30 +112,42 @@ pub fn create_diff_widget(
     scrolled.set_child(Some(&text_view));
     container.append(&scrolled);
 
-    // Shared staged state.
-    let staged = Rc::new(Cell::new(false));
+    // Branch mode renders a fixed `git diff <ref>` and hides the staged toggle.
+    if let DiffSpec::Branch(ref r) = initial_spec {
+        let r = r.clone();
+        staged_toggle.set_visible(false);
+        label.set_text(&format!("git diff {r}"));
+        render_diff(&buffer, &dir, &DiffSpec::Branch(r.clone()));
+        let buffer2 = buffer.clone();
+        let dir2 = dir.clone();
+        reload_btn.connect_clicked(move |_| {
+            render_diff(&buffer2, &dir2, &DiffSpec::Branch(r.clone()));
+        });
+        return container.upcast();
+    }
 
-    // Initial render.
-    render_diff(&buffer, &dir, staged.get());
+    // Working-tree / staged mode with the toggle.
+    let staged = Rc::new(Cell::new(matches!(initial_spec, DiffSpec::Staged)));
+    staged_toggle.set_active(staged.get());
 
-    // Staged toggle.
+    let spec_of = |s: bool| if s { DiffSpec::Staged } else { DiffSpec::Working };
+    render_diff(&buffer, &dir, &spec_of(staged.get()));
+
     {
         let buffer = buffer.clone();
         let dir = dir.clone();
         let staged = staged.clone();
         staged_toggle.connect_toggled(move |btn| {
             staged.set(btn.is_active());
-            render_diff(&buffer, &dir, staged.get());
+            render_diff(&buffer, &dir, &spec_of(staged.get()));
         });
     }
-
-    // Reload.
     {
         let buffer = buffer.clone();
         let dir = dir.clone();
         let staged = staged.clone();
         reload_btn.connect_clicked(move |_| {
-            render_diff(&buffer, &dir, staged.get());
+            render_diff(&buffer, &dir, &spec_of(staged.get()));
         });
     }
 
@@ -148,25 +181,33 @@ fn install_diff_tags(buffer: &gtk4::TextBuffer) {
 
 /// Run `git diff` (optionally `--staged`) in `dir` and render it into `buffer`
 /// with per-line coloring.
-fn render_diff(buffer: &gtk4::TextBuffer, dir: &str, staged: bool) {
+fn render_diff(buffer: &gtk4::TextBuffer, dir: &str, spec: &DiffSpec) {
     buffer.set_text("");
 
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(dir).arg("--no-pager").arg("diff");
-    if staged {
-        cmd.arg("--staged");
+    match spec {
+        DiffSpec::Working => {}
+        DiffSpec::Staged => {
+            cmd.arg("--staged");
+        }
+        DiffSpec::Branch(r) => {
+            cmd.arg(r);
+        }
     }
     let output = cmd.output();
+
+    let empty_msg = match spec {
+        DiffSpec::Staged => "No staged changes.",
+        DiffSpec::Branch(_) => "No differences from that ref.",
+        DiffSpec::Working => "No changes in the working tree.",
+    };
 
     let text = match output {
         Ok(out) if out.status.success() => {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if s.trim().is_empty() {
-                buffer.set_text(if staged {
-                    "No staged changes."
-                } else {
-                    "No changes in the working tree."
-                });
+                buffer.set_text(empty_msg);
                 return;
             }
             s

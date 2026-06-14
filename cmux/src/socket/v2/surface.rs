@@ -107,6 +107,7 @@ pub(super) fn handle_surface_current(id: Value, state: &Arc<SharedState>) -> Res
                 crate::model::PanelType::Diff => "diff",
                 crate::model::PanelType::Project => "project",
                 crate::model::PanelType::FilePreview => "file_preview",
+                crate::model::PanelType::Notes => "notes",
             }).unwrap_or("unknown"),
             "title": panel.map(|p| p.display_title()).unwrap_or("?"),
             "directory": panel.and_then(|p| p.directory.as_deref()),
@@ -279,9 +280,20 @@ pub(super) fn handle_surface_read_text(
         pid
     };
 
+    let scrollback = params
+        .get("scrollback")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let lines = params
+        .get("lines")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+
     let (tx, rx) = tokio::sync::oneshot::channel();
     state.send_ui_event(UiEvent::ReadText {
         panel_id,
+        scrollback,
+        lines,
         reply: tx,
     });
 
@@ -565,6 +577,7 @@ pub(super) fn handle_surface_create(
         crate::model::PanelType::Diff => crate::model::Panel::new_diff(None),
         crate::model::PanelType::Project => crate::model::Panel::new_project(None),
         crate::model::PanelType::FilePreview => crate::model::Panel::new_file_preview(""),
+        crate::model::PanelType::Notes => crate::model::Panel::new_notes(""),
     };
     if panel_type == crate::model::PanelType::Browser {
         new_panel.browser_url = url;
