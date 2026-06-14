@@ -106,6 +106,7 @@ pub(super) fn handle_surface_current(id: Value, state: &Arc<SharedState>) -> Res
                 crate::model::PanelType::Markdown => "markdown",
                 crate::model::PanelType::Diff => "diff",
                 crate::model::PanelType::Project => "project",
+                crate::model::PanelType::FilePreview => "file_preview",
             }).unwrap_or("unknown"),
             "title": panel.map(|p| p.display_title()).unwrap_or("?"),
             "directory": panel.and_then(|p| p.directory.as_deref()),
@@ -563,6 +564,7 @@ pub(super) fn handle_surface_create(
         crate::model::PanelType::Markdown => crate::model::Panel::new_markdown(""),
         crate::model::PanelType::Diff => crate::model::Panel::new_diff(None),
         crate::model::PanelType::Project => crate::model::Panel::new_project(None),
+        crate::model::PanelType::FilePreview => crate::model::Panel::new_file_preview(""),
     };
     if panel_type == crate::model::PanelType::Browser {
         new_panel.browser_url = url;

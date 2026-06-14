@@ -18,6 +18,8 @@ pub enum PanelType {
     /// Project structure visualizer. The `directory` field holds the project
     /// root to summarize.
     Project,
+    /// Read-only file preview. The `markdown_file` field holds the file path.
+    FilePreview,
 }
 
 /// A panel within a workspace pane.
@@ -142,6 +144,32 @@ impl Panel {
         }
     }
 
+    /// Create a new read-only file-preview panel for `file_path`.
+    pub fn new_file_preview(file_path: &str) -> Self {
+        let title = std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(String::from);
+        Self {
+            id: Uuid::new_v4(),
+            panel_type: PanelType::FilePreview,
+            title,
+            custom_title: None,
+            directory: None,
+            is_pinned: false,
+            is_manually_unread: false,
+            git_branch: None,
+            listening_ports: Vec::new(),
+            tty_name: None,
+            browser_url: None,
+            markdown_file: Some(file_path.to_string()),
+            command: None,
+            pending_scrollback: None,
+            pending_zoom: None,
+            parent_panel_id: None,
+        }
+    }
+
     /// Create a new markdown panel for viewing a `.md` file.
     pub fn new_markdown(file_path: &str) -> Self {
         let title = std::path::Path::new(file_path)
@@ -191,6 +219,16 @@ impl Panel {
             }
             PanelType::Diff => "Diff",
             PanelType::Project => "Project",
+            PanelType::FilePreview => {
+                if let Some(ref f) = self.markdown_file {
+                    if let Some(name) = std::path::Path::new(f).file_name() {
+                        if let Some(s) = name.to_str() {
+                            return s;
+                        }
+                    }
+                }
+                "Preview"
+            }
         }
     }
 }

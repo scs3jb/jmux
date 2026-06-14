@@ -60,7 +60,10 @@ _cmux_send() {
 _cmux_json() {
   local method="$1"
   shift
-  local params="${1:-{}}"
+  # NB: do not use ${1:-{}} — bash treats the inner `}` as the closing brace of
+  # the expansion and appends a stray `}`, corrupting every params object.
+  local params="${1:-}"
+  [[ -z "$params" ]] && params="{}"
   _cmux_send "{\"id\":\"cli\",\"method\":\"$method\",\"params\":$params}"
 }
 
@@ -289,6 +292,7 @@ Workspaces
   new-workspace [-n name] [dir]
                              Create a named workspace
   new-browser [url]          Create a browser workspace
+  open <path-or-url>...       Open files (viewer by type), dirs (new workspace), URLs (browser)
   diff [path]                Open a git diff viewer workspace (default: $PWD)
   project [path]             Open a project-structure visualizer (default: $PWD)
   select, sel <id|index>     Select a workspace
@@ -441,6 +445,31 @@ case "$command" in
     # Open a project-structure visualizer workspace (defaults to $PWD).
     proj_dir="${1:-$PWD}"
     _cmux_json "workspace.new_project" "{\"directory\":\"$proj_dir\"}"
+    ;;
+  open)
+    # Open paths/URLs: URL → browser split, directory → new workspace,
+    # file → file.open (markdown → markdown viewer, else → file preview).
+    if [[ $# -eq 0 ]]; then
+      echo "usage: cmux open <path-or-url>..." >&2; exit 1
+    fi
+    open_files=()
+    for t in "$@"; do
+      if [[ "$t" =~ ^https?:// ]]; then
+        _cmux_json "browser.open_split" "{\"url\":\"$t\"}"
+      elif [[ -d "$t" ]]; then
+        abs=$(realpath "$t" 2>/dev/null || echo "$t")
+        _cmux_json "workspace.new" "{\"directory\":\"$abs\"}"
+      elif [[ -e "$t" ]]; then
+        abs=$(realpath "$t" 2>/dev/null || echo "$t")
+        open_files+=("$abs")
+      else
+        echo "cmux open: not found: $t" >&2
+      fi
+    done
+    if [[ ${#open_files[@]} -gt 0 ]]; then
+      json_paths=$(printf '"%s",' "${open_files[@]}"); json_paths="[${json_paths%,}]"
+      _cmux_json "file.open" "{\"paths\":$json_paths}"
+    fi
     ;;
   group)
     sub="${1:-list}"; shift || true

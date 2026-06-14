@@ -896,6 +896,7 @@ fn restore_session(state: &Rc<AppState>) -> Vec<Uuid> {
                     "browser" | "markdown" => continue, // skip browser panels when webkit disabled
                     "diff" => crate::model::PanelType::Diff,
                     "project" => crate::model::PanelType::Project,
+                    "file_preview" => crate::model::PanelType::FilePreview,
                     _ => crate::model::PanelType::Terminal,
                 };
                 let panel = crate::model::panel::Panel {

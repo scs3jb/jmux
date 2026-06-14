@@ -66,6 +66,7 @@ cargo build --release --no-default-features --features cmux/link-ghostty
 - **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, session persistence, and `cmux group` CLI / `workspace.group.*` socket commands
 - **Diff viewer** — `cmux diff [path]` opens a git diff CodeView panel (colored add/remove/hunk lines, working-tree/staged toggle, reload); plain-GTK so it works without WebKit
 - **Project visualizer** — `cmux project [path]` opens a structure pane: bounded directory tree (skips .git/node_modules/target/…) plus a file-type/size summary; plain-GTK, no WebKit
+- **`cmux open <path-or-url>...`** — opens files in a viewer (markdown → markdown panel, else → file-preview panel), directories as new workspaces, and URLs in a browser split (`file.open` socket method)
 - **Welcome screen** — first-launch getting-started tips
 
 ## Architecture

@@ -375,6 +375,7 @@ fn build_tab_button(
             PanelType::Markdown => "document-open-symbolic",
             PanelType::Diff => "media-flash-symbolic",
             PanelType::Project => "view-list-symbolic",
+            PanelType::FilePreview => "text-x-generic-symbolic",
             _ => "globe-symbolic",
         };
         let img = gtk4::Image::from_icon_name(icon_name);

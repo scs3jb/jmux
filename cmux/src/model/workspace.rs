@@ -221,6 +221,7 @@ impl Workspace {
             PanelType::Markdown => Panel::new_markdown(""),
             PanelType::Diff => Panel::new_diff(None),
             PanelType::Project => Panel::new_project(None),
+            PanelType::FilePreview => Panel::new_file_preview(""),
         };
         let new_id = new_panel.id;
         self.panels.insert(new_id, new_panel);

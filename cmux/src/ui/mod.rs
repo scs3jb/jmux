@@ -6,6 +6,7 @@ pub mod file_explorer;
 pub mod browser_panel;
 pub mod command_palette;
 pub mod diff_panel;
+pub mod file_preview_panel;
 #[cfg(feature = "webkit")]
 pub mod markdown_panel;
 pub mod notifications_panel;

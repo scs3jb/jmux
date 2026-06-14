@@ -81,6 +81,12 @@ pub fn create_panel_widget(
             panel.directory.as_deref(),
             is_attention_source,
         ),
+        // File preview (plain GTK).
+        PanelType::FilePreview => super::file_preview_panel::create_file_preview_widget(
+            panel.id,
+            panel.markdown_file.as_deref(),
+            is_attention_source,
+        ),
     }
 }
 
