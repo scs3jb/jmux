@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::app::{lock_or_recover, SharedState};
-use crate::model::panel::Panel;
+use crate::model::panel::{LayoutNode, Panel, SplitOrientation};
 
 use super::helpers::optional_uuid;
 use super::Response;
@@ -101,6 +101,15 @@ pub(super) fn handle_notes_open(
         Err(e) => return e,
     };
 
+    // Layout: split by default (notes alongside the terminal). `direction`
+    // controls orientation; "tab" opens it as a tab instead.
+    let split_orientation = match params.get("direction").and_then(|v| v.as_str()) {
+        Some("tab") => None,
+        Some("down") | Some("up") | Some("vertical") => Some(SplitOrientation::Vertical),
+        // right/left/horizontal, or unspecified → side-by-side split.
+        _ => Some(SplitOrientation::Horizontal),
+    };
+
     let panel = Panel::new_notes(&file);
     let panel_id = panel.id;
     {
@@ -111,11 +120,29 @@ pub(super) fn handle_notes_open(
             return Response::error(id, "not_found", "Workspace not found");
         };
         ws.panels.insert(panel_id, panel);
-        let target = ws
-            .focused_panel_id
-            .or_else(|| ws.layout.all_panel_ids().into_iter().next());
-        if let Some(target) = target {
-            ws.layout.add_panel_to_pane(target, panel_id);
+        let focused = ws.focused_panel_id;
+        match (split_orientation, focused) {
+            (Some(orientation), Some(focused)) => {
+                if let Some(pane) = ws.layout.find_pane_with_panel(focused) {
+                    let old = std::mem::replace(
+                        pane,
+                        LayoutNode::Pane {
+                            panel_ids: vec![],
+                            selected_panel_id: None,
+                        },
+                    );
+                    *pane = old.split(orientation, panel_id);
+                } else {
+                    ws.layout.add_panel_to_pane(focused, panel_id);
+                }
+            }
+            _ => {
+                // Tab mode, or no focused pane: add as a tab.
+                let target = focused.or_else(|| ws.layout.all_panel_ids().into_iter().next());
+                if let Some(target) = target {
+                    ws.layout.add_panel_to_pane(target, panel_id);
+                }
+            }
         }
         ws.previous_focused_panel_id = ws.focused_panel_id;
         ws.focused_panel_id = Some(panel_id);

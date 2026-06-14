@@ -567,22 +567,13 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
             lock_or_recover(&state.shared.tab_manager).add_workspace(ws);
         }
         "workspace.new_notes" => {
-            // Open notes as a tab in the current workspace (consistent with open).
+            // Open notes as a split beside the current pane (consistent with open).
             let mut tm = lock_or_recover(&state.shared.tab_manager);
             if let Some(ws) = tm.selected_mut() {
                 let panel = crate::model::Panel::new_notes(
                     &crate::ui::notes_panel::default_notes_path(),
                 );
-                let pid = panel.id;
-                ws.panels.insert(pid, panel);
-                let target = ws
-                    .focused_panel_id
-                    .or_else(|| ws.layout.all_panel_ids().into_iter().next());
-                if let Some(t) = target {
-                    ws.layout.add_panel_to_pane(t, pid);
-                }
-                ws.previous_focused_panel_id = ws.focused_panel_id;
-                ws.focused_panel_id = Some(pid);
+                ws.insert_panel(panel, SplitOrientation::Horizontal);
             }
         }
         "pane.split_horizontal" => {

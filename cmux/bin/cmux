@@ -351,7 +351,7 @@ Workspaces
   open <path-or-url>...       Open files (viewer by type), dirs (new workspace), URLs (browser)
   diff [--staged|--branch <ref>] [path]   Git diff viewer (working tree by default)
   project [path]             Open a project-structure visualizer (default: $PWD)
-  notes [file]               Open an editable notes scratchpad
+  notes [--tab|--down] [file]   Open an editable notes scratchpad (splits beside terminal)
   select, sel <id|index>     Select a workspace
   current                    Show the current workspace
   rename <name>              Rename the current workspace
@@ -518,13 +518,24 @@ case "$command" in
     _cmux_json "workspace.new_project" "{\"directory\":\"$proj_dir\"}"
     ;;
   notes)
-    # Open an editable notes scratchpad as a tab in the current workspace.
-    if [[ $# -gt 0 ]]; then
-      nf=$(realpath -m "$1" 2>/dev/null || echo "$1")
-      _cmux_json "notes.open" "{\"file\":\"$nf\"}"
-    else
-      _cmux_json "notes.open" "{}"
+    # Open an editable notes scratchpad in the current workspace.
+    # Splits beside the terminal by default; --tab / --down / --right to choose.
+    notes_dir="right"; notes_file=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --tab) notes_dir="tab"; shift ;;
+        --down|--vertical) notes_dir="down"; shift ;;
+        --right|--horizontal) notes_dir="right"; shift ;;
+        *) notes_file="$1"; shift ;;
+      esac
+    done
+    notes_params="{\"direction\":\"$notes_dir\""
+    if [[ -n "$notes_file" ]]; then
+      nf=$(realpath -m "$notes_file" 2>/dev/null || echo "$notes_file")
+      notes_params="${notes_params},\"file\":\"$nf\""
     fi
+    notes_params="${notes_params}}"
+    _cmux_json "notes.open" "$notes_params"
     ;;
   open)
     # Open paths/URLs: URL → browser split, directory → new workspace,
