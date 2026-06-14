@@ -63,6 +63,23 @@ impl AppState {
             return surface.clone();
         }
 
+        // Guard against malformed launch commands: a command that is blank or
+        // contains control characters (e.g. a stray "\u{1}") would make
+        // ghostty's `/bin/sh -c <cmd>` fail with "command not found" and show a
+        // broken pane. Fall back to the default shell and warn so the source is
+        // visible in logs if it recurs.
+        let command = match command {
+            Some(c) if c.trim().is_empty() || c.chars().any(|ch| ch.is_control()) => {
+                tracing::warn!(
+                    %panel_id,
+                    raw = ?c,
+                    "Ignoring malformed terminal command (blank/control chars); using default shell"
+                );
+                None
+            }
+            other => other,
+        };
+
         let gl_surface = ghostty_gtk::surface::GhosttyGlSurface::new();
         gl_surface.set_hexpand(true);
         gl_surface.set_vexpand(true);
