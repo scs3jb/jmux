@@ -312,13 +312,27 @@ fn setup_row_drag_drop(row: &gtk4::ListBoxRow, index: usize, state: &Rc<AppState
             let Ok(source_str) = value.get::<String>() else {
                 return false;
             };
+            let mut tm = lock_or_recover(&state.shared.tab_manager);
+            // A group header drag carries "group:<uuid>" — move the whole group
+            // to sit before the workspace under the drop.
+            if let Some(gid) = source_str
+                .strip_prefix("group:")
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                let target_ws_id = tm.get(target_index).map(|w| w.id);
+                let moved = tm.move_group_before(gid, target_ws_id);
+                drop(tm);
+                if moved {
+                    state.shared.notify_ui_refresh();
+                }
+                return moved;
+            }
             let Ok(source_index) = source_str.parse::<usize>() else {
                 return false;
             };
             if source_index == target_index {
                 return false;
             }
-            let mut tm = lock_or_recover(&state.shared.tab_manager);
             tm.move_workspace(source_index, target_index);
             drop(tm);
             state.shared.notify_ui_refresh();
@@ -1106,6 +1120,63 @@ fn create_group_header_row(
         ag.add_action(&delete);
     }
     row.insert_action_group("group", Some(&ag));
+
+    // Drag source — a group header carries "group:<uuid>" so it can be dropped
+    // on a workspace row or another group header to reorder the whole group.
+    {
+        let drag_source = gtk4::DragSource::new();
+        drag_source.set_actions(gdk4::DragAction::MOVE);
+        let payload = format!("group:{group_id}");
+        drag_source.connect_prepare(move |_s, _x, _y| {
+            Some(gdk4::ContentProvider::for_value(&payload.to_value()))
+        });
+        row.add_controller(drag_source);
+    }
+
+    // Drop target — accept a group (reorder before this group) or a workspace
+    // (add it to this group).
+    {
+        let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gdk4::DragAction::MOVE);
+        let state = state.clone();
+        drop_target.connect_drop(move |_t, value, _x, _y| {
+            let Ok(s) = value.get::<String>() else {
+                return false;
+            };
+            let mut tm = lock_or_recover(&state.shared.tab_manager);
+            // The workspace this group is anchored at (its first member).
+            let first_member = tm
+                .iter()
+                .find(|w| w.group_id == Some(group_id))
+                .map(|w| w.id);
+            if let Some(gid) = s
+                .strip_prefix("group:")
+                .and_then(|x| uuid::Uuid::parse_str(x).ok())
+            {
+                if gid == group_id {
+                    return false;
+                }
+                let moved = tm.move_group_before(gid, first_member);
+                drop(tm);
+                if moved {
+                    state.shared.notify_ui_refresh();
+                }
+                return moved;
+            }
+            // Workspace index payload → add that workspace to this group.
+            if let Ok(idx) = s.parse::<usize>() {
+                if let Some(ws_id) = tm.get(idx).map(|w| w.id) {
+                    let ok = tm.assign_to_group(ws_id, Some(group_id));
+                    drop(tm);
+                    if ok {
+                        state.shared.notify_ui_refresh();
+                    }
+                    return ok;
+                }
+            }
+            false
+        });
+        row.add_controller(drop_target);
+    }
 
     row
 }

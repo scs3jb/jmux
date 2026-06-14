@@ -534,6 +534,42 @@ impl TabManager {
         true
     }
 
+    /// Move a whole group (all its member workspaces, preserving their order)
+    /// so the block sits immediately before `target_ws_id` (or at the end when
+    /// `target_ws_id` is `None` or not found). Returns true if the group exists
+    /// and has members.
+    pub fn move_group_before(&mut self, group_id: Uuid, target_ws_id: Option<Uuid>) -> bool {
+        if self.group(group_id).is_none() {
+            return false;
+        }
+        let selected_id = self.selected_id();
+        // Extract members in their current relative order.
+        let mut members = Vec::new();
+        let mut i = 0;
+        while i < self.workspaces.len() {
+            if self.workspaces[i].group_id == Some(group_id) {
+                members.push(self.workspaces.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        if members.is_empty() {
+            return false;
+        }
+        // Where to re-insert (in the post-removal indexing).
+        let insert_at = target_ws_id
+            .and_then(|tid| self.workspaces.iter().position(|w| w.id == tid))
+            .unwrap_or(self.workspaces.len());
+        for (offset, m) in members.into_iter().enumerate() {
+            self.workspaces.insert(insert_at + offset, m);
+        }
+        // Restore selection by id.
+        if let Some(sid) = selected_id {
+            self.selected_index = self.workspaces.iter().position(|w| w.id == sid);
+        }
+        true
+    }
+
     /// Sum of unread counts across a group's member workspaces.
     pub fn group_unread_count(&self, group_id: Uuid) -> u32 {
         self.workspaces
@@ -867,6 +903,24 @@ mod tests {
         assert_eq!(tm.set_group_collapsed(gid, Some(true)), Some(true));
         assert!(tm.set_group_color(gid, Some("blue".into())));
         assert_eq!(tm.group(gid).unwrap().color.as_deref(), Some("blue"));
+    }
+
+    #[test]
+    fn test_move_group_before_relocates_block() {
+        let mut tm = TabManager::empty();
+        let a = tm.add_workspace(Workspace::new()); // ungrouped
+        let g1 = tm.add_workspace(Workspace::new());
+        let g2 = tm.add_workspace(Workspace::new());
+        let b = tm.add_workspace(Workspace::new()); // ungrouped
+        let grp = tm.create_group("G", None);
+        tm.assign_to_group(g1, Some(grp));
+        tm.assign_to_group(g2, Some(grp));
+        // Order now: a, g1, g2, b. Move the group before `a`.
+        assert!(tm.move_group_before(grp, Some(a)));
+        let order: Vec<_> = tm.iter().map(|w| w.id).collect();
+        assert_eq!(order, vec![g1, g2, a, b]);
+        // Members stayed contiguous and in order.
+        assert_eq!(tm.workspace(g1).unwrap().group_id, Some(grp));
     }
 
     #[test]
