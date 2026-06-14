@@ -324,6 +324,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         // Markdown commands
         "markdown.open" => markdown::handle_markdown_open(id, &req.params, state),
         "file.open" => file::handle_file_open(id, &req.params, state),
+        "notes.open" => file::handle_notes_open(id, &req.params, state),
 
         // Workspace file browsing
         "workspace.files" => workspace::handle_workspace_files(id, &req.params, state),

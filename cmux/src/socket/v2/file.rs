@@ -82,3 +82,48 @@ pub(super) fn handle_file_open(id: Value, params: &Value, state: &Arc<SharedStat
         serde_json::json!({ "panel_ids": opened, "count": opened.len() }),
     )
 }
+
+/// `notes.open` — open an editable notes scratchpad as a tab in the current
+/// (or specified) workspace, mirroring how `file.open` / `markdown.open` work.
+pub(super) fn handle_notes_open(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let file = params
+        .get("file")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(crate::ui::notes_panel::default_notes_path);
+    let workspace_id = match optional_uuid(&id, params, "workspace_id") {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+
+    let panel = Panel::new_notes(&file);
+    let panel_id = panel.id;
+    {
+        let mut tm = lock_or_recover(&state.tab_manager);
+        let ws_id =
+            workspace_id.unwrap_or_else(|| tm.selected().map(|ws| ws.id).unwrap_or_default());
+        let Some(ws) = tm.workspace_mut(ws_id) else {
+            return Response::error(id, "not_found", "Workspace not found");
+        };
+        ws.panels.insert(panel_id, panel);
+        let target = ws
+            .focused_panel_id
+            .or_else(|| ws.layout.all_panel_ids().into_iter().next());
+        if let Some(target) = target {
+            ws.layout.add_panel_to_pane(target, panel_id);
+        }
+        ws.previous_focused_panel_id = ws.focused_panel_id;
+        ws.focused_panel_id = Some(panel_id);
+    }
+    state.notify_ui_refresh();
+
+    Response::success(
+        id,
+        serde_json::json!({ "panel_id": panel_id.to_string(), "file": file }),
+    )
+}

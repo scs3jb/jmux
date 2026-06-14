@@ -518,12 +518,12 @@ case "$command" in
     _cmux_json "workspace.new_project" "{\"directory\":\"$proj_dir\"}"
     ;;
   notes)
-    # Open an editable notes scratchpad (optional file path).
+    # Open an editable notes scratchpad as a tab in the current workspace.
     if [[ $# -gt 0 ]]; then
       nf=$(realpath -m "$1" 2>/dev/null || echo "$1")
-      _cmux_json "workspace.new_notes" "{\"file\":\"$nf\"}"
+      _cmux_json "notes.open" "{\"file\":\"$nf\"}"
     else
-      _cmux_json "workspace.new_notes" "{}"
+      _cmux_json "notes.open" "{}"
     fi
     ;;
   open)

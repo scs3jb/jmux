@@ -215,7 +215,7 @@ fn build_actions(state: &Rc<AppState>) -> Rc<Vec<PaletteAction>> {
         cmd("workspace.new_browser", "New Browser Workspace"),
         cmd("workspace.new_diff", "New Diff Workspace"),
         cmd("workspace.new_project", "New Project Visualizer"),
-        cmd("workspace.new_notes", "New Notes Scratchpad"),
+        cmd("workspace.new_notes", "Open Notes Scratchpad"),
         cmd("pane.split_horizontal", "Split Horizontal"),
         cmd("pane.split_vertical", "Split Vertical"),
         cmd("pane.close", "Close Pane"),
@@ -567,17 +567,23 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
             lock_or_recover(&state.shared.tab_manager).add_workspace(ws);
         }
         "workspace.new_notes" => {
-            let mut ws = Workspace::new();
-            let pid = ws
-                .focused_panel_id
-                .or_else(|| ws.panels.keys().next().copied());
-            if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
-                panel.panel_type = PanelType::Notes;
-                panel.command = None;
-                panel.markdown_file = Some(crate::ui::notes_panel::default_notes_path());
-                panel.title = Some("Notes".to_string());
+            // Open notes as a tab in the current workspace (consistent with open).
+            let mut tm = lock_or_recover(&state.shared.tab_manager);
+            if let Some(ws) = tm.selected_mut() {
+                let panel = crate::model::Panel::new_notes(
+                    &crate::ui::notes_panel::default_notes_path(),
+                );
+                let pid = panel.id;
+                ws.panels.insert(pid, panel);
+                let target = ws
+                    .focused_panel_id
+                    .or_else(|| ws.layout.all_panel_ids().into_iter().next());
+                if let Some(t) = target {
+                    ws.layout.add_panel_to_pane(t, pid);
+                }
+                ws.previous_focused_panel_id = ws.focused_panel_id;
+                ws.focused_panel_id = Some(pid);
             }
-            lock_or_recover(&state.shared.tab_manager).add_workspace(ws);
         }
         "pane.split_horizontal" => {
             if let Some(ws) = lock_or_recover(&state.shared.tab_manager).selected_mut() {
