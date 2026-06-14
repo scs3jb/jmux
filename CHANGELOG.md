@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.62.0-alpha.15] - 2026-06-14
+
+Large parity push porting the remaining portable features from upstream cmux
+(through v0.64.15), plus several UX additions and fixes.
+
+### Added
+
+- **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-to-reorder (drag a group header to relocate the whole block; drop a workspace onto a group to join it), session persistence, and `cmux group …` CLI / `workspace.group.*` socket commands
+- **Diff viewer** — `cmux diff [path]` opens a git diff CodeView panel (colored add/remove/hunk lines, working-tree/staged toggle); plain-GTK, works without WebKit
+- **Project visualizer** — `cmux project [path]` opens a structure pane (bounded directory tree + file-type summary)
+- **Agent hibernation** — pause an idle agent (SIGSTOP its TTY's process group) to free CPU and resume on demand (SIGCONT); sidebar pause indicator, context menu, `cmux hibernate`/`wake`
+- **Move tabs** — drag a tab onto another pane to move it; drag onto a pane edge to split (right/left → horizontal, bottom/top → vertical); or onto a sidebar workspace row to move it to another workspace
+- **Reopen closed workspace** — `cmux reopen` / command palette restores the most recently closed workspace (layout + cwd, fresh shells)
+- **Workspace focus history** — back/forward through recently-focused workspaces (`cmux back`/`cmux forward`, palette, `workspace.focus_back`/`forward`)
+- **Fish shell integration** — full parity with the zsh/bash integration, injected via `XDG_DATA_DIRS` `vendor_conf.d`
+- **SSH agent forwarding** — `cmux ssh -A` / dialog toggle (`ssh -A`)
+- **Browser** — per-tab audio mute, focus mode, mouse back/forward side buttons (8/9), `react-grab` automation, configurable custom search engine, New Browser Workspace, omnibar first-click select-all
+- **Display placement** — `cmux window displays` lists monitors; `cmux window display <name|index>` moves the window to a monitor (fullscreen-on-monitor)
+- **Inline remote Reconnect** button on disconnected/errored remote workspace rows
+- **Configurable sidebar font size**; markdown viewer zoom controls
+- **App icon** shipped (`io.github.douglas.cmux_gtk`) and set as the window/taskbar icon
+- `cmux help` now prints a proper grouped help menu instead of raw JSON
+
+### Fixed
+
+- **Active-pane highlight/dim** now updates on focus change without a full rebuild — previously only the first-built pane stayed bright
+- **Starship bash prompt** no longer goes static — the integration restores the user command's exit code for chained `PROMPT_COMMAND` entries
+- **Startup deadlock** in the workspace hibernation context menu (re-locked `tab_manager` while the sidebar already held it)
+
 ## [0.62.0-alpha.11] - 2026-03-28
 
 ### Fixed
