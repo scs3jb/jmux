@@ -290,6 +290,7 @@ Workspaces
                              Create a named workspace
   new-browser [url]          Create a browser workspace
   diff [path]                Open a git diff viewer workspace (default: $PWD)
+  project [path]             Open a project-structure visualizer (default: $PWD)
   select, sel <id|index>     Select a workspace
   current                    Show the current workspace
   rename <name>              Rename the current workspace
@@ -424,6 +425,11 @@ case "$command" in
     # Open a git diff viewer workspace for a directory (defaults to $PWD).
     diff_dir="${1:-$PWD}"
     _cmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\"}"
+    ;;
+  project)
+    # Open a project-structure visualizer workspace (defaults to $PWD).
+    proj_dir="${1:-$PWD}"
+    _cmux_json "workspace.new_project" "{\"directory\":\"$proj_dir\"}"
     ;;
   group)
     sub="${1:-list}"; shift || true

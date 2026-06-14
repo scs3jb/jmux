@@ -81,6 +81,17 @@ pub(super) fn handle_workspace_new_diff(
     create_workspace(id, &p, state, false)
 }
 
+/// Create a workspace whose initial panel is a project-structure visualizer.
+pub(super) fn handle_workspace_new_project(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let mut p = params.clone();
+    p["kind"] = serde_json::json!("project");
+    create_workspace(id, &p, state, false)
+}
+
 pub(super) fn handle_workspace_create(
     id: Value,
     params: &Value,
@@ -246,6 +257,21 @@ pub(super) fn create_workspace(
             panel.command = None;
             panel.directory = Some(diff_dir);
             panel.title = Some("Diff".to_string());
+        }
+    }
+
+    // If a project workspace is requested, convert the initial panel to a
+    // project-structure visualizer rooted at the workspace directory.
+    if params.get("kind").and_then(|v| v.as_str()) == Some("project") {
+        let proj_dir = ws.current_directory.clone();
+        let pid = ws
+            .focused_panel_id
+            .or_else(|| ws.panels.keys().next().copied());
+        if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
+            panel.panel_type = crate::model::PanelType::Project;
+            panel.command = None;
+            panel.directory = Some(proj_dir);
+            panel.title = Some("Project".to_string());
         }
     }
 

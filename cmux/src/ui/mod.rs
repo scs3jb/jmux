@@ -10,6 +10,7 @@ pub mod diff_panel;
 pub mod markdown_panel;
 pub mod notifications_panel;
 pub mod omnibar;
+pub mod project_panel;
 pub mod search_overlay;
 pub mod settings;
 pub mod sidebar;

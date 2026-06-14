@@ -75,6 +75,12 @@ pub fn create_panel_widget(
             panel.directory.as_deref(),
             is_attention_source,
         ),
+        // Project visualizer is plain GTK too.
+        PanelType::Project => super::project_panel::create_project_widget(
+            panel.id,
+            panel.directory.as_deref(),
+            is_attention_source,
+        ),
     }
 }
 

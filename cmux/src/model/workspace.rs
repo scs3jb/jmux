@@ -220,6 +220,7 @@ impl Workspace {
             PanelType::Browser => Panel::new_browser(),
             PanelType::Markdown => Panel::new_markdown(""),
             PanelType::Diff => Panel::new_diff(None),
+            PanelType::Project => Panel::new_project(None),
         };
         let new_id = new_panel.id;
         self.panels.insert(new_id, new_panel);
