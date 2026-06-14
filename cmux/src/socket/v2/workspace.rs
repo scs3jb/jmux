@@ -569,6 +569,63 @@ pub(super) fn handle_workspace_focus_forward(id: Value, state: &Arc<SharedState>
 }
 
 // -----------------------------------------------------------------------
+// workspace.hibernate / workspace.wake
+// -----------------------------------------------------------------------
+
+/// Resolve the focused panel of the target workspace (param) or the selected one.
+fn resolve_focused_panel(params: &Value, state: &Arc<SharedState>) -> Option<Uuid> {
+    let tm = lock_or_recover(&state.tab_manager);
+    let ws = match parse_workspace_param(params) {
+        Ok(Some(wid)) => tm.workspace(wid),
+        _ => tm.selected(),
+    };
+    ws.and_then(|w| w.focused_panel_id)
+}
+
+pub(super) fn handle_workspace_hibernate(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let toggle = params
+        .get("toggle")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let Some(pid) = resolve_focused_panel(params, state) else {
+        return Response::error(id, "not_found", "No focused panel to hibernate");
+    };
+    let now_hibernated = if toggle && state.is_hibernated(&pid) {
+        state.wake_panel(pid);
+        false
+    } else {
+        state.hibernate_panel(pid)
+    };
+    state.notify_ui_refresh();
+    if now_hibernated || toggle {
+        Response::success(id, serde_json::json!({"hibernated": now_hibernated}))
+    } else {
+        Response::error(
+            id,
+            "failed",
+            "Could not locate the agent process to hibernate",
+        )
+    }
+}
+
+pub(super) fn handle_workspace_wake(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let Some(pid) = resolve_focused_panel(params, state) else {
+        return Response::error(id, "not_found", "No focused panel to wake");
+    };
+    state.wake_panel(pid);
+    state.notify_ui_refresh();
+    Response::success(id, serde_json::json!({"hibernated": false}))
+}
+
+// -----------------------------------------------------------------------
 // workspace.latest_unread
 // -----------------------------------------------------------------------
 

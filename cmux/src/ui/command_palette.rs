@@ -234,6 +234,7 @@ fn build_actions(state: &Rc<AppState>) -> Rc<Vec<PaletteAction>> {
         cmd("workspace.last", "Last Workspace"),
         cmd("workspace.focus_back", "Back (Recently Focused)"),
         cmd("workspace.focus_forward", "Forward (Recently Focused)"),
+        cmd("workspace.hibernate", "Hibernate Agent (toggle)"),
         cmd("workspace.latest_unread", "Jump to Latest Unread"),
         cmd("workspace.rename", "Rename Workspace"),
         cmd("workspace.pin", "Pin/Unpin Workspace"),
@@ -675,6 +676,19 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
         }
         "workspace.focus_forward" => {
             lock_or_recover(&state.shared.tab_manager).focus_forward();
+        }
+        "workspace.hibernate" => {
+            let pid = {
+                let tm = lock_or_recover(&state.shared.tab_manager);
+                tm.selected().and_then(|ws| ws.focused_panel_id)
+            };
+            if let Some(pid) = pid {
+                if state.shared.is_hibernated(&pid) {
+                    state.shared.wake_panel(pid);
+                } else {
+                    state.shared.hibernate_panel(pid);
+                }
+            }
         }
         "workspace.latest_unread" => {
             let mut tm = lock_or_recover(&state.shared.tab_manager);

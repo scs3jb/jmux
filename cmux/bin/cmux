@@ -296,6 +296,8 @@ Workspaces
   close [id]                 Close a workspace
   next | prev | last         Switch workspace
   back | forward             Navigate recently-focused workspaces
+  hibernate                  Pause the focused agent (SIGSTOP) / toggle
+  wake                       Resume the focused agent (SIGCONT)
 
 Groups
   group create <name>        Create a sidebar group
@@ -467,6 +469,12 @@ case "$command" in
     ;;
   forward)
     _cmux_send "focus_forward"
+    ;;
+  hibernate)
+    _cmux_send "hibernate"
+    ;;
+  wake)
+    _cmux_send "wake"
     ;;
   rename)
     _cmux_send "rename \"${*}\""

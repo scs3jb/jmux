@@ -442,6 +442,19 @@ fn create_workspace_row(
     title_label.add_css_class("workspace-title");
     header.append(&title_label);
 
+    // Hibernation indicator — shown when the focused pane's agent is paused.
+    if workspace
+        .focused_panel_id
+        .map(|pid| state.shared.is_hibernated(&pid))
+        .unwrap_or(false)
+    {
+        let hib_icon = gtk4::Image::from_icon_name("media-playback-pause-symbolic");
+        hib_icon.set_pixel_size(12);
+        hib_icon.add_css_class("dim-label");
+        hib_icon.set_tooltip_text(Some("Agent hibernated (paused)"));
+        header.append(&hib_icon);
+    }
+
     if workspace.unread_count > 0 {
         let badge = gtk4::Label::new(Some(&workspace.unread_count.to_string()));
         badge.add_css_class("badge");
@@ -1291,6 +1304,25 @@ fn setup_row_context_menu(
         menu.append_submenu(Some("Group"), &group_menu);
     }
 
+    // Agent hibernation toggle
+    {
+        let focused_hibernated = lock_or_recover(&state.shared.tab_manager)
+            .workspace(workspace_id)
+            .and_then(|ws| ws.focused_panel_id)
+            .map(|pid| state.shared.is_hibernated(&pid))
+            .unwrap_or(false);
+        let hib_menu = gtk4::gio::Menu::new();
+        hib_menu.append(
+            Some(if focused_hibernated {
+                "Wake Agent"
+            } else {
+                "Hibernate Agent"
+            }),
+            Some(&format!("sidebar.hibernate.{index}")),
+        );
+        menu.append_section(None, &hib_menu);
+    }
+
     // Close section
     let close_menu = gtk4::gio::Menu::new();
     close_menu.append(Some("Close"), Some(&format!("sidebar.close.{index}")));
@@ -1737,6 +1769,26 @@ fn setup_row_context_menu(
             state.shared.notify_ui_refresh();
         });
         action_group.add_action(&remove_action);
+    }
+
+    // Hibernate / wake the workspace's focused agent.
+    {
+        let hibernate_action = gtk4::gio::SimpleAction::new(&format!("hibernate.{index}"), None);
+        let state = state.clone();
+        hibernate_action.connect_activate(move |_, _| {
+            let pid = lock_or_recover(&state.shared.tab_manager)
+                .workspace(workspace_id)
+                .and_then(|ws| ws.focused_panel_id);
+            if let Some(pid) = pid {
+                if state.shared.is_hibernated(&pid) {
+                    state.shared.wake_panel(pid);
+                } else {
+                    state.shared.hibernate_panel(pid);
+                }
+                state.shared.notify_ui_refresh();
+            }
+        });
+        action_group.add_action(&hibernate_action);
     }
 
     row.insert_action_group("sidebar", Some(&action_group));

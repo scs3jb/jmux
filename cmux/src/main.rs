@@ -5,6 +5,7 @@ mod browser_import;
 #[cfg(feature = "webkit")]
 mod browser_profiles;
 mod ghostty_config;
+mod hibernate;
 mod model;
 mod notifications;
 mod port_scanner;

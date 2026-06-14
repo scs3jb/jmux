@@ -394,6 +394,8 @@ pub struct SharedState {
     ui_event_txs: Mutex<HashMap<Uuid, UnboundedSender<UiEvent>>>,
     /// Active remote SSH sessions keyed by workspace ID.
     pub remote_sessions: Mutex<HashMap<Uuid, crate::remote::session::SharedRemoteSession>>,
+    /// Panels whose agent process group is currently hibernated (SIGSTOP'd).
+    pub hibernated_panels: Mutex<HashSet<Uuid>>,
 }
 
 impl SharedState {
@@ -405,6 +407,46 @@ impl SharedState {
             window_sizes: Mutex::new(HashMap::new()),
             ui_event_txs: Mutex::new(HashMap::new()),
             remote_sessions: Mutex::new(HashMap::new()),
+            hibernated_panels: Mutex::new(HashSet::new()),
+        }
+    }
+
+    /// Whether a panel's agent is currently hibernated.
+    pub fn is_hibernated(&self, panel_id: &Uuid) -> bool {
+        lock_or_recover(&self.hibernated_panels).contains(panel_id)
+    }
+
+    /// Hibernate the agent running in `panel_id` (by its reported TTY).
+    /// Returns true if a process group was signalled.
+    pub fn hibernate_panel(&self, panel_id: Uuid) -> bool {
+        let tty = {
+            let tm = lock_or_recover(&self.tab_manager);
+            tm.find_workspace_with_panel(panel_id)
+                .and_then(|ws| ws.panel(panel_id))
+                .and_then(|p| p.tty_name.clone())
+        };
+        let Some(tty) = tty else { return false };
+        if crate::hibernate::hibernate(&tty) {
+            lock_or_recover(&self.hibernated_panels).insert(panel_id);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Resume the agent running in `panel_id`.
+    pub fn wake_panel(&self, panel_id: Uuid) -> bool {
+        let tty = {
+            let tm = lock_or_recover(&self.tab_manager);
+            tm.find_workspace_with_panel(panel_id)
+                .and_then(|ws| ws.panel(panel_id))
+                .and_then(|p| p.tty_name.clone())
+        };
+        // Always clear the flag; attempt SIGCONT if we have a tty.
+        lock_or_recover(&self.hibernated_panels).remove(&panel_id);
+        match tty {
+            Some(tty) => crate::hibernate::wake(&tty),
+            None => false,
         }
     }
 

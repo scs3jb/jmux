@@ -161,6 +161,8 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "workspace.last" => workspace::handle_workspace_last(id, state),
         "workspace.focus_back" => workspace::handle_workspace_focus_back(id, state),
         "workspace.focus_forward" => workspace::handle_workspace_focus_forward(id, state),
+        "workspace.hibernate" => workspace::handle_workspace_hibernate(id, &req.params, state),
+        "workspace.wake" => workspace::handle_workspace_wake(id, &req.params, state),
         "workspace.latest_unread" => workspace::handle_workspace_latest_unread(id, state),
         "workspace.close" => workspace::handle_workspace_close(id, &req.params, state),
         "workspace.set_status" => workspace::handle_workspace_set_status(id, &req.params, state),

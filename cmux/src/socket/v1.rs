@@ -277,6 +277,8 @@ pub fn dispatch(line: &str, state: &Arc<SharedState>) -> String {
         "last_workspace" | "workspace_last" | "last" => ("workspace.last", json!({})),
         "focus_back" | "back" => ("workspace.focus_back", json!({})),
         "focus_forward" | "forward" => ("workspace.focus_forward", json!({})),
+        "hibernate" => ("workspace.hibernate", json!({"toggle": true})),
+        "wake" => ("workspace.wake", json!({})),
         "latest_unread" => ("workspace.latest_unread", json!({})),
         "rename_workspace" | "workspace_rename" | "rename" => {
             let name = args.first().map(|s| s.as_str()).unwrap_or("");
