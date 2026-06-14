@@ -1375,20 +1375,13 @@ fn setup_row_context_menu(
         menu.append_submenu(Some("Group"), &group_menu);
     }
 
-    // Agent hibernation toggle
+    // Agent hibernation toggle. The label is static (a toggle) because this
+    // menu is built while `refresh_sidebar` already holds the tab_manager lock;
+    // re-locking it here would deadlock the non-reentrant std::sync::Mutex.
     {
-        let focused_hibernated = lock_or_recover(&state.shared.tab_manager)
-            .workspace(workspace_id)
-            .and_then(|ws| ws.focused_panel_id)
-            .map(|pid| state.shared.is_hibernated(&pid))
-            .unwrap_or(false);
         let hib_menu = gtk4::gio::Menu::new();
         hib_menu.append(
-            Some(if focused_hibernated {
-                "Wake Agent"
-            } else {
-                "Hibernate Agent"
-            }),
+            Some("Hibernate / Wake Agent"),
             Some(&format!("sidebar.hibernate.{index}")),
         );
         menu.append_section(None, &hib_menu);
