@@ -342,6 +342,12 @@ _cmux_prompt_command() {
 
   # Semantic: mark start of prompt
   _cmux_osc133_prompt_start
+
+  # Restore the user command's exit status. We are PREPENDED to
+  # PROMPT_COMMAND, so any later entry (e.g. Starship's starship_precmd) reads
+  # `$?`; without this they'd see the status of our own last command and the
+  # prompt's error indicator would go static.
+  return $exit_code
 }
 _cmux_last_pwd="$PWD"
 
