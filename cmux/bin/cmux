@@ -349,6 +349,11 @@ case "$command" in
       _cmux_json "workspace.new_browser" "{}"
     fi
     ;;
+  diff)
+    # Open a git diff viewer workspace for a directory (defaults to $PWD).
+    diff_dir="${1:-$PWD}"
+    _cmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\"}"
+    ;;
   group)
     sub="${1:-list}"; shift || true
     case "$sub" in

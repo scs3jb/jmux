@@ -58,6 +58,7 @@ cargo build --release --no-default-features --features cmux/link-ghostty
 - **Multi-window** — workspaces assignable across windows
 - **Workspace management** — pinning, custom colors, reorder, close-others/above/below
 - **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, session persistence, and `cmux group` CLI / `workspace.group.*` socket commands
+- **Diff viewer** — `cmux diff [path]` opens a git diff CodeView panel (colored add/remove/hunk lines, working-tree/staged toggle, reload); plain-GTK so it works without WebKit
 - **Welcome screen** — first-launch getting-started tips
 
 ## Architecture

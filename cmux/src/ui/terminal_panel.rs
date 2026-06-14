@@ -69,6 +69,12 @@ pub fn create_panel_widget(
             let label = gtk4::Label::new(Some("Browser support not compiled"));
             label.upcast()
         }
+        // Diff panels use a plain GTK TextView, so they work regardless of webkit.
+        PanelType::Diff => super::diff_panel::create_diff_widget(
+            panel.id,
+            panel.directory.as_deref(),
+            is_attention_source,
+        ),
     }
 }
 

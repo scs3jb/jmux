@@ -219,6 +219,7 @@ impl Workspace {
             PanelType::Terminal => Panel::new_terminal(),
             PanelType::Browser => Panel::new_browser(),
             PanelType::Markdown => Panel::new_markdown(""),
+            PanelType::Diff => Panel::new_diff(None),
         };
         let new_id = new_panel.id;
         self.panels.insert(new_id, new_panel);

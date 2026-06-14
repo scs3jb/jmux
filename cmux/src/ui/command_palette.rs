@@ -212,6 +212,7 @@ fn build_actions(state: &Rc<AppState>) -> Rc<Vec<PaletteAction>> {
     let mut actions = vec![
         cmd("workspace.new", "New Workspace"),
         cmd("workspace.new_browser", "New Browser Workspace"),
+        cmd("workspace.new_diff", "New Diff Workspace"),
         cmd("pane.split_horizontal", "Split Horizontal"),
         cmd("pane.split_vertical", "Split Vertical"),
         cmd("pane.close", "Close Pane"),
@@ -525,6 +526,20 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
             if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
                 panel.panel_type = PanelType::Browser;
                 panel.command = None;
+            }
+            lock_or_recover(&state.shared.tab_manager).add_workspace(ws);
+        }
+        "workspace.new_diff" => {
+            let mut ws = Workspace::new();
+            let dir = ws.current_directory.clone();
+            let pid = ws
+                .focused_panel_id
+                .or_else(|| ws.panels.keys().next().copied());
+            if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
+                panel.panel_type = PanelType::Diff;
+                panel.command = None;
+                panel.directory = Some(dir);
+                panel.title = Some("Diff".to_string());
             }
             lock_or_recover(&state.shared.tab_manager).add_workspace(ws);
         }

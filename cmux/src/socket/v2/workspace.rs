@@ -68,6 +68,19 @@ pub(super) fn handle_workspace_new_browser(
     create_workspace(id, &p, state, false)
 }
 
+/// Create a workspace whose initial panel is a git diff viewer.
+/// Accepts an optional `directory` param (the repo path; defaults to the
+/// caller-provided cwd).
+pub(super) fn handle_workspace_new_diff(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let mut p = params.clone();
+    p["kind"] = serde_json::json!("diff");
+    create_workspace(id, &p, state, false)
+}
+
 pub(super) fn handle_workspace_create(
     id: Value,
     params: &Value,
@@ -218,6 +231,21 @@ pub(super) fn create_workspace(
             panel.panel_type = crate::model::PanelType::Browser;
             panel.command = None;
             panel.browser_url = url;
+        }
+    }
+
+    // If a diff workspace is requested, convert the initial panel to a git
+    // diff viewer rooted at the workspace directory.
+    if params.get("kind").and_then(|v| v.as_str()) == Some("diff") {
+        let diff_dir = ws.current_directory.clone();
+        let pid = ws
+            .focused_panel_id
+            .or_else(|| ws.panels.keys().next().copied());
+        if let Some(panel) = pid.and_then(|pid| ws.panels.get_mut(&pid)) {
+            panel.panel_type = crate::model::PanelType::Diff;
+            panel.command = None;
+            panel.directory = Some(diff_dir);
+            panel.title = Some("Diff".to_string());
         }
     }
 

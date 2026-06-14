@@ -104,6 +104,7 @@ pub(super) fn handle_surface_current(id: Value, state: &Arc<SharedState>) -> Res
                 crate::model::PanelType::Terminal => "terminal",
                 crate::model::PanelType::Browser => "browser",
                 crate::model::PanelType::Markdown => "markdown",
+                crate::model::PanelType::Diff => "diff",
             }).unwrap_or("unknown"),
             "title": panel.map(|p| p.display_title()).unwrap_or("?"),
             "directory": panel.and_then(|p| p.directory.as_deref()),
@@ -559,6 +560,7 @@ pub(super) fn handle_surface_create(
         crate::model::PanelType::Terminal => crate::model::Panel::new_terminal(),
         crate::model::PanelType::Browser => crate::model::Panel::new_browser(),
         crate::model::PanelType::Markdown => crate::model::Panel::new_markdown(""),
+        crate::model::PanelType::Diff => crate::model::Panel::new_diff(None),
     };
     if panel_type == crate::model::PanelType::Browser {
         new_panel.browser_url = url;

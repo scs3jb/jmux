@@ -12,6 +12,9 @@ pub enum PanelType {
     Terminal,
     Browser,
     Markdown,
+    /// Git diff / code viewer. The `directory` field holds the repo path to
+    /// run `git diff` in.
+    Diff,
 }
 
 /// A panel within a workspace pane.
@@ -92,6 +95,28 @@ impl Panel {
         }
     }
 
+    /// Create a new diff panel that renders `git diff` for a directory.
+    pub fn new_diff(dir: Option<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            panel_type: PanelType::Diff,
+            title: Some("Diff".to_string()),
+            custom_title: None,
+            directory: dir,
+            is_pinned: false,
+            is_manually_unread: false,
+            git_branch: None,
+            listening_ports: Vec::new(),
+            tty_name: None,
+            browser_url: None,
+            markdown_file: None,
+            command: None,
+            pending_scrollback: None,
+            pending_zoom: None,
+            parent_panel_id: None,
+        }
+    }
+
     /// Create a new markdown panel for viewing a `.md` file.
     pub fn new_markdown(file_path: &str) -> Self {
         let title = std::path::Path::new(file_path)
@@ -139,6 +164,7 @@ impl Panel {
                 }
                 "Markdown"
             }
+            PanelType::Diff => "Diff",
         }
     }
 }
