@@ -93,6 +93,9 @@ fn create_terminal_widget(
     let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     container.set_hexpand(true);
     container.set_vexpand(true);
+    // Tag so focus changes can toggle the focused-panel border in place
+    // (see window::update_focus_visuals) without a full rebuild.
+    container.add_css_class("pane-container");
     if is_attention_source {
         container.add_css_class("attention-panel");
     }
@@ -130,16 +133,18 @@ fn create_terminal_widget(
     overlay.set_child(Some(&container));
 
     // Inactive pane overlay — semi-transparent darken when not focused.
-    // Only add for multi-pane layouts (single-pane is always focused).
-    if !is_focused {
-        let inactive_overlay = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        inactive_overlay.set_hexpand(true);
-        inactive_overlay.set_vexpand(true);
-        inactive_overlay.add_css_class("inactive-pane-overlay");
-        // The overlay must not intercept clicks — pass them through.
-        inactive_overlay.set_can_target(false);
-        overlay.add_overlay(&inactive_overlay);
-    }
+    // Always present (visibility toggled on focus change) so focus updates do
+    // not require a full content rebuild, which would churn the GLArea and
+    // swallow input. `refresh_metadata` flips its visibility via
+    // `update_focus_visuals`.
+    let inactive_overlay = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    inactive_overlay.set_hexpand(true);
+    inactive_overlay.set_vexpand(true);
+    inactive_overlay.add_css_class("inactive-pane-overlay");
+    // The overlay must not intercept clicks — pass them through.
+    inactive_overlay.set_can_target(false);
+    inactive_overlay.set_visible(!is_focused);
+    overlay.add_overlay(&inactive_overlay);
 
     // File drop: drop files onto the terminal to paste their paths
     let file_drop = gtk4::DropTarget::new(gdk4::FileList::static_type(), gdk4::DragAction::COPY);

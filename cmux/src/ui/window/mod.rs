@@ -407,8 +407,103 @@ fn refresh_ui(list_box: &gtk4::ListBox, content_box: &gtk4::Box, state: &Rc<AppS
 pub fn refresh_metadata(list_box: &gtk4::ListBox, content_box: &gtk4::Box, state: &Rc<AppState>) {
     tracing::debug!("refresh_metadata: start");
     sidebar::refresh_sidebar(list_box, state);
+    update_focus_visuals(content_box, state);
     update_window_title(content_box, state);
     tracing::debug!("refresh_metadata: done");
+}
+
+/// Re-apply focus-dependent visuals (split-region dim + per-pane inactive
+/// overlay) in place, without rebuilding the content layout.
+///
+/// The split-region opacity and the inactive-pane overlays are decided at build
+/// time from `focused_panel_id`; on a focus change we only run a metadata
+/// refresh (a full rebuild would churn the GLArea and swallow input), so this
+/// walks the existing widget tree and updates those visuals directly. Without
+/// it, the pane that was focused when the layout was built stays bright while
+/// the others stay dimmed regardless of which pane is actually active.
+fn update_focus_visuals(content_box: &gtk4::Box, state: &Rc<AppState>) {
+    let focused_str = {
+        let tm = lock_or_recover(&state.shared.tab_manager);
+        tm.selected()
+            .and_then(|ws| ws.focused_panel_id)
+            .map(|id| id.to_string())
+    };
+    let unfocused_opacity = state
+        .ghostty_ui_config
+        .borrow()
+        .unfocused_split_opacity
+        .map(|o| o.clamp(0.15, 1.0))
+        .filter(|&o| o < 1.0);
+
+    let root: gtk4::Widget = content_box.clone().upcast();
+    for_each_descendant(&root, &mut |w| {
+        // Split-region dim: bright when this region holds the focused pane.
+        if w.has_css_class("pane-region") {
+            let region_focused = focused_str
+                .as_deref()
+                .map(|fid| descendant_named(w, fid))
+                .unwrap_or(false);
+            let opacity = if region_focused {
+                1.0
+            } else {
+                unfocused_opacity.unwrap_or(1.0)
+            };
+            w.set_opacity(opacity);
+        }
+        // Per-pane inactive overlay: shown only when the pane is not focused.
+        if w.has_css_class("inactive-pane-overlay") {
+            if let Some(pid) = overlay_panel_id(w) {
+                let is_focused = focused_str.as_deref() == Some(pid.as_str());
+                w.set_visible(!is_focused);
+            }
+        }
+        // Per-pane focused border highlight.
+        if w.has_css_class("pane-container") {
+            let is_focused = focused_str.as_deref() == Some(w.widget_name().as_str());
+            if is_focused {
+                w.add_css_class("focused-panel");
+            } else {
+                w.remove_css_class("focused-panel");
+            }
+        }
+    });
+}
+
+/// Walk `widget` and all of its descendants, invoking `f` on each.
+fn for_each_descendant(widget: &gtk4::Widget, f: &mut dyn FnMut(&gtk4::Widget)) {
+    f(widget);
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        for_each_descendant(&c, f);
+        child = c.next_sibling();
+    }
+}
+
+/// True if `widget` or any descendant has the GTK widget-name `name`.
+fn descendant_named(widget: &gtk4::Widget, name: &str) -> bool {
+    if widget.widget_name() == name {
+        return true;
+    }
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        if descendant_named(&c, name) {
+            return true;
+        }
+        child = c.next_sibling();
+    }
+    false
+}
+
+/// For an `inactive-pane-overlay` widget, return the panel id it belongs to —
+/// the widget-name of the parent `GtkOverlay`'s main child (the pane container).
+fn overlay_panel_id(overlay_child: &gtk4::Widget) -> Option<String> {
+    let overlay = overlay_child.parent()?.downcast::<gtk4::Overlay>().ok()?;
+    let name = overlay.child()?.widget_name();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn update_window_title(content_box: &gtk4::Box, state: &Rc<AppState>) {

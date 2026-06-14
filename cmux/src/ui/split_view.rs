@@ -117,6 +117,9 @@ fn build_pane(
     }
 
     let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    // Marks a split-region container so focus changes can re-dim it without a
+    // full rebuild (see window::update_focus_visuals).
+    vbox.add_css_class("pane-region");
 
     // Tab bar — always shown (action buttons are always accessible)
     let tab_bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);

@@ -270,10 +270,79 @@ fi
 command="$1"
 shift
 
+_cmux_print_help() {
+  cat <<'EOF'
+cmux — CLI for a running cmux-gtk instance (talks over its Unix socket)
+
+Usage: cmux <command> [args...]
+
+Meta
+  help                       Show this help
+  ping                       Check the instance is responsive
+  tree                       Dump the full state tree (JSON)
+  capabilities               List supported socket methods (JSON)
+  identify                   Show instance info (JSON)
+
+Workspaces
+  list, ls                   List workspaces
+  new [dir]                  Create a workspace (optional starting directory)
+  new-workspace [-n name] [dir]
+                             Create a named workspace
+  new-browser [url]          Create a browser workspace
+  diff [path]                Open a git diff viewer workspace (default: $PWD)
+  select, sel <id|index>     Select a workspace
+  current                    Show the current workspace
+  rename <name>              Rename the current workspace
+  close [id]                 Close a workspace
+  next | prev | last         Switch workspace
+  back | forward             Navigate recently-focused workspaces
+
+Groups
+  group create <name>        Create a sidebar group
+  group list                 List groups (JSON)
+  group assign <grp|null> [ws]   Add a workspace to a group (null = ungroup)
+  group rename <grp> <name>  Rename a group
+  group collapse <grp>       Toggle a group collapsed/expanded
+  group color <grp> <color>  Set a group color ("" clears)
+  group delete <grp>         Delete a group (members are ungrouped)
+
+Panes / terminals
+  surfaces                   List panes/surfaces (JSON)
+  send <text>                Send text to the focused terminal
+  send-key <key> [mods...]   Send a key chord (e.g. send-key Enter, send-key c ctrl)
+  split [-h|-v]              Split the focused pane
+  read, read-screen          Read the focused terminal's visible text
+
+Browser
+  browser <action> [args]    Browser automation (navigate, click, eval, …)
+  navigate, nav <url>        Navigate the focused browser panel
+
+SSH
+  ssh [-A] [--no-focus] <user@host> [opts]
+                             Open a remote SSH workspace (-A forwards the agent)
+
+Windows
+  windows                    List windows
+  new-window                 Open a new window
+
+Misc
+  status / progress / log    Update sidebar metadata for the current workspace
+  notify <text>              Post a notification
+  notifications              List notifications (JSON)
+  markdown, md <file>        Open a markdown viewer
+  themes [filter]            List bundled Ghostty themes
+  settings                   Open the settings window
+  rc, remote-control <...>   Pass a raw V1 command through to the socket
+
+Environment
+  CMUX_SOCKET                Override the socket path (auto-detected otherwise)
+EOF
+}
+
 case "$command" in
   # ── Meta ──
-  help)
-    _cmux_send "help"
+  help|-h|--help)
+    _cmux_print_help
     ;;
   ping)
     _cmux_send "ping"
