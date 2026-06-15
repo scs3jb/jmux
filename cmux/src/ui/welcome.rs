@@ -36,7 +36,7 @@ pub fn build_welcome() -> gtk4::Widget {
     tips_box.set_margin_top(24);
 
     let tips = [
-        ("Ctrl+Shift+T", "New workspace"),
+        ("Ctrl+Shift+T", "New tab in the current pane"),
         ("Ctrl+Shift+D", "Split pane horizontally"),
         ("Ctrl+Shift+E", "Split pane vertically"),
         ("Ctrl+Shift+L", "Open browser panel"),

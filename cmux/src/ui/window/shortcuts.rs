@@ -9,7 +9,7 @@ use libadwaita as adw;
 
 use crate::app::{lock_or_recover, AppState};
 use crate::model::panel::SplitOrientation;
-use crate::model::{PanelType, Workspace};
+use crate::model::PanelType;
 use crate::ui::{notifications_panel, search_overlay};
 
 #[allow(clippy::too_many_arguments)]
@@ -477,18 +477,24 @@ pub(super) fn setup_shortcuts(
                 glib::Propagation::Stop
             }
             // Ctrl+Shift+T: New workspace
+            // Ctrl+Shift+T: New tab (terminal) in the current pane.
             (gdk4::Key::T, true, true) => {
-                let mut workspace = Workspace::new();
-                workspace.window_id = uuid::Uuid::parse_str(
-                    &window_weak
-                        .upgrade()
-                        .map(|w| w.widget_name().to_string())
-                        .unwrap_or_default(),
-                )
-                .ok();
-                let placement = crate::settings::load().new_workspace_placement;
-                lock_or_recover(&state.shared.tab_manager)
-                    .add_workspace_with_placement(workspace, placement);
+                {
+                    let mut tm = lock_or_recover(&state.shared.tab_manager);
+                    if let Some(ws) = tm.selected_mut() {
+                        let panel = crate::model::Panel::new_terminal();
+                        let new_id = panel.id;
+                        ws.panels.insert(new_id, panel);
+                        let target = ws
+                            .focused_panel_id
+                            .or_else(|| ws.layout.all_panel_ids().into_iter().next());
+                        if let Some(target) = target {
+                            ws.layout.add_panel_to_pane(target, new_id);
+                        }
+                        ws.previous_focused_panel_id = ws.focused_panel_id;
+                        ws.focused_panel_id = Some(new_id);
+                    }
+                }
                 super::refresh_ui(&list_box, &content_box, &state);
                 glib::Propagation::Stop
             }

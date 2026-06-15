@@ -134,7 +134,7 @@ All shortcuts are configurable via `~/.config/cmux/shortcuts.json`.
 
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+Shift+T | New workspace |
+| Ctrl+Shift+T | New tab in the current pane |
 | Ctrl+Shift+N | New window |
 | Ctrl+Shift+W | Close workspace |
 | Ctrl+Shift+Q | Close focused pane |
