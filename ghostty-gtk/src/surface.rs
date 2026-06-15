@@ -97,6 +97,15 @@ mod imp {
         pub(super) created_at: Cell<Option<std::time::Instant>>,
         /// Background color (r, g, b) to paint during the grace period.
         pub(super) initial_bg: Cell<(f32, f32, f32)>,
+        /// Backing storage for the C strings passed to `ghostty_surface_new`
+        /// via `ghostty_surface_config_s` (working_directory, command, env
+        /// vars). Ghostty may read these after `ghostty_surface_new` returns
+        /// (the command is spawned lazily), so they must outlive
+        /// `create_surface` — keep them alive for the surface's lifetime.
+        pub(super) config_cstrings: RefCell<Vec<std::ffi::CString>>,
+        /// Backing storage for the `ghostty_env_var_s` array referenced by
+        /// `config.env_vars` (same lifetime concern as `config_cstrings`).
+        pub(super) config_env_array: RefCell<Vec<ghostty_env_var_s>>,
     }
 
     #[glib::object_subclass]
@@ -361,6 +370,9 @@ impl GhosttyGlSurface {
             let wd_cstr = _working_directory.and_then(|wd| std::ffi::CString::new(wd).ok());
             config.working_directory = wd_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr());
 
+            if let Some(cmd) = _command {
+                tracing::info!(command = %cmd, len = cmd.len(), "Creating ghostty surface with command");
+            }
             let cmd_cstr = _command.and_then(|cmd| std::ffi::CString::new(cmd).ok());
             config.command = cmd_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr());
 
@@ -395,6 +407,28 @@ impl GhosttyGlSurface {
                 config.initial_width = (w as f64 * scale) as u32;
                 config.initial_height = (h as f64 * scale) as u32;
             }
+
+            // Keep the config C strings alive for the surface's lifetime.
+            // Ghostty spawns the command lazily (after this call returns), so
+            // these must not be dropped at the end of create_surface or the
+            // command/working-directory pointers dangle → garbage exec
+            // ("/bin/sh: $'\x85\x01': command not found").
+            {
+                let mut store = self.imp().config_cstrings.borrow_mut();
+                if let Some(c) = wd_cstr {
+                    store.push(c);
+                }
+                if let Some(c) = cmd_cstr {
+                    store.push(c);
+                }
+                for (k, v) in env_cstrs {
+                    store.push(k);
+                    store.push(v);
+                }
+            }
+            // `config.env_vars` points into `env_vars_c`; the Vec's buffer is
+            // stable across this move, so the pointer stays valid.
+            *self.imp().config_env_array.borrow_mut() = env_vars_c;
 
             let surface = unsafe { ghostty_surface_new(app, &config) };
             if surface.is_null() {
