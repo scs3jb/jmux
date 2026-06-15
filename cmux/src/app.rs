@@ -1605,6 +1605,30 @@ impl ghostty_gtk::callbacks::GhosttyCallbackHandler for CmuxCallbackHandler {
             // cmux does not render its own scrollbar — ghostty draws entirely
             // within the GLArea — so we acknowledge the action and do nothing.
             ghostty_action_tag_e::GHOSTTY_ACTION_SCROLLBAR => true,
+            // Ghostty's default `ctrl+shift+t` keybind fires this action (and
+            // consumes the key, so our GTK window handler never sees it). Honor
+            // it by opening a new terminal tab in the focused pane of the active
+            // workspace — mirroring `file.open`'s tab placement.
+            ghostty_action_tag_e::GHOSTTY_ACTION_NEW_TAB => {
+                {
+                    let mut tm = lock_or_recover(&self.shared.tab_manager);
+                    if let Some(ws) = tm.selected_mut() {
+                        let panel = crate::model::panel::Panel::new_terminal();
+                        let new_id = panel.id;
+                        ws.panels.insert(new_id, panel);
+                        let target = ws
+                            .focused_panel_id
+                            .or_else(|| ws.layout.all_panel_ids().into_iter().next());
+                        if let Some(target) = target {
+                            ws.layout.add_panel_to_pane(target, new_id);
+                        }
+                        ws.previous_focused_panel_id = ws.focused_panel_id;
+                        ws.focused_panel_id = Some(new_id);
+                    }
+                }
+                self.shared.notify_ui_refresh();
+                true
+            }
             ghostty_action_tag_e::GHOSTTY_ACTION_OPEN_URL => {
                 // SAFETY: action tag is OPEN_URL so the union contains open_url.
                 // Pointer and length are null/zero-checked. from_raw_parts requires
