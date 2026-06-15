@@ -264,6 +264,8 @@ _cmux_tmux_compat() {
     break-pane) _cmux_json "pane.break" "{}" ;;
     join-pane) _cmux_json "pane.join" "{}" ;;
     clear-history) _cmux_json "surface.clear_history" "{}" ;;
+    top) _cmux_json "system.task_manager" "{}" ;;
+    ps) _cmux_query "system.processes" "{}" ;;
     wait-for)
       local signal=false name=""
       while [[ $# -gt 0 ]]; do
@@ -361,6 +363,8 @@ Workspaces
   back | forward             Navigate recently-focused workspaces
   hibernate                  Pause the focused agent (SIGSTOP) / toggle
   wake                       Resume the focused agent (SIGCONT)
+  top                        Open the Task Manager (CPU/RAM per agent)
+  ps                         List terminal process CPU/RAM usage (JSON)
 
 Groups
   group create <name>        Create a sidebar group

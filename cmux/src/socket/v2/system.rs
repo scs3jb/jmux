@@ -248,6 +248,12 @@ pub(super) fn handle_system_processes(id: Value, state: &Arc<SharedState>) -> Re
     Response::success(id, serde_json::json!({"processes": processes}))
 }
 
+/// `system.task_manager` (`cmux top`) — open the Task Manager window.
+pub(super) fn handle_open_task_manager(id: Value, state: &Arc<SharedState>) -> Response {
+    state.send_ui_event(crate::app::UiEvent::OpenTaskManager);
+    Response::success(id, serde_json::json!({"opened": true}))
+}
+
 pub(super) fn handle_capabilities(id: Value) -> Response {
     let mut methods: Vec<&str> = vec![
         "system.ping",
@@ -255,6 +261,7 @@ pub(super) fn handle_capabilities(id: Value) -> Response {
         "system.identify",
         "system.tree",
         "system.processes",
+        "system.task_manager",
         "workspace.list",
         "workspace.new",
         "workspace.create",

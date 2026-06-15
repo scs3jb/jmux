@@ -1,7 +1,8 @@
-//! File preview panel — a read-only viewer for an arbitrary text/code file.
+//! File preview panel — a read-only viewer for an arbitrary file.
 //!
-//! Plain GTK (monospace TextView), so it works in every build configuration.
-//! Markdown files use the dedicated markdown panel; everything else lands here.
+//! Images and videos render inline (mirroring cmux's Finder, whose headline use
+//! case is reviewing screenshots and demo videos agents produce); everything
+//! else falls back to a monospace TextView. Markdown uses the dedicated panel.
 
 use std::path::Path;
 
@@ -9,6 +10,29 @@ use gtk4::prelude::*;
 
 /// Maximum bytes read for the preview (avoid loading huge files).
 const PREVIEW_LIMIT: usize = 2 * 1024 * 1024;
+
+/// What kind of inline preview a path gets, based on its extension.
+#[derive(Clone, Copy, PartialEq)]
+enum PreviewKind {
+    Image,
+    Video,
+    Text,
+}
+
+fn preview_kind(path: &str) -> PreviewKind {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico" | "tiff" | "avif" => {
+            PreviewKind::Image
+        }
+        "mp4" | "webm" | "mkv" | "mov" | "avi" | "m4v" | "ogv" => PreviewKind::Video,
+        _ => PreviewKind::Text,
+    }
+}
 
 /// Create a file-preview widget for `path`.
 pub fn create_file_preview_widget(
@@ -35,7 +59,13 @@ pub fn create_file_preview_widget(
     toolbar.set_margin_top(2);
     toolbar.set_margin_bottom(2);
 
-    let icon = gtk4::Image::from_icon_name("text-x-generic-symbolic");
+    let kind = preview_kind(&path);
+    let icon_name = match kind {
+        PreviewKind::Image => "image-x-generic-symbolic",
+        PreviewKind::Video => "video-x-generic-symbolic",
+        PreviewKind::Text => "text-x-generic-symbolic",
+    };
+    let icon = gtk4::Image::from_icon_name(icon_name);
     icon.set_pixel_size(16);
     toolbar.append(&icon);
 
@@ -67,30 +97,59 @@ pub fn create_file_preview_widget(
     container.append(&toolbar);
 
     // ── Body ──
-    let text_view = gtk4::TextView::new();
-    text_view.set_editable(false);
-    text_view.set_cursor_visible(false);
-    text_view.set_monospace(true);
-    text_view.set_wrap_mode(gtk4::WrapMode::None);
-    text_view.set_left_margin(8);
-    text_view.set_right_margin(8);
-    text_view.set_top_margin(4);
+    match kind {
+        PreviewKind::Image => {
+            let picture = gtk4::Picture::for_filename(&path);
+            picture.set_can_shrink(true);
+            picture.set_hexpand(true);
+            picture.set_vexpand(true);
+            let scrolled = gtk4::ScrolledWindow::new();
+            scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+            scrolled.set_hexpand(true);
+            scrolled.set_vexpand(true);
+            scrolled.set_child(Some(&picture));
+            container.append(&scrolled);
+            let path = path.clone();
+            reload_btn.connect_clicked(move |_| {
+                picture.set_filename(Some(&path));
+            });
+        }
+        PreviewKind::Video => {
+            let video = gtk4::Video::for_filename(Some(&path));
+            video.set_autoplay(false);
+            video.set_hexpand(true);
+            video.set_vexpand(true);
+            container.append(&video);
+            let path = path.clone();
+            reload_btn.connect_clicked(move |_| {
+                video.set_filename(Some(&path));
+            });
+        }
+        PreviewKind::Text => {
+            let text_view = gtk4::TextView::new();
+            text_view.set_editable(false);
+            text_view.set_cursor_visible(false);
+            text_view.set_monospace(true);
+            text_view.set_wrap_mode(gtk4::WrapMode::None);
+            text_view.set_left_margin(8);
+            text_view.set_right_margin(8);
+            text_view.set_top_margin(4);
 
-    let buffer = text_view.buffer();
-    render_file(&buffer, &path);
+            let buffer = text_view.buffer();
+            render_file(&buffer, &path);
 
-    let scrolled = gtk4::ScrolledWindow::new();
-    scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
-    scrolled.set_hexpand(true);
-    scrolled.set_vexpand(true);
-    scrolled.set_child(Some(&text_view));
-    container.append(&scrolled);
+            let scrolled = gtk4::ScrolledWindow::new();
+            scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+            scrolled.set_hexpand(true);
+            scrolled.set_vexpand(true);
+            scrolled.set_child(Some(&text_view));
+            container.append(&scrolled);
 
-    {
-        let buffer = buffer.clone();
-        let path = path.clone();
-        reload_btn.connect_clicked(move |_| render_file(&buffer, &path));
+            let path = path.clone();
+            reload_btn.connect_clicked(move |_| render_file(&buffer, &path));
+        }
     }
+
     {
         let path = path.clone();
         open_btn.connect_clicked(move |_| {

@@ -138,6 +138,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "system.identify" => system::handle_system_identify(id),
         "system.tree" => system::handle_system_tree(id, state),
         "system.processes" => system::handle_system_processes(id, state),
+        "system.task_manager" => system::handle_open_task_manager(id, state),
 
         // Workspace commands
         "workspace.list" => workspace::handle_workspace_list(id, state),
