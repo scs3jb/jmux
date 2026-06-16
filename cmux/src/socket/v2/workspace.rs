@@ -683,6 +683,14 @@ pub(super) fn handle_workspace_reopen_closed_tab(id: Value, state: &Arc<SharedSt
     }
 }
 
+/// `workspace.clear_closed` (`cmux clear-closed`) — clear the recently-closed
+/// workspace history (the History pane's "Clear Closed").
+pub(super) fn handle_workspace_clear_closed(id: Value, state: &Arc<SharedState>) -> Response {
+    lock_or_recover(&state.tab_manager).clear_closed();
+    state.notify_ui_refresh();
+    Response::success(id, serde_json::json!({"cleared": true}))
+}
+
 pub(super) fn handle_workspace_reopen_closed(id: Value, state: &Arc<SharedState>) -> Response {
     let reopened = {
         let mut tm = lock_or_recover(&state.tab_manager);

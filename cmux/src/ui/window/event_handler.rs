@@ -723,6 +723,40 @@ pub(super) fn bind_shared_state_updates(
                             crate::ui::task_manager::show_task_manager(&window, &state);
                         }
                     }
+                    UiEvent::OpenOverview => {
+                        if let Some(window) = window_weak.upgrade() {
+                            crate::ui::pane_overview::show_pane_overview(&window, &state);
+                        }
+                    }
+                    UiEvent::OpenCommandPalette => {
+                        if let Some(window) = window_weak.upgrade() {
+                            let on_refresh: Rc<dyn Fn()> = {
+                                let lb = list_box.clone();
+                                let cb = content_box.clone();
+                                let st = state.clone();
+                                Rc::new(move || super::refresh_ui(&lb, &cb, &st))
+                            };
+                            crate::ui::command_palette::show_command_palette(
+                                &window, &state, on_refresh,
+                            );
+                        }
+                    }
+                    UiEvent::ShowDock => {
+                        if let Some(window) = window_weak.upgrade() {
+                            if let Ok(wid) = uuid::Uuid::parse_str(&window.widget_name()) {
+                                let dir = {
+                                    let tm = lock_or_recover(&state.shared.tab_manager);
+                                    tm.selected()
+                                        .map(|w| w.current_directory.clone())
+                                        .unwrap_or_default()
+                                };
+                                crate::ui::dock::set_visible(wid, &dir, &state, true);
+                            }
+                        }
+                    }
+                    UiEvent::RunCustomCommand(name) => {
+                        crate::ui::command_palette::run_custom_command_by_name(&name, &state);
+                    }
                     UiEvent::AgentResume => {
                         // Detect which agent (if any) is running in the focused
                         // terminal and send its resume command.
@@ -993,7 +1027,10 @@ fn event_refresh_kind(event: &UiEvent) -> RefreshKind {
         | UiEvent::ToggleMinimalMode => RefreshKind::None,
 
         // Task Manager opens a secondary window — no layout rebuild needed.
-        UiEvent::OpenTaskManager => RefreshKind::None,
+        UiEvent::OpenTaskManager
+        | UiEvent::OpenOverview
+        | UiEvent::OpenCommandPalette
+        | UiEvent::ShowDock => RefreshKind::None,
 
         // ShowSidebar/ToggleSidebar collapse/expand the NavigationSplitView only.
         UiEvent::ShowSidebar(_) | UiEvent::ToggleSidebar => RefreshKind::None,

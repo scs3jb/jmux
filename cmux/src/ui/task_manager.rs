@@ -308,7 +308,9 @@ fn super_parse_rss_pages(stat: &str) -> Option<u64> {
     let after_comm = stat.rfind(')')?;
     let rest = stat[after_comm + 1..].trim();
     let mut fields = rest.split_ascii_whitespace();
-    for _ in 0..23 {
+    // /proc/<pid>/stat field 24 (rss, in pages). After `(comm)` the fields are
+    // 0-indexed from `state` (field 3), so rss is at index 21.
+    for _ in 0..21 {
         fields.next()?;
     }
     fields.next()?.parse().ok()

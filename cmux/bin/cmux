@@ -264,8 +264,6 @@ _cmux_tmux_compat() {
     break-pane) _cmux_json "pane.break" "{}" ;;
     join-pane) _cmux_json "pane.join" "{}" ;;
     clear-history) _cmux_json "surface.clear_history" "{}" ;;
-    top) _cmux_json "system.task_manager" "{}" ;;
-    ps) _cmux_query "system.processes" "{}" ;;
     wait-for)
       local signal=false name=""
       while [[ $# -gt 0 ]]; do
@@ -655,6 +653,13 @@ case "$command" in
   reopen-tab) _cmux_json "workspace.reopen_closed_tab" "{}" ;;
   history) _cmux_json "workspace.open_history" "{}" ;;
   vault) _cmux_json "workspace.open_vault" "{}" ;;
+  clear-closed) _cmux_json "workspace.clear_closed" "{}" ;;
+  top) _cmux_json "system.task_manager" "{}" ;;
+  ps) _cmux_query "system.processes" "{}" ;;
+  overview) _cmux_json "system.overview" "{}" ;;
+  palette) _cmux_json "system.command_palette" "{}" ;;
+  dock) _cmux_json "system.dock" "{}" ;;
+  run) _cmux_json "system.run_command" "{\"name\":\"${1:-}\"}" ;;
   back)
     _cmux_act "focus_back"
     ;;

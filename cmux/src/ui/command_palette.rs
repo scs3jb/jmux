@@ -577,6 +577,23 @@ fn run_custom_command(
     on_refresh();
 }
 
+/// Run a custom command (from cmux.json) by name, without the confirm dialog.
+/// Used by `cmux run <name>` / `system.run_command`.
+pub fn run_custom_command_by_name(name: &str, state: &Rc<AppState>) {
+    let dir = {
+        let tm = lock_or_recover(&state.shared.tab_manager);
+        tm.selected()
+            .map(|ws| ws.current_directory.clone())
+            .unwrap_or_default()
+    };
+    if let Some(entry) = crate::settings::custom_commands::load(&dir)
+        .into_iter()
+        .find(|e| e.name == name)
+    {
+        do_custom_command(&entry, &dir, state);
+    }
+}
+
 fn do_custom_command(entry: &CommandEntry, base_dir: &str, state: &Rc<AppState>) {
     if let Some(spec) = &entry.workspace {
         let mut ws = crate::settings::custom_commands::build_workspace(spec, base_dir);

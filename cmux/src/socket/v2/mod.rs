@@ -139,6 +139,10 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "system.tree" => system::handle_system_tree(id, state),
         "system.processes" => system::handle_system_processes(id, state),
         "system.task_manager" => system::handle_open_task_manager(id, state),
+        "system.overview" => system::handle_overview(id, state),
+        "system.command_palette" => system::handle_command_palette(id, state),
+        "system.dock" => system::handle_dock(id, state),
+        "system.run_command" => system::handle_run_command(id, &req.params, state),
 
         // Workspace commands
         "workspace.list" => workspace::handle_workspace_list(id, state),
@@ -167,6 +171,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "workspace.focus_forward" => workspace::handle_workspace_focus_forward(id, state),
         "workspace.reopen_closed" => workspace::handle_workspace_reopen_closed(id, state),
         "workspace.reopen_closed_tab" => workspace::handle_workspace_reopen_closed_tab(id, state),
+        "workspace.clear_closed" => workspace::handle_workspace_clear_closed(id, state),
         "workspace.open_history" => workspace::handle_workspace_open_history(id, state),
         "workspace.open_vault" => workspace::handle_workspace_open_vault(id, state),
         "workspace.hibernate" => workspace::handle_workspace_hibernate(id, &req.params, state),

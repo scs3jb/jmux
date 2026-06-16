@@ -390,6 +390,14 @@ pub enum UiEvent {
     AgentResume,
     /// Open the Task Manager window.
     OpenTaskManager,
+    /// Open the pane overview grid.
+    OpenOverview,
+    /// Open the command palette.
+    OpenCommandPalette,
+    /// Show the Dock panel.
+    ShowDock,
+    /// Run a custom command (from cmux.json) by name.
+    RunCustomCommand(String),
     /// Show or hide the left sidebar.
     /// `true` = show (expand), `false` = hide (collapse).
     ShowSidebar(bool),

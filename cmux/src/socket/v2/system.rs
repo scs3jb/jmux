@@ -254,6 +254,33 @@ pub(super) fn handle_open_task_manager(id: Value, state: &Arc<SharedState>) -> R
     Response::success(id, serde_json::json!({"opened": true}))
 }
 
+/// `system.overview` (`cmux overview`) — open the pane overview grid.
+pub(super) fn handle_overview(id: Value, state: &Arc<SharedState>) -> Response {
+    state.send_ui_event(crate::app::UiEvent::OpenOverview);
+    Response::success(id, serde_json::json!({"opened": true}))
+}
+
+/// `system.command_palette` (`cmux palette`) — open the command palette.
+pub(super) fn handle_command_palette(id: Value, state: &Arc<SharedState>) -> Response {
+    state.send_ui_event(crate::app::UiEvent::OpenCommandPalette);
+    Response::success(id, serde_json::json!({"opened": true}))
+}
+
+/// `system.dock` (`cmux dock`) — show the Dock panel.
+pub(super) fn handle_dock(id: Value, state: &Arc<SharedState>) -> Response {
+    state.send_ui_event(crate::app::UiEvent::ShowDock);
+    Response::success(id, serde_json::json!({"opened": true}))
+}
+
+/// `system.run_command` (`cmux run <name>`) — run a cmux.json custom command.
+pub(super) fn handle_run_command(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
+    let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
+        return Response::error(id, "invalid_params", "Provide 'name'");
+    };
+    state.send_ui_event(crate::app::UiEvent::RunCustomCommand(name.to_string()));
+    Response::success(id, serde_json::json!({"ran": name}))
+}
+
 pub(super) fn handle_capabilities(id: Value) -> Response {
     let mut methods: Vec<&str> = vec![
         "system.ping",
@@ -262,6 +289,10 @@ pub(super) fn handle_capabilities(id: Value) -> Response {
         "system.tree",
         "system.processes",
         "system.task_manager",
+        "system.overview",
+        "system.command_palette",
+        "system.dock",
+        "system.run_command",
         "workspace.list",
         "workspace.new",
         "workspace.open_history",
