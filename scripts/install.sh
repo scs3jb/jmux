@@ -83,19 +83,10 @@ command -v update-desktop-database >/dev/null 2>&1 && \
 command -v gtk-update-icon-cache >/dev/null 2>&1 && \
   gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" 2>/dev/null || true
 
-# Refresh the invoking user's per-user caches (KDE/Plasma resolves a pinned
-# launcher's icon from its sycoca DB + icon cache, which won't update until
-# rebuilt). Best-effort; full effect may still need a re-login.
-if [[ -n "${SUDO_USER:-}" ]]; then
-  user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-  if [[ -n "$user_home" ]]; then
-    rm -f "$user_home/.cache/icon-cache.kcache" 2>/dev/null || true
-    for kbsc in kbuildsycoca6 kbuildsycoca5; do
-      command -v "$kbsc" >/dev/null 2>&1 \
-        && sudo -u "$SUDO_USER" "$kbsc" --noincremental >/dev/null 2>&1 || true
-    done
-  fi
-fi
+# NOTE: do NOT rebuild the user's KDE sycoca/icon cache from this (root)
+# installer — running kbuildsycoca without the user's session environment can
+# corrupt their caches. KDE/Plasma will pick up the new icon on the next login,
+# or the user can run `kbuildsycoca6` themselves from within their session.
 
 echo "Done."
 echo "  GUI : $PREFIX/bin/cmux-app"
