@@ -10,7 +10,20 @@ SB=/tmp/cmux-demo; RT=/tmp/cmux-demo-rt; SHOTS="$REPO/docs/screenshots"
 CMUX_PID=""; SWAY_PID=""
 cleanup(){ [ -n "$CMUX_PID" ]&&kill "$CMUX_PID" 2>/dev/null; [ -n "$SWAY_PID" ]&&kill "$SWAY_PID" 2>/dev/null; sleep 1; [ -n "$SWAY_PID" ]&&kill -9 "$SWAY_PID" 2>/dev/null; }
 trap cleanup EXIT
-rm -rf "$SB" "$RT"; mkdir -p "$SB/.config/cmux" "$SB/bin" "$SB/web" "$SB/api" "$SB/docs" "$RT"; chmod 700 "$RT"
+rm -rf "$SB" "$RT"; mkdir -p "$SB/.config/cmux" "$SB/.config/ghostty" "$SB/.config/gtk-4.0" "$SB/bin" "$RT"
+for d in "" web api docs; do mkdir -p "$SB/$d/.cmux"; done; chmod 700 "$RT"
+
+# ── match the user's look & feel (theme prefs only; no private data) ──
+printf '{"theme":"dark"}' > "$SB/.config/cmux/settings.json"
+mkdir -p "$SB/.config/ghostty/themes"
+cp "/usr/share/ghostty/themes/Adventure Time" "$SB/.config/ghostty/themes/Adventure Time" 2>/dev/null
+printf 'theme = Adventure Time\n' > "$SB/.config/ghostty/config"
+cat > "$SB/.config/gtk-4.0/settings.ini" <<'INI'
+[Settings]
+gtk-application-prefer-dark-theme=true
+gtk-font-name=Noto Sans,  10
+gtk-icon-theme-name=breeze-dark
+INI
 
 demo_script(){ printf '#!/bin/bash\nprintf "\\033]0;cmux\\007"\nclear\ncat <<'"'"'TXT'"'"'\n%s\nTXT\nsleep 100000\n' "$2" > "$SB/bin/$1.sh"; chmod +x "$SB/bin/$1.sh"; }
 demo_script claude '  Claude Code · web
@@ -37,7 +50,7 @@ demo_script dev '  npm run dev
   ➜  Local:   http://localhost:3000/
   10:42:18 [vite] hmr update /src/App.tsx'
 
-cat > "$SB/.config/cmux/cmux.json" <<EOF
+cat > "$SB/.cmux/cmux.json" <<EOF
 { "commands": [
   { "name": "demo", "workspace": { "name": "web", "cwd": "$SB/web", "color": "#3b82f6",
       "layout": { "direction": "horizontal", "split": 0.55, "children": [
@@ -49,6 +62,7 @@ cat > "$SB/.config/cmux/cmux.json" <<EOF
       "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/dev.sh", "focus": true } ] } } } }
 ] }
 EOF
+for d in web api docs; do cp "$SB/.cmux/cmux.json" "$SB/$d/.cmux/cmux.json"; done
 mk(){ local d="$SB/.claude/projects/$1"; mkdir -p "$d"
   printf '{"type":"summary","cwd":"%s"}\n{"message":{"role":"user","content":"%s"},"cwd":"%s"}\n' "$2" "$3" "$2" > "$d/$(uuidgen).jsonl"; sleep 0.05; }
 mk "-home-demo-web" "/home/demo/web" "Refactor the auth module to use JWT tokens"
