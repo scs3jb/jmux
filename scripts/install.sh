@@ -70,7 +70,11 @@ if [[ -d "$REPO_ROOT/data/icons/hicolor" ]]; then
   while IFS= read -r -d '' icon; do
     rel="${icon#"$REPO_ROOT"/data/icons/hicolor/}"
     install -Dm644 "$icon" "$PREFIX/share/icons/hicolor/$rel"
-  done < <(find "$REPO_ROOT/data/icons/hicolor" \( -name '*.svg' -o -name '*.png' \) -print0)
+  done < <(find "$REPO_ROOT/data/icons/hicolor" \
+    \( -name '*.svg' -o -name '*.png' -o -name 'index.theme' \) -print0)
+  # Pixmaps fallback — some launchers look here directly by Icon= name.
+  install -Dm644 "$REPO_ROOT/data/icons/hicolor/256x256/apps/io.github.douglas.cmux_gtk.png" \
+    "$PREFIX/share/pixmaps/io.github.douglas.cmux_gtk.png" 2>/dev/null || true
 fi
 
 # Refresh caches (best-effort).
@@ -78,6 +82,20 @@ command -v update-desktop-database >/dev/null 2>&1 && \
   update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 command -v gtk-update-icon-cache >/dev/null 2>&1 && \
   gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+
+# Refresh the invoking user's per-user caches (KDE/Plasma resolves a pinned
+# launcher's icon from its sycoca DB + icon cache, which won't update until
+# rebuilt). Best-effort; full effect may still need a re-login.
+if [[ -n "${SUDO_USER:-}" ]]; then
+  user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+  if [[ -n "$user_home" ]]; then
+    rm -f "$user_home/.cache/icon-cache.kcache" 2>/dev/null || true
+    for kbsc in kbuildsycoca6 kbuildsycoca5; do
+      command -v "$kbsc" >/dev/null 2>&1 \
+        && sudo -u "$SUDO_USER" "$kbsc" --noincremental >/dev/null 2>&1 || true
+    done
+  fi
+fi
 
 echo "Done."
 echo "  GUI : $PREFIX/bin/cmux-app"
