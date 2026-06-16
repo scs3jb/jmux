@@ -4,7 +4,7 @@
 
 ![cmux-gtk](docs/screenshots/hero.png)
 
-> **Note on the images below:** the screenshots and GIFs in `docs/` are currently **labeled placeholders**. See [`docs/CAPTURING.md`](docs/CAPTURING.md) for how to record real captures (a helper script is included) and drop them in to replace the placeholders.
+> **Note:** the screenshots below are real captures, generated privacy-safely (synthetic demo data, no real paths) by [`docs/autocapture.sh`](docs/autocapture.sh) running cmux in a headless compositor. The two demo **GIFs** (drag tabs / move panes) are still placeholders — drag interactions can't be scripted headlessly; see [`docs/CAPTURING.md`](docs/CAPTURING.md) to record them.
 
 ---
 
