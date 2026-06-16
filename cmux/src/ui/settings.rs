@@ -446,6 +446,20 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     show_dock_row.set_title("Show Dock");
     show_dock_row.set_active(current_settings.show_dock);
     dock_group.add(&show_dock_row);
+
+    let edit_dock_row = adw::ActionRow::new();
+    edit_dock_row.set_title("Edit Dock Controls…");
+    edit_dock_row.set_subtitle("Add, edit, or remove controls in ~/.config/cmux/dock.json");
+    edit_dock_row.set_activatable(true);
+    edit_dock_row.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
+    {
+        let parent = parent.clone();
+        edit_dock_row.connect_activated(move |_| {
+            crate::ui::dock_editor::show_dock_editor(&parent, || {});
+        });
+    }
+    dock_group.add(&edit_dock_row);
+
     appearance_page.add(&dock_group);
 
     window.add(&appearance_page);

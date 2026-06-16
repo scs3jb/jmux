@@ -7,6 +7,7 @@ pub mod browser_panel;
 pub mod command_palette;
 pub mod diff_panel;
 pub mod dock;
+pub mod dock_editor;
 pub mod file_preview_panel;
 pub mod history_panel;
 #[cfg(feature = "webkit")]

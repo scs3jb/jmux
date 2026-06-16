@@ -26,22 +26,46 @@ thread_local! {
     static DOCKS: RefCell<HashMap<String, DockEntry>> = RefCell::new(HashMap::new());
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct DockControl {
     pub id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub command: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, serde::Serialize)]
 struct DockJson {
     #[serde(default)]
     controls: Vec<DockControl>,
+}
+
+/// Path to the global dock config (`~/.config/cmux/dock.json`).
+pub fn global_path() -> std::path::PathBuf {
+    crate::settings::config_dir().join("dock.json")
+}
+
+/// Load controls from the global dock.json (for the editor).
+pub fn load_global() -> Vec<DockControl> {
+    std::fs::read_to_string(global_path())
+        .ok()
+        .map(|c| parse_controls(&c))
+        .unwrap_or_default()
+}
+
+/// Write controls to the global dock.json.
+pub fn save_global(controls: &[DockControl]) -> std::io::Result<()> {
+    let dir = crate::settings::config_dir();
+    std::fs::create_dir_all(&dir)?;
+    let json = serde_json::to_string_pretty(&DockJson {
+        controls: controls.to_vec(),
+    })
+    .map_err(std::io::Error::other)?;
+    std::fs::write(global_path(), json)
 }
 
 /// Load + merge dock controls for a workspace directory.
