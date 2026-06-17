@@ -488,6 +488,14 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     preferred_editor_row.set_text(&current_settings.preferred_editor);
     editor_group.add(&preferred_editor_row);
 
+    let ai_auto_naming_row = adw::SwitchRow::new();
+    ai_auto_naming_row.set_title("AI Workspace Auto-Naming");
+    ai_auto_naming_row.set_subtitle(
+        "Name a workspace from its agent transcript when the agent finishes (uses ANTHROPIC_API_KEY)",
+    );
+    ai_auto_naming_row.set_active(current_settings.ai_auto_naming);
+    editor_group.add(&ai_auto_naming_row);
+
     appearance_page.add(&editor_group);
 
     window.add(&appearance_page);
@@ -1244,6 +1252,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                     file_open_action_row.selected(),
                 ),
                 preferred_editor: preferred_editor_row.text().trim().to_string(),
+                ai_auto_naming: ai_auto_naming_row.is_active(),
                 shortcuts: shortcuts_state.borrow().clone(),
                 minimal_mode: current_settings.minimal_mode,
                 show_tab_close_button: show_tab_close_row.is_active(),

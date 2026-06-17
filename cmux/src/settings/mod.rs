@@ -98,6 +98,10 @@ pub struct AppSettings {
     /// `{path}` is substituted with the file path; if absent the path is appended.
     #[serde(default)]
     pub preferred_editor: String,
+    /// Opt-in: auto-name a workspace from its agent transcript (via the Anthropic
+    /// API, using ANTHROPIC_API_KEY) when an agent finishes, if it has no title.
+    #[serde(default)]
+    pub ai_auto_naming: bool,
     /// Keyboard shortcuts.
     #[serde(skip)]
     pub shortcuts: shortcuts::ShortcutConfig,
@@ -891,6 +895,7 @@ impl Default for AppSettings {
             editor_word_wrap: true,
             file_explorer_open_action: FileOpenAction::default(),
             preferred_editor: String::new(),
+            ai_auto_naming: false,
             shortcuts: shortcuts::ShortcutConfig::default(),
         }
     }

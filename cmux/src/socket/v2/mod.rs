@@ -215,6 +215,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         // Workspace query commands
         "workspace.current" => workspace::handle_workspace_current(id, state),
         "workspace.rename" => workspace::handle_workspace_rename(id, &req.params, state),
+        "workspace.ai_name" => workspace::handle_workspace_ai_name(id, &req.params, state),
         "workspace.action" => workspace::handle_workspace_action(id, &req.params, state),
         "workspace.report_pr" => workspace::handle_workspace_report_pr(id, &req.params, state),
         "workspace.report_pr_checks" => {

@@ -1,3 +1,4 @@
+mod ai;
 mod app;
 mod browser_history;
 #[cfg(feature = "webkit")]

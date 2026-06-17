@@ -891,8 +891,17 @@ pub(super) fn handle_workspace_clear_status(
     };
     if let Some(ws) = ws {
         ws.status_entries.clear();
+        // An agent finishing is a good moment to auto-name an untitled workspace.
+        let auto_name = ws.custom_title.is_none();
+        let ws_id_for_name = ws.id;
         drop(tm);
         state.notify_metadata_refresh();
+        if auto_name && crate::settings::load().ai_auto_naming {
+            let state = state.clone();
+            std::thread::spawn(move || {
+                let _ = ai_name_workspace_core(&state, ws_id_for_name);
+            });
+        }
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
@@ -1497,6 +1506,76 @@ pub(super) fn handle_workspace_rename(
         Response::success(id, serde_json::json!({"ok": true}))
     } else {
         Response::error(id, "not_found", "Workspace not found")
+    }
+}
+
+// -----------------------------------------------------------------------
+// workspace.ai_name (AI-generated title from the focused terminal transcript)
+// -----------------------------------------------------------------------
+
+/// Read a workspace's focused terminal, ask the model for a title, and apply it.
+/// Blocking (HTTP + scrollback read) — run on a tokio worker or its own thread,
+/// never the GTK main thread.
+pub(super) fn ai_name_workspace_core(
+    state: &Arc<SharedState>,
+    ws_id: uuid::Uuid,
+) -> Result<String, String> {
+    let panel_id = {
+        let mut tm = lock_or_recover(&state.tab_manager);
+        let ws = tm.workspace_mut(ws_id).ok_or("Workspace not found")?;
+        ws.focused_panel_id.ok_or("No focused panel to read")?
+    };
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.send_ui_event(crate::app::UiEvent::ReadText {
+        panel_id,
+        scrollback: true,
+        lines: Some(150),
+        reply: tx,
+    });
+    let transcript = rx
+        .blocking_recv()
+        .ok()
+        .flatten()
+        .ok_or("Could not read terminal contents")?;
+
+    let title = crate::ai::generate_workspace_title(&transcript)?;
+    let truncated = truncate_str(&title, MAX_TITLE_LEN).to_string();
+    {
+        let mut tm = lock_or_recover(&state.tab_manager);
+        if let Some(ws) = tm.workspace_mut(ws_id) {
+            ws.custom_title = Some(truncated.clone());
+        }
+    }
+    state.notify_metadata_refresh();
+    Ok(truncated)
+}
+
+pub(super) fn handle_workspace_ai_name(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let ws_id_opt = params
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+
+    let ws_id = {
+        let mut tm = lock_or_recover(&state.tab_manager);
+        let ws = match ws_id_opt {
+            Some(wid) => tm.workspace_mut(wid),
+            None => tm.selected_mut(),
+        };
+        match ws {
+            Some(ws) => ws.id,
+            None => return Response::error(id, "not_found", "Workspace not found"),
+        }
+    };
+
+    match ai_name_workspace_core(state, ws_id) {
+        Ok(title) => Response::success(id, serde_json::json!({ "title": title })),
+        Err(e) => Response::error(id, "ai_error", &e),
     }
 }
 

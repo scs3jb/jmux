@@ -309,6 +309,7 @@ pub(super) fn handle_capabilities(id: Value) -> Response {
         "workspace.close",
         "workspace.current",
         "workspace.rename",
+        "workspace.ai_name",
         "workspace.reorder",
         "workspace.set_status",
         "workspace.report_git_branch",
