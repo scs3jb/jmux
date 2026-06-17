@@ -103,6 +103,7 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - **Multi-window** — single-instance app; launching again opens a new window, workspaces assignable across windows
 - **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, persistence (`cmux group`)
 - **Workspace management** — pinning, custom colors, reorder, close-others/above/below
+- **Workspace descriptions** — free-text per-workspace notes (`cmux describe`), shown in the sidebar tooltip
 - **Focus history** — back/forward through recently-focused workspaces (`cmux back`/`forward`)
 - **Reopen closed workspace** — `cmux reopen` restores the most recently closed workspace (layout + cwd, fresh shells)
 - **Reopen closed tab** — `cmux reopen-tab` restores the most recently closed panel in the current workspace (type/dir/command preserved)
@@ -144,6 +145,8 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 ### CLI & automation
 - **Socket API** — V1 text (60 commands) + V2 JSON-RPC (210+ methods)
 - **CLI wrapper** — `cmux/bin/cmux <command>` (socket auto-discovery)
+- **Diagnostics** — `cmux config doctor` checks install, daemon reachability, and config-file health
+- **Open in IDE** — `cmux ide [editor] [dir]` opens a directory in VS Code / IntelliJ / Cursor / Zed / Sublime / …
 - **tmux compatibility** — CLI shim maps tmux commands to the socket API
 - **Claude Code wrapper** — `cmux/bin/claude` injects status/notification hooks
 - **URL routing** — `cmux/bin/xdg-open` routes HTTP(S) to the in-app browser
