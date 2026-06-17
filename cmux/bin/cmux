@@ -466,6 +466,65 @@ case "$command" in
   capabilities)
     _cmux_query "system.capabilities"
     ;;
+  config)
+    sub="${1:-doctor}"; shift || true
+    case "$sub" in
+      doctor)
+        ok=0; warn=0; fail=0
+        chk_ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; ok=$((ok+1)); }
+        chk_warn() { printf '  \033[33m!\033[0m %s\n' "$1"; warn=$((warn+1)); }
+        chk_fail() { printf '  \033[31m✗\033[0m %s\n' "$1"; fail=$((fail+1)); }
+        cfgdir="${XDG_CONFIG_HOME:-$HOME/.config}/cmux"
+        jsoncheck() { # path label
+          local f="$1" label="$2"
+          if [[ ! -e "$f" ]]; then chk_warn "$label: not present (using defaults)"; return; fi
+          if command -v python3 >/dev/null 2>&1; then
+            if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" 2>/dev/null; then
+              chk_ok "$label: valid JSON"
+            else
+              chk_fail "$label: INVALID JSON ($f)"
+            fi
+          else
+            chk_ok "$label: present"
+          fi
+        }
+        echo "cmux config doctor"; echo
+        echo "Binary & CLI:"
+        if command -v cmux-app >/dev/null 2>&1; then chk_ok "cmux-app on PATH ($(command -v cmux-app))"; else chk_warn "cmux-app not on PATH"; fi
+        if command -v cmux >/dev/null 2>&1; then chk_ok "cmux CLI on PATH ($(command -v cmux))"; else chk_warn "cmux CLI not on PATH"; fi
+        if command -v ncat >/dev/null 2>&1 || command -v socat >/dev/null 2>&1 || command -v nc >/dev/null 2>&1; then
+          chk_ok "socket client available (ncat/socat/nc)"
+        else
+          chk_fail "no socket client (install ncat, socat, or nc)"
+        fi
+        echo; echo "Daemon:"
+        sock=""
+        if [[ -n "${CMUX_SOCKET:-}" && -S "${CMUX_SOCKET}" ]]; then sock="$CMUX_SOCKET"
+        elif [[ -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/cmux.sock" ]]; then sock="${XDG_RUNTIME_DIR}/cmux.sock"
+        elif [[ -S "/tmp/cmux-$(id -u).sock" ]]; then sock="/tmp/cmux-$(id -u).sock"; fi
+        if [[ -n "$sock" ]]; then
+          chk_ok "socket present: $sock"
+          if [[ -n "$(_cmux_send "ping" 2>/dev/null)" ]]; then chk_ok "daemon responds to ping"; else chk_fail "socket present but no ping response"; fi
+        else
+          chk_warn "socket not found (is cmux-app running?)"
+        fi
+        echo; echo "Config files ($cfgdir):"
+        if [[ -e "$cfgdir/cmux.json" ]]; then jsoncheck "$cfgdir/cmux.json" "settings (cmux.json)"; else jsoncheck "$cfgdir/settings.json" "settings (settings.json)"; fi
+        jsoncheck "$cfgdir/shortcuts.json" "shortcuts.json"
+        jsoncheck "$cfgdir/dock.json" "dock.json"
+        echo; echo "Shell integration:"
+        si=""
+        for d in "$HOME/.local/share/cmux/shell-integration" "/usr/local/share/cmux/shell-integration" "/usr/share/cmux/shell-integration"; do
+          [[ -d "$d" ]] && { si="$d"; break; }
+        done
+        if [[ -n "$si" ]]; then chk_ok "shell integration: $si"; else chk_warn "shell integration dir not found"; fi
+        echo
+        printf 'Summary: \033[32m%d ok\033[0m, \033[33m%d warning(s)\033[0m, \033[31m%d failure(s)\033[0m\n' "$ok" "$warn" "$fail"
+        [[ "$fail" -gt 0 ]] && exit 1 || exit 0
+        ;;
+      *) echo "usage: cmux config doctor" >&2; exit 1 ;;
+    esac
+    ;;
   identify)
     _cmux_query "system.identify"
     ;;
