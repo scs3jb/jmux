@@ -875,6 +875,31 @@ fn create_workspace_row(
         } else {
             let explorer = crate::ui::file_explorer::FileExplorer::new();
             explorer.set_root(&workspace.current_directory);
+            {
+                // Insert Path / Insert Relative Path → send into the focused terminal.
+                let state = state.clone();
+                let ws_dir = workspace.current_directory.clone();
+                explorer.set_insert_callback(move |full_path, relative| {
+                    let text = if relative {
+                        let base = format!("{}/", ws_dir.trim_end_matches('/'));
+                        full_path
+                            .strip_prefix(&base)
+                            .map(String::from)
+                            .unwrap_or_else(|| full_path.clone())
+                    } else {
+                        full_path.clone()
+                    };
+                    let panel_id = {
+                        let tm = lock_or_recover(&state.shared.tab_manager);
+                        tm.selected().and_then(|w| w.focused_panel_id)
+                    };
+                    if let Some(panel_id) = panel_id {
+                        if let Some(surface) = state.terminal_cache.borrow().get(&panel_id) {
+                            surface.send_text(&format!("{text} "));
+                        }
+                    }
+                });
+            }
             expander.set_child(Some(explorer.widget()));
         }
 

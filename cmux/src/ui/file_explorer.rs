@@ -8,7 +8,9 @@
 //! - A scaled thumbnail for recognized image formats
 //! - A "binary file" notice + "Open with…" button for everything else
 
+use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
 use glib::translate::ToGlibPtr;
 use gtk4::prelude::*;
@@ -42,6 +44,9 @@ pub struct FileExplorer {
     store: Option<gtk4::TreeStore>,
     /// The tree view — `None` for SSH workspaces.
     tree_view: Option<gtk4::TreeView>,
+    /// Callback invoked when a context-menu "Insert Path"/"Insert Relative Path"
+    /// item is chosen. Args: (full path, is_relative).
+    insert_cb: Rc<RefCell<Option<Rc<dyn Fn(String, bool)>>>>,
 }
 
 impl FileExplorer {
@@ -132,6 +137,83 @@ impl FileExplorer {
                     }
                 });
             }
+            tree_view.add_controller(gesture);
+        }
+
+        // Callback for the context-menu insert actions, set later via
+        // `set_insert_callback`. Stored here so the secondary-click gesture
+        // (built before the callback exists) can capture a clone.
+        let insert_cb: Rc<RefCell<Option<Rc<dyn Fn(String, bool)>>>> =
+            Rc::new(RefCell::new(None));
+
+        // Right-click (secondary button) on a file row shows a popover with
+        // "Insert Path" / "Insert Relative Path" actions.
+        {
+            let store_weak = store.downgrade();
+            let tree_view_weak = tree_view.downgrade();
+            let insert_cb = insert_cb.clone();
+            let gesture = gtk4::GestureClick::new();
+            gesture.set_button(3);
+            gesture.connect_pressed(move |gesture, _n_press, x, y| {
+                let Some(tree_view) = tree_view_weak.upgrade() else { return };
+                let Some(store) = store_weak.upgrade() else { return };
+                let Some((Some(path), _, _, _)) = tree_view.path_at_pos(x as i32, y as i32) else {
+                    return;
+                };
+                let Some(iter) = store.iter(&path) else { return };
+                let is_dir = tree_model_get_bool(&store, &iter, COL_IS_DIR);
+                if is_dir {
+                    return;
+                }
+                let full_path = tree_model_get_string(&store, &iter, COL_PATH);
+                if full_path.is_empty() || full_path == DUMMY_PATH {
+                    return;
+                }
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+
+                let popover = gtk4::Popover::new();
+                popover.set_parent(&tree_view);
+                popover.set_has_arrow(true);
+                popover.set_autohide(true);
+                popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
+                    x as i32, y as i32, 1, 1,
+                )));
+
+                let menu_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+
+                let insert_path_btn = gtk4::Button::with_label("Insert Path");
+                insert_path_btn.add_css_class("flat");
+                let insert_rel_btn = gtk4::Button::with_label("Insert Relative Path");
+                insert_rel_btn.add_css_class("flat");
+
+                {
+                    let cb = insert_cb.clone();
+                    let popover = popover.clone();
+                    let path = full_path.clone();
+                    insert_path_btn.connect_clicked(move |_| {
+                        if let Some(cb) = &*cb.borrow() {
+                            cb(path.clone(), false);
+                        }
+                        popover.popdown();
+                    });
+                }
+                {
+                    let cb = insert_cb.clone();
+                    let popover = popover.clone();
+                    let path = full_path.clone();
+                    insert_rel_btn.connect_clicked(move |_| {
+                        if let Some(cb) = &*cb.borrow() {
+                            cb(path.clone(), true);
+                        }
+                        popover.popdown();
+                    });
+                }
+
+                menu_box.append(&insert_path_btn);
+                menu_box.append(&insert_rel_btn);
+                popover.set_child(Some(&menu_box));
+                popover.popup();
+            });
             tree_view.add_controller(gesture);
         }
 
@@ -307,6 +389,7 @@ impl FileExplorer {
             root: outer.upcast(),
             store: Some(store),
             tree_view: Some(tree_view),
+            insert_cb,
         }
     }
 
@@ -346,6 +429,7 @@ impl FileExplorer {
             root: vbox.upcast(),
             store: None,
             tree_view: None,
+            insert_cb: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -366,6 +450,12 @@ impl FileExplorer {
         // Collapse all first so we don't get stale expander state
         tree_view.collapse_all();
         populate_dir(store, None, path, 0);
+    }
+
+    /// Set the callback invoked when a context-menu insert action is chosen.
+    /// Args: (full path, is_relative).
+    pub fn set_insert_callback(&self, cb: impl Fn(String, bool) + 'static) {
+        *self.insert_cb.borrow_mut() = Some(Rc::new(cb));
     }
 }
 
