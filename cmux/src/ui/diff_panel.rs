@@ -118,6 +118,14 @@ pub fn create_diff_widget(
         staged_toggle.set_visible(false);
         label.set_text(&format!("git diff {r}"));
         render_diff(&buffer, &dir, &DiffSpec::Branch(r.clone()));
+        {
+            let buffer = buffer.clone();
+            let dir = dir.clone();
+            let r = r.clone();
+            attach_comment_handler(&text_view, &dir.clone(), move || {
+                render_diff(&buffer, &dir, &DiffSpec::Branch(r.clone()));
+            });
+        }
         let buffer2 = buffer.clone();
         let dir2 = dir.clone();
         reload_btn.connect_clicked(move |_| {
@@ -132,6 +140,20 @@ pub fn create_diff_widget(
 
     let spec_of = |s: bool| if s { DiffSpec::Staged } else { DiffSpec::Working };
     render_diff(&buffer, &dir, &spec_of(staged.get()));
+
+    {
+        let buffer = buffer.clone();
+        let dir = dir.clone();
+        let staged = staged.clone();
+        attach_comment_handler(&text_view, &dir.clone(), move || {
+            let spec = if staged.get() {
+                DiffSpec::Staged
+            } else {
+                DiffSpec::Working
+            };
+            render_diff(&buffer, &dir, &spec);
+        });
+    }
 
     {
         let buffer = buffer.clone();
@@ -202,12 +224,137 @@ fn install_diff_tags(buffer: &gtk4::TextBuffer) {
         .name("diff-remove-bg")
         .background(if dark { "#2a1518" } else { "#ffebe9" })
         .build();
+    let comment = gtk4::TextTag::builder()
+        .name("diff-comment")
+        .foreground(if dark { "#e3b341" } else { "#9a6700" })
+        .style(gtk4::pango::Style::Italic)
+        .build();
     table.add(&add);
     table.add(&remove);
     table.add(&hunk);
     table.add(&meta);
     table.add(&add_bg);
     table.add(&remove_bg);
+    table.add(&comment);
+}
+
+/// Path to the per-directory review-comments store.
+fn comments_path(dir: &str) -> std::path::PathBuf {
+    std::path::Path::new(dir).join(".cmux").join("diff-comments.json")
+}
+
+/// Load review comments (line-code → comment) for `dir`.
+fn load_comments(dir: &str) -> std::collections::HashMap<String, String> {
+    std::fs::read_to_string(comments_path(dir))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Persist review comments for `dir` (creates `.cmux/` as needed).
+fn save_comments(dir: &str, comments: &std::collections::HashMap<String, String>) {
+    let path = comments_path(dir);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(comments) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// If `code` (a diff line's content, sans prefix) has a saved comment, render it
+/// inline below the line.
+fn insert_inline_comment(
+    buffer: &gtk4::TextBuffer,
+    comments: &std::collections::HashMap<String, String>,
+    code: &str,
+) {
+    let key = code.trim();
+    if key.is_empty() {
+        return;
+    }
+    if let Some(comment) = comments.get(key) {
+        let mut end = buffer.end_iter();
+        buffer.insert_with_tags_by_name(&mut end, &format!("    💬 {comment}\n"), &["diff-comment"]);
+    }
+}
+
+/// Right-click a diff line to add/edit a review comment (keyed by line content,
+/// persisted under `.cmux/diff-comments.json`). `rerender` redraws on save.
+fn attach_comment_handler(text_view: &gtk4::TextView, dir: &str, rerender: impl Fn() + 'static) {
+    let gesture = gtk4::GestureClick::new();
+    gesture.set_button(3);
+    let dir = dir.to_string();
+    let tv = text_view.clone();
+    let rerender = Rc::new(rerender);
+    gesture.connect_pressed(move |gesture, _n, x, y| {
+        let (bx, by) =
+            tv.window_to_buffer_coords(gtk4::TextWindowType::Widget, x as i32, y as i32);
+        let Some(iter) = tv.iter_at_location(bx, by) else {
+            return;
+        };
+        let mut start = iter.clone();
+        start.set_line_offset(0);
+        let mut line_end = start.clone();
+        if !line_end.ends_line() {
+            line_end.forward_to_line_end();
+        }
+        let line_text = tv.buffer().text(&start, &line_end, false).to_string();
+        let code_key = line_text
+            .trim_start_matches([' ', '+', '-'])
+            .trim()
+            .to_string();
+        if code_key.is_empty() {
+            return;
+        }
+        gesture.set_state(gtk4::EventSequenceState::Claimed);
+
+        let existing = load_comments(&dir).get(&code_key).cloned().unwrap_or_default();
+        let popover = gtk4::Popover::new();
+        popover.set_parent(&tv);
+        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        vbox.set_margin_top(8);
+        vbox.set_margin_bottom(8);
+        vbox.set_margin_start(8);
+        vbox.set_margin_end(8);
+        let entry = gtk4::Entry::new();
+        entry.set_placeholder_text(Some("Review comment (empty to remove)"));
+        entry.set_text(&existing);
+        entry.set_width_chars(40);
+        let save = gtk4::Button::with_label("Save comment");
+        save.add_css_class("suggested-action");
+        vbox.append(&entry);
+        vbox.append(&save);
+        popover.set_child(Some(&vbox));
+
+        let commit = {
+            let dir = dir.clone();
+            let code_key = code_key.clone();
+            let entry = entry.clone();
+            let popover = popover.clone();
+            let rerender = rerender.clone();
+            move || {
+                let text = entry.text().to_string();
+                let mut comments = load_comments(&dir);
+                if text.trim().is_empty() {
+                    comments.remove(&code_key);
+                } else {
+                    comments.insert(code_key.clone(), text.trim().to_string());
+                }
+                save_comments(&dir, &comments);
+                popover.popdown();
+                rerender();
+            }
+        };
+        {
+            let commit = commit.clone();
+            save.connect_clicked(move |_| commit());
+        }
+        entry.connect_activate(move |_| commit());
+        popover.popup();
+    });
+    text_view.add_controller(gesture);
 }
 
 /// Return the name of a foreground tag for `color`, creating it on first use.
@@ -317,6 +464,7 @@ fn render_diff(buffer: &gtk4::TextBuffer, dir: &str, spec: &DiffSpec) {
     let plain = ss.find_syntax_plain_text();
     let mut hl_new = HighlightLines::new(plain, theme);
     let mut hl_old = HighlightLines::new(plain, theme);
+    let comments = load_comments(dir);
 
     let meta = |buffer: &gtk4::TextBuffer, line: &str| {
         let mut end = buffer.end_iter();
@@ -359,10 +507,12 @@ fn render_diff(buffer: &gtk4::TextBuffer, dir: &str, spec: &DiffSpec) {
             let mut end = buffer.end_iter();
             buffer.insert_with_tags_by_name(&mut end, "+", &["diff-add", "diff-add-bg"]);
             insert_highlighted(buffer, &mut hl_new, ss, rest, Some("diff-add-bg"));
+            insert_inline_comment(buffer, &comments, rest);
         } else if let Some(rest) = line.strip_prefix('-') {
             let mut end = buffer.end_iter();
             buffer.insert_with_tags_by_name(&mut end, "-", &["diff-remove", "diff-remove-bg"]);
             insert_highlighted(buffer, &mut hl_old, ss, rest, Some("diff-remove-bg"));
+            insert_inline_comment(buffer, &comments, rest);
         } else {
             // Context line: feed both sides (advance old state), display new.
             let rest = line.strip_prefix(' ').unwrap_or(line);
@@ -372,6 +522,7 @@ fn render_diff(buffer: &gtk4::TextBuffer, dir: &str, spec: &DiffSpec) {
             }
             let _ = hl_old.highlight_line(rest, ss);
             insert_highlighted(buffer, &mut hl_new, ss, rest, None);
+            insert_inline_comment(buffer, &comments, rest);
         }
     }
 }
