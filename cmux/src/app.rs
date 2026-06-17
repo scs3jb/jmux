@@ -104,10 +104,10 @@ impl AppState {
         // Build environment variables for the terminal process
         let socket_path = crate::socket::server::socket_path();
         let panel_id_str = panel_id.to_string();
-        let workspace_id_str = {
+        let (workspace_id_str, workspace_env) = {
             let tm = lock_or_recover(&self.shared.tab_manager);
             tm.find_workspace_with_panel(panel_id)
-                .map(|ws| ws.id.to_string())
+                .map(|ws| (ws.id.to_string(), ws.env.clone()))
                 .unwrap_or_default()
         };
 
@@ -122,6 +122,10 @@ impl AppState {
         ];
         if !workspace_id_str.is_empty() {
             env_vars.push(("CMUX_WORKSPACE_ID", &workspace_id_str));
+        }
+        // Per-workspace environment variables (from cmux.json `workspace.env`).
+        for (k, v) in &workspace_env {
+            env_vars.push((k.as_str(), v.as_str()));
         }
         if let Some(ref path) = scrollback_file {
             env_vars.push(("CMUX_RESTORE_SCROLLBACK_FILE", path));

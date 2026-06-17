@@ -45,6 +45,9 @@ pub struct WorkspaceSpec {
     pub cwd: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
+    /// Environment variables inherited by every shell spawned in this workspace.
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
     pub layout: LayoutSpec,
 }
 
@@ -140,6 +143,11 @@ pub fn build_workspace(spec: &WorkspaceSpec, base_dir: &str) -> Workspace {
     if let Some(color) = &spec.color {
         ws.custom_color = Some(color.clone());
     }
+    ws.env = spec
+        .env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     let mut panels: HashMap<Uuid, Panel> = HashMap::new();
     let mut focus: Option<Uuid> = None;

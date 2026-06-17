@@ -77,6 +77,9 @@ pub struct Workspace {
     /// Recently-closed panels (most recent last) for "reopen closed tab".
     /// Session-scoped (not persisted).
     pub closed_panels: Vec<Panel>,
+    /// Per-workspace environment variables injected into every shell spawned in
+    /// this workspace (from the cmux.json `workspace.env` map). Session-scoped.
+    pub env: Vec<(String, String)>,
 }
 
 /// Individual PR check result.
@@ -200,6 +203,7 @@ impl Workspace {
             remote_state: None,
             imessage_mode: false,
             closed_panels: Vec::new(),
+            env: Vec::new(),
         }
     }
 
