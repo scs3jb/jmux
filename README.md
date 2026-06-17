@@ -98,6 +98,7 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - **Terminal multiplexer** — workspaces, split panes, tab management, directional focus
 - **Move tabs & panes** — drag a tab to reorder, split a pane (drop on an edge), or move it to another workspace; break/join panes across workspaces
 - **New tab** — `Ctrl+Shift+T` opens a new terminal in the current pane, inheriting the focused terminal's working directory
+- **Per-workspace environment** — `workspace.env` in a `cmux.json` layout injects variables into every shell spawned in that workspace
 - **Pane overview** — status grid of every pane (busy/idle/attention) with click-to-jump (header button / palette / `overview.open`)
 - **Multi-window** — single-instance app; launching again opens a new window, workspaces assignable across windows
 - **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, persistence (`cmux group`)
@@ -111,11 +112,13 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 ### Panels
 - **Terminal** — Ghostty-backed GL surfaces with vi-style copy mode and a vim badge indicator
 - **Integrated browser** — WebKit6 panels with 120+ automation commands (Playwright-style API), profiles, history, focus mode
-- **Markdown viewer** — `cmux open file.md` / drag from the sidebar
+- **Markdown viewer** — `cmux open file.md` / drag from the sidebar; renders **Mermaid diagrams**
 - **Diff viewer** — `cmux diff [path]` git diff CodeView (`--staged` / `--branch <ref>`); plain-GTK, no WebKit
 - **Project visualizer** — `cmux project [path]` directory tree + file-type/size summary
 - **Finder previews** — inline image / video / **PDF** (poppler) previews in the file-preview panel
+- **File explorer** — sidebar tree with configurable double-click action (preview / default app / preferred editor) and **Insert Path / Insert Relative Path** into the focused terminal
 - **Notes scratchpad** — `cmux notes [file]` editable, auto-saved; path configurable in Settings
+- **Word wrap** — toggle line wrapping for the file preview/editor and notes panels (Settings → Editor & Files)
 - **History pane** — `cmux history` searchable day-grouped closed/focused workspaces
 - **Vault pane** — `cmux vault` searchable index of past Claude Code / Codex sessions, click to resume
 
@@ -132,6 +135,7 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - 120+ `browser.*` automation commands (Playwright-style)
 - Per-profile isolated NetworkSession with persistent cookies; cookie import
 - Frecency-scored history with omnibar autocomplete
+- Search engines (DuckDuckGo/Google/Bing/Kagi/Startpage/Custom) + **keyword search providers** (`gh rust` → GitHub search)
 - `window.open`/`target=_blank` → new tab, Ctrl/middle-click → new tab, mouse 8/9 back/forward, deep-link handling, HTTP interstitial with allowlist
 - Per-tab audio mute, distraction-free focus mode, React component grab
 - System/Light/Dark theme override; UA override, camera/mic/geo denied by default
