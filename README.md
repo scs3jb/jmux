@@ -4,7 +4,7 @@
 
 ![cmux-gtk](docs/screenshots/hero.png)
 
-> **Note:** the screenshots below are real captures, generated privacy-safely (synthetic demo data, no real paths) by [`docs/autocapture.sh`](docs/autocapture.sh) running cmux in a headless compositor. The two demo **GIFs** (drag tabs / move panes) are still placeholders — drag interactions can't be scripted headlessly; see [`docs/CAPTURING.md`](docs/CAPTURING.md) to record them.
+> **Note:** the screenshots and GIFs below are real captures, generated privacy-safely (synthetic demo data, no real paths) by [`docs/autocapture.sh`](docs/autocapture.sh) and [`docs/capture-tools/make-gifs.sh`](docs/capture-tools/make-gifs.sh) running cmux in a headless compositor. The GIFs drive real GTK interactions through a tiny `wlr-virtual-pointer`/`virtual-keyboard` client — see [`docs/SCREENSHOTS.md`](docs/SCREENSHOTS.md).
 
 ---
 
@@ -26,7 +26,7 @@ Browser support (WebKit6) is on by default; build without it via `--no-default-f
 
 **Pane Overview** — a status grid of every pane in the workspace: busy / idle / attention dots (detected from each pane's foreground process), a one-line activity snippet, and click-to-jump. Open it from the header grid button, the palette, or a configurable shortcut.
 
-![Pane Overview](docs/screenshots/pane-overview.png)
+![Pane Overview](docs/demos/pane-overview.gif)
 
 ### Agent integrations — teammates as native panes
 
@@ -73,7 +73,7 @@ An opt-in multi-line input below a terminal for composing multi-line agent promp
 
 Fuzzy command palette and workspace switcher. Define your own entries in `cmux.json` (project `.cmux/cmux.json`, project root, or global) that run a shell command **or** open a whole multi-pane `workspace` layout.
 
-![Command palette](docs/screenshots/command-palette.png)
+![Command palette](docs/demos/command-palette.gif)
 
 ---
 

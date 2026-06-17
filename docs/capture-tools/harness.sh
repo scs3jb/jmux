@@ -35,3 +35,18 @@ stage_only() {
   for id in $(ids_all); do [ "$id" != "$keep" ] && R close "$id" >/dev/null 2>&1; done; sleep 0.8
   R select "$keep" >/dev/null 2>&1; sleep 1.5
 }
+
+# open several clean demo workspaces, close only the leaky defaults (Terminal / @host)
+stage_several() {
+  for c in "$@"; do R run "$c" >/dev/null 2>&1; sleep 1.6; done
+  # close workspaces whose title is a default/leaky one
+  local kill_ids
+  kill_ids=$(R list 2>/dev/null | python3 -c "import sys,json
+for w in json.load(sys.stdin)['result']['workspaces']:
+    t=w.get('title','')
+    if t=='Terminal' or t.startswith('@') or '/home/' in t: print(w['id'])")
+  for id in $kill_ids; do R close "$id" >/dev/null 2>&1; done; sleep 0.8
+  # select the first clean one
+  local first; first=$(R list 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['workspaces'][0]['id'])")
+  R select "$first" >/dev/null 2>&1; sleep 1.2
+}
