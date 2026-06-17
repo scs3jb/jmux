@@ -395,6 +395,10 @@ Workspaces
   reopen-tab                 Reopen the most recently closed tab (this workspace)
   history                    Open the History pane (closed/focused workspaces)
   vault                      Open the Vault pane (search & resume agent sessions)
+  describe <text>            Set the selected workspace's description (empty clears)
+  ai-name [workspace-id]     AI-generate a workspace title from the terminal
+  ide [editor] [dir]         Open a directory in an external editor/IDE (default $PWD)
+  config doctor              Diagnose install, daemon, and config health
   next | prev | last         Switch workspace
   back | forward             Navigate recently-focused workspaces
   hibernate                  Pause the focused agent (SIGSTOP) / toggle
@@ -665,6 +669,25 @@ case "$command" in
     if [[ ${#open_files[@]} -gt 0 ]]; then
       json_paths=$(printf '"%s",' "${open_files[@]}"); json_paths="[${json_paths%,}]"
       _cmux_json "file.open" "{\"paths\":$json_paths}"
+    fi
+    ;;
+  ide) # ide [editor] [dir] — open a directory in an external editor/IDE
+       # (defaults: editor=$CMUX_IDE or $EDITOR or code; dir=$PWD).
+    ide_editor="${1:-${CMUX_IDE:-${EDITOR:-code}}}"
+    ide_dir="${2:-$PWD}"
+    case "$ide_editor" in
+      vscode|code)        ide_cmd=code ;;
+      codium|vscodium)    ide_cmd=codium ;;
+      idea|intellij)      ide_cmd=idea ;;
+      cursor)             ide_cmd=cursor ;;
+      zed)                ide_cmd=zed ;;
+      subl|sublime)       ide_cmd=subl ;;
+      *)                  ide_cmd="$ide_editor" ;;
+    esac
+    if command -v "$ide_cmd" >/dev/null 2>&1; then
+      "$ide_cmd" "$ide_dir" >/dev/null 2>&1 &
+    else
+      echo "cmux ide: '$ide_cmd' not found on PATH" >&2; exit 1
     fi
     ;;
   group)
