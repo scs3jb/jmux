@@ -144,18 +144,22 @@ fn bind_shortcuts(
     hotkey: &str,
 ) {
     // Toggle whenever our shortcut activates (delivered on the GTK thread).
+    // Subscribe broadly to Activated on the interface (no arg0 path filter,
+    // which can be finicky) and check the shortcut id ourselves.
     {
         let shared = shared.clone();
         conn.signal_subscribe(
-            None,
+            Some(PORTAL_DEST),
             Some(GS_IFACE),
             Some("Activated"),
             Some(PORTAL_PATH),
-            Some(session_handle),
-            gio::DBusSignalFlags::MATCH_ARG0_PATH,
+            None,
+            gio::DBusSignalFlags::NONE,
             move |_conn, _sender, _path, _iface, _signal, params| {
                 // params: (o session_handle, s shortcut_id, t timestamp, a{sv})
-                if params.child_value(1).get::<String>().as_deref() == Some(SHORTCUT_ID) {
+                let id = params.child_value(1).get::<String>();
+                tracing::info!(?id, "quick terminal: portal Activated");
+                if id.as_deref() == Some(SHORTCUT_ID) {
                     shared.send_ui_event(UiEvent::QuickTerminal(QuickTermAction::Toggle));
                 }
             },
