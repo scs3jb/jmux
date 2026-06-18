@@ -12,14 +12,10 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita as adw;
-use uuid::Uuid;
 
 use crate::app::{lock_or_recover, AppState, QuickTermAction};
 
-/// Stable id so the drop-down is a singleton we can find and toggle.
-fn quick_window_id() -> Uuid {
-    Uuid::from_u128(0x0c3de9a1_5b2f_4c6d_8e10_000000000001)
-}
+use super::quick_window_id;
 
 thread_local! {
     static QUICK: RefCell<Option<QuickState>> = const { RefCell::new(None) };

@@ -274,7 +274,13 @@ pub fn create_snapshot(state: &crate::app::AppState) -> AppSessionSnapshot {
         Option<uuid::Uuid>,
         Vec<SessionWorkspaceSnapshot>,
     > = std::collections::BTreeMap::new();
+    let quick_window = crate::ui::quick_terminal::quick_window_id();
     for ws in tm.iter() {
+        // The quick-terminal drop-down is recreated on demand — never persist it
+        // (otherwise it restores as an extra normal window).
+        if ws.window_id == Some(quick_window) {
+            continue;
+        }
         window_map
             .entry(ws.window_id)
             .or_default()

@@ -464,7 +464,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
 
     // ── Editor & Files group ──
     let editor_group = adw::PreferencesGroup::new();
-    editor_group.set_title("Editor & Files");
+    editor_group.set_title("Editor and Files");
 
     let word_wrap_row = adw::SwitchRow::new();
     word_wrap_row.set_title("Word Wrap");

@@ -149,7 +149,7 @@ fn bind_shortcuts(
     {
         let shared = shared.clone();
         conn.signal_subscribe(
-            Some(PORTAL_DEST),
+            None,
             Some(GS_IFACE),
             Some("Activated"),
             Some(PORTAL_PATH),
@@ -168,8 +168,10 @@ fn bind_shortcuts(
 
     let request_token = gen_token("cmux_req_");
     if let Some(req_path) = request_path(conn, &request_token) {
-        on_request_response(conn, &req_path, |_conn, _results| {
+        let session = session_handle.to_string();
+        on_request_response(conn, &req_path, move |conn, _results| {
             tracing::info!("quick terminal global shortcut bound");
+            list_shortcuts(conn, &session);
         });
     }
 
@@ -203,6 +205,59 @@ fn bind_shortcuts(
         move |res| {
             if let Err(e) = res {
                 tracing::warn!("quick terminal: BindShortcuts failed: {e}");
+            }
+        },
+    );
+}
+
+/// Diagnostic: ask the portal what shortcuts it has for our session and log the
+/// trigger KDE actually assigned (empty trigger ⇒ the user must assign a key).
+fn list_shortcuts(conn: &gio::DBusConnection, session_handle: &str) {
+    let request_token = gen_token("cmux_req_");
+    let Some(req_path) = request_path(conn, &request_token) else {
+        return;
+    };
+    on_request_response(conn, &req_path, |_conn, results| {
+        let dict = glib::VariantDict::new(Some(&results));
+        let Some(shortcuts) = dict.lookup_value("shortcuts", None) else {
+            tracing::info!("quick terminal: ListShortcuts returned no shortcuts");
+            return;
+        };
+        for i in 0..shortcuts.n_children() {
+            let entry = shortcuts.child_value(i); // (s a{sv})
+            let id = entry.child_value(0).get::<String>().unwrap_or_default();
+            let meta = glib::VariantDict::new(Some(&entry.child_value(1)));
+            let trigger = meta
+                .lookup_value("trigger_description", None)
+                .and_then(|v| v.str().map(|s| s.to_string()))
+                .unwrap_or_default();
+            tracing::info!(id, trigger = %trigger, "quick terminal: KDE-registered shortcut");
+        }
+    });
+
+    let payload = match glib::Variant::parse(
+        None,
+        &format!("(objectpath '{session_handle}', {{'handle_token': <'{request_token}'>}})"),
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("quick terminal: ListShortcuts payload error: {e}");
+            return;
+        }
+    };
+    conn.call(
+        Some(PORTAL_DEST),
+        PORTAL_PATH,
+        GS_IFACE,
+        "ListShortcuts",
+        Some(&payload),
+        None,
+        gio::DBusCallFlags::NONE,
+        -1,
+        gio::Cancellable::NONE,
+        |res| {
+            if let Err(e) = res {
+                tracing::warn!("quick terminal: ListShortcuts failed: {e}");
             }
         },
     );

@@ -11,6 +11,13 @@ use std::rc::Rc;
 
 use crate::app::{AppState, QuickTermAction};
 
+/// Stable window id for the drop-down window, so it's a singleton and can be
+/// excluded from session save/restore (it's recreated on demand, never
+/// persisted as a normal window).
+pub fn quick_window_id() -> uuid::Uuid {
+    uuid::Uuid::from_u128(0x0c3de9a1_5b2f_4c6d_8e10_000000000001)
+}
+
 /// Handle a quick-terminal action on the GTK main thread. `app` is any live
 /// application handle (used to create the drop-down window on first use).
 pub fn handle(action: QuickTermAction, app: &gtk4::Application, state: &Rc<AppState>) {
