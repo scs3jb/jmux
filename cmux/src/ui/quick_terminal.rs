@@ -30,3 +30,20 @@ pub fn handle(action: QuickTermAction, app: &gtk4::Application, state: &Rc<AppSt
 
 #[cfg(feature = "quick-terminal")]
 mod imp;
+
+#[cfg(feature = "quick-terminal")]
+pub mod portal;
+
+/// Spawn the GlobalShortcuts portal listener on the current tokio runtime, so
+/// the configured hotkey toggles the quick terminal system-wide. No-op in
+/// builds without the `quick-terminal` feature.
+pub fn spawn_global_shortcut(shared: std::sync::Arc<crate::app::SharedState>) {
+    #[cfg(feature = "quick-terminal")]
+    {
+        tokio::spawn(async move { portal::run(shared).await });
+    }
+    #[cfg(not(feature = "quick-terminal"))]
+    {
+        let _ = shared;
+    }
+}
