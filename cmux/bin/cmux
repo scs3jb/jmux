@@ -398,6 +398,7 @@ Workspaces
   describe <text>            Set the selected workspace's description (empty clears)
   ai-name [workspace-id]     AI-generate a workspace title from the terminal
   ide [editor] [dir]         Open a directory in an external editor/IDE (default $PWD)
+  quick-terminal [toggle|show|hide]  Toggle the Quake-style drop-down terminal
   config doctor              Diagnose install, daemon, and config health
   next | prev | last         Switch workspace
   back | forward             Navigate recently-focused workspaces

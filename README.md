@@ -18,6 +18,13 @@ sudo bash scripts/install.sh          # installs cmux-app + cmux CLI to /usr/loc
 
 Browser support (WebKit6) is on by default; build without it via `--no-default-features --features cmux/link-ghostty`.
 
+The **quick terminal** (Quake-style drop-down) is an opt-in build that needs `gtk4-layer-shell` and a layer-shell compositor (KDE/wlroots):
+
+```bash
+# install libgtk4-layer-shell (e.g. `sudo pacman -S gtk4-layer-shell`), then:
+cargo build --release --features cmux/link-ghostty,cmux/quick-terminal
+```
+
 ---
 
 ## Highlights
@@ -101,6 +108,7 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - **Per-workspace environment** — `workspace.env` in a `cmux.json` layout injects variables into every shell spawned in that workspace
 - **Pane overview** — status grid of every pane (busy/idle/attention) with click-to-jump (header button / palette / `overview.open`)
 - **Multi-window** — single-instance app; launching again opens a new window, workspaces assignable across windows
+- **Quick terminal** — Quake-style drop-down that slides in from the top edge (chromeless layer-shell overlay, no titlebar), toggled by a configurable global hotkey (GlobalShortcuts portal) or `cmux quick-terminal toggle`. Opt-in build (`--features cmux/quick-terminal`); enable + set the hotkey/height in **Settings → Quick Terminal**
 - **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, persistence (`cmux group`)
 - **Workspace management** — pinning, custom colors, reorder, close-others/above/below
 - **Workspace descriptions** — free-text per-workspace notes (`cmux describe`), shown in the sidebar tooltip
