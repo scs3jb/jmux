@@ -105,15 +105,16 @@ pub fn create_window(
     let toast_overlay = adw::ToastOverlay::new();
 
     let header = adw::HeaderBar::new();
-    // Minimal mode (or a chromeless quick-terminal window): hide the header bar
-    // for a distraction-free terminal with no window controls.
-    if chromeless || crate::settings::load().minimal_mode {
+    // Minimal mode hides the header bar entirely for a distraction-free terminal.
+    if crate::settings::load().minimal_mode {
         header.set_visible(false);
     }
-    // Chromeless windows (quick terminal) also collapse the sidebar to content.
+    // A chromeless (quick-terminal) window keeps the full UI — sidebar, header,
+    // tabs and global buttons — but drops the OS-style window controls
+    // (close/maximize), since a layer-shell drop-down isn't a normal window.
     if chromeless {
-        split_view.set_collapsed(true);
-        split_view.set_show_content(true);
+        header.set_show_start_title_buttons(false);
+        header.set_show_end_title_buttons(false);
     }
 
     bind_sidebar_selection(&list_box, &content_box, state);

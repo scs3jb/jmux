@@ -88,6 +88,11 @@ pub(super) fn bind_shared_state_updates(
                             let st = Rc::clone(&state);
                             crate::ui::settings::show_settings(&window, move || {
                                 super::refresh_ui(&lb, &cb, &st);
+                                // Register the quick-terminal hotkey if it was
+                                // just enabled (no-op otherwise / if already up).
+                                crate::ui::quick_terminal::spawn_global_shortcut(
+                                    st.shared.clone(),
+                                );
                             });
                         }
                     }

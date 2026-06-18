@@ -625,9 +625,6 @@ pub fn run() -> i32 {
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
                 rt.block_on(async {
-                    // Register the quick-terminal global hotkey (GlobalShortcuts
-                    // portal) on this runtime, if the feature/setting is enabled.
-                    crate::ui::quick_terminal::spawn_global_shortcut(shared.clone());
                     if let Err(e) = socket::server::run_socket_server(shared).await {
                         tracing::error!("Socket server error: {}", e);
                     }
@@ -635,6 +632,10 @@ pub fn run() -> i32 {
             });
 
             crate::port_scanner::spawn(shared_for_ports.clone());
+
+            // Register the quick-terminal global hotkey (GlobalShortcuts portal)
+            // if the feature build + setting are enabled.
+            crate::ui::quick_terminal::spawn_global_shortcut(shared_for_ports.clone());
         });
     }
 

@@ -34,13 +34,34 @@ mod imp;
 #[cfg(feature = "quick-terminal")]
 pub mod portal;
 
-/// Spawn the GlobalShortcuts portal listener on the current tokio runtime, so
-/// the configured hotkey toggles the quick terminal system-wide. No-op in
-/// builds without the `quick-terminal` feature.
+/// Register the GlobalShortcuts portal hotkey on a dedicated thread, so the
+/// configured key toggles the quick terminal system-wide. Safe to call at
+/// startup and again whenever settings change — it's a no-op when the feature
+/// is off, when the quick terminal is disabled, or when a listener is already
+/// running.
 pub fn spawn_global_shortcut(shared: std::sync::Arc<crate::app::SharedState>) {
     #[cfg(feature = "quick-terminal")]
     {
-        tokio::spawn(async move { portal::run(shared).await });
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static ACTIVE: AtomicBool = AtomicBool::new(false);
+
+        if !crate::settings::load().quick_terminal.enabled {
+            return;
+        }
+        // Only one portal listener at a time.
+        if ACTIVE.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        std::thread::spawn(move || {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt.block_on(portal::run(shared)),
+                Err(e) => tracing::warn!("quick terminal: tokio runtime for portal failed: {e}"),
+            }
+            ACTIVE.store(false, Ordering::SeqCst);
+        });
     }
     #[cfg(not(feature = "quick-terminal"))]
     {
