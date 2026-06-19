@@ -1,4 +1,4 @@
-//! Settings window — AdwPreferencesWindow for application configuration.
+//! Settings — AdwPreferencesDialog (in-surface) for application configuration.
 
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -14,12 +14,10 @@ use crate::settings::{
 pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'static) {
     let current_settings = settings::load();
 
-    let window = adw::PreferencesWindow::new();
-    window.set_title(Some("Settings"));
-    window.set_transient_for(Some(parent));
-    window.set_modal(true);
-    window.set_default_width(600);
-    window.set_default_height(500);
+    // In-surface adw::PreferencesDialog (not a top-level window) so it renders
+    // above the content — including the layer-shell quake drop-down.
+    let window = adw::PreferencesDialog::new();
+    window.set_title("Settings");
 
     // ── Appearance page ──
     let appearance_page = adw::PreferencesPage::new();
@@ -1148,7 +1146,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
         let agent_pi_row = agent_pi_row.clone();
         let agent_hermes_row = agent_hermes_row.clone();
         let agent_antigravity_row = agent_antigravity_row.clone();
-        window.connect_close_request(move |_| {
+        window.connect_closed(move |_| {
             let theme = match theme_row.selected() {
                 1 => ThemeMode::Light,
                 2 => ThemeMode::Dark,
@@ -1307,19 +1305,12 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
             // Apply theme immediately
             crate::app::apply_theme_from_settings();
 
-            glib::Propagation::Proceed
+            // Refresh the caller's UI now that settings are saved.
+            on_close();
         });
     }
 
-    // Refresh UI when settings window is hidden/closed.
-    // AdwPreferencesWindow may not emit close-request reliably,
-    // so we also listen for unmap.
-    window.connect_unmap(move |_| {
-        tracing::info!("Settings window unmapped, refreshing sidebar");
-        on_close();
-    });
-
-    window.present();
+    window.present(Some(parent));
 }
 
 // ── Theme discovery helpers ──────────────────────────────────────────────────

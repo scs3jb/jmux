@@ -28,12 +28,13 @@ struct TileInfo {
 pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>) {
     let tiles = collect_tiles(state);
 
-    let window = adw::Window::new();
-    window.set_title(Some("Overview"));
-    window.set_transient_for(Some(parent));
-    window.set_modal(true);
-    window.set_default_width(900);
-    window.set_default_height(620);
+    // An in-surface adw::Dialog (not a separate top-level window) so it renders
+    // above the content — including the layer-shell quake drop-down, which sits
+    // on the overlay layer above any normal window.
+    let dialog = adw::Dialog::new();
+    dialog.set_title("Overview");
+    dialog.set_content_width(900);
+    dialog.set_content_height(620);
 
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
@@ -52,8 +53,8 @@ pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>)
         empty.add_css_class("dim-label");
         empty.set_vexpand(true);
         toolbar.set_content(Some(&empty));
-        window.set_content(Some(&toolbar));
-        window.present();
+        dialog.set_child(Some(&toolbar));
+        dialog.present(Some(parent));
         return;
     }
 
@@ -70,7 +71,7 @@ pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>)
     flow.set_margin_bottom(16);
 
     for tile in &tiles {
-        flow.append(&build_tile(tile, parent, state, &window));
+        flow.append(&build_tile(tile, state, &dialog));
     }
 
     let scrolled = gtk4::ScrolledWindow::new();
@@ -78,32 +79,13 @@ pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>)
     scrolled.set_vexpand(true);
     scrolled.set_child(Some(&flow));
     toolbar.set_content(Some(&scrolled));
-    window.set_content(Some(&toolbar));
+    dialog.set_child(Some(&toolbar));
 
-    // Esc closes.
-    let key = gtk4::EventControllerKey::new();
-    {
-        let window = window.clone();
-        key.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gdk4::Key::Escape {
-                window.close();
-                glib::Propagation::Stop
-            } else {
-                glib::Propagation::Proceed
-            }
-        });
-    }
-    window.add_controller(key);
-
-    window.present();
+    // adw::Dialog closes on Escape natively — no key controller needed.
+    dialog.present(Some(parent));
 }
 
-fn build_tile(
-    tile: &TileInfo,
-    parent: &adw::ApplicationWindow,
-    state: &Rc<AppState>,
-    window: &adw::Window,
-) -> gtk4::Widget {
+fn build_tile(tile: &TileInfo, state: &Rc<AppState>, dialog: &adw::Dialog) -> gtk4::Widget {
     let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     vbox.set_size_request(200, 120);
     vbox.add_css_class("overview-tile");
@@ -159,8 +141,7 @@ fn build_tile(
 
     let panel_id = tile.panel_id;
     let state = Rc::clone(state);
-    let window = window.clone();
-    let _parent = parent.clone();
+    let dialog = dialog.clone();
     button.connect_clicked(move |_| {
         {
             let mut tm = lock_or_recover(&state.shared.tab_manager);
@@ -169,7 +150,7 @@ fn build_tile(
             }
         }
         state.shared.notify_ui_refresh();
-        window.close();
+        dialog.close();
     });
 
     button.upcast()

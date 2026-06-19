@@ -5,10 +5,10 @@
 
 use std::rc::Rc;
 
-use gdk4;
 use glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::*;
 
 use crate::app::{lock_or_recover, AppState};
 
@@ -24,13 +24,12 @@ struct SurfaceMatch {
 
 /// Open the all-surfaces search dialog.
 pub fn show_all_surfaces_search(parent: &adw::ApplicationWindow, state: &Rc<AppState>) {
-    let dialog = gtk4::Window::builder()
-        .title("Search All Terminals")
-        .transient_for(parent)
-        .modal(true)
-        .default_width(600)
-        .default_height(400)
-        .build();
+    // In-surface adw::Dialog so it renders above the content — including the
+    // layer-shell quake drop-down (a normal window would sit below it).
+    let dialog = adw::Dialog::new();
+    dialog.set_title("Search All Terminals");
+    dialog.set_content_width(600);
+    dialog.set_content_height(400);
 
     let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
@@ -122,21 +121,8 @@ pub fn show_all_surfaces_search(parent: &adw::ApplicationWindow, state: &Rc<AppS
         });
     }
 
-    // Escape to close
-    let key_controller = gtk4::EventControllerKey::new();
-    {
-        let dialog_ref = dialog.clone();
-        key_controller.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gdk4::Key::Escape {
-                dialog_ref.close();
-                return glib::Propagation::Stop;
-            }
-            glib::Propagation::Proceed
-        });
-    }
-    dialog.add_controller(key_controller);
-
-    dialog.present();
+    // adw::Dialog closes on Escape natively — no key controller needed.
+    dialog.present(Some(parent));
     entry.grab_focus();
 }
 

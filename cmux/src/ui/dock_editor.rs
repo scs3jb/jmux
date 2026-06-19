@@ -24,12 +24,10 @@ struct ControlRow {
 
 /// Show the dock-controls editor. `on_saved` runs after a successful save.
 pub fn show_dock_editor(parent: &adw::ApplicationWindow, on_saved: impl Fn() + 'static) {
-    let window = adw::PreferencesWindow::new();
-    window.set_title(Some("Dock Controls"));
-    window.set_transient_for(Some(parent));
-    window.set_modal(true);
-    window.set_default_width(560);
-    window.set_default_height(560);
+    // In-surface adw::PreferencesDialog (not a top-level window) so it renders
+    // above the content — including the layer-shell quake drop-down.
+    let window = adw::PreferencesDialog::new();
+    window.set_title("Dock Controls");
 
     let page = adw::PreferencesPage::new();
     let group = adw::PreferencesGroup::new();
@@ -66,17 +64,16 @@ pub fn show_dock_editor(parent: &adw::ApplicationWindow, on_saved: impl Fn() + '
     // Save on close.
     {
         let rows = rows.clone();
-        window.connect_close_request(move |_| {
+        window.connect_closed(move |_| {
             let controls = collect(&rows);
             match dock::save_global(&controls) {
                 Ok(()) => on_saved(),
                 Err(e) => tracing::error!("Failed to save dock.json: {e}"),
             }
-            glib::Propagation::Proceed
         });
     }
 
-    window.present();
+    window.present(Some(parent));
 }
 
 fn add_control_row(
