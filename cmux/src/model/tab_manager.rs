@@ -32,11 +32,6 @@ pub struct TabManager {
     focus_pos: usize,
     /// Recently-closed workspaces (most recent last) for reopen + History.
     closed_stack: Vec<ClosedEntry>,
-    /// Per-window workspace override (window_id → workspace_id). When set, that
-    /// window renders this workspace instead of the global selection — used by
-    /// the quick terminal so its drop-down window is independent of the main
-    /// window's selection. Windows with no entry follow the global selection.
-    window_selection: std::collections::HashMap<Uuid, Uuid>,
 }
 
 /// Maximum number of recently-closed workspaces retained for reopen.
@@ -56,7 +51,6 @@ impl TabManager {
             focus_history: Vec::new(),
             focus_pos: 0,
             closed_stack: Vec::new(),
-            window_selection: std::collections::HashMap::new(),
         }
     }
 
@@ -69,7 +63,6 @@ impl TabManager {
             focus_history: Vec::new(),
             focus_pos: 0,
             closed_stack: Vec::new(),
-            window_selection: std::collections::HashMap::new(),
         }
     }
 
@@ -123,28 +116,11 @@ impl TabManager {
         }
     }
 
-    /// Pin `ws_id` to render in `window_id` regardless of the global selection.
-    pub fn select_for_window(&mut self, window_id: Uuid, ws_id: Uuid) {
-        self.window_selection.insert(window_id, ws_id);
-    }
-
-    /// The workspace a window should render: its per-window override (if set and
-    /// still present), otherwise the global selection.
-    pub fn selected_for_window(&self, window_id: Uuid) -> Option<&Workspace> {
-        if let Some(ws_id) = self.window_selection.get(&window_id) {
-            if let Some(ws) = self.workspaces.iter().find(|w| w.id == *ws_id) {
-                return Some(ws);
-            }
-        }
+    /// The workspace a window should render. Every window (including the quake
+    /// drop-down, which is the only window in quake-daemon mode) follows the
+    /// global selection; the `window_id` arg is retained for call-site clarity.
+    pub fn selected_for_window(&self, _window_id: Uuid) -> Option<&Workspace> {
         self.selected()
-    }
-
-    /// Add a workspace without changing the global selection (used for windows
-    /// that pin their own workspace, e.g. the quick terminal).
-    pub fn add_workspace_keep_selection(&mut self, workspace: Workspace) -> Uuid {
-        let id = workspace.id;
-        self.workspaces.push(workspace);
-        id
     }
 
     /// Select the next workspace (wrapping around).

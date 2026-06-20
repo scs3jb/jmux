@@ -72,22 +72,14 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     state.shared.install_ui_event_sender(window_id, tx);
     {
+        // Pure quake-daemon mode: this drop-down is the only window, so it shows
+        // the normal workspace list and tracks the global selection like any
+        // window — no dedicated "Quick Terminal" workspace, no per-window pin.
+        // Only seed a default workspace when there are none at all.
         let mut tm = lock_or_recover(&state.shared.tab_manager);
-        let existing = tm
-            .iter()
-            .find(|ws| ws.window_id == Some(window_id))
-            .map(|ws| ws.id);
-        let ws_id = match existing {
-            Some(id) => id,
-            None => {
-                let mut ws = crate::model::Workspace::new();
-                ws.window_id = Some(window_id);
-                ws.custom_title = Some("Quick Terminal".to_string());
-                // Don't disturb the main window's global selection.
-                tm.add_workspace_keep_selection(ws)
-            }
-        };
-        tm.select_for_window(window_id, ws_id);
+        if tm.iter().next().is_none() && !crate::ui::welcome::should_show_welcome() {
+            tm.add_workspace(crate::model::Workspace::new());
+        }
     }
 
     let window = crate::ui::window::create_window(app, state, window_id, rx, true);

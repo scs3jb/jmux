@@ -524,14 +524,10 @@ fn enforce_workspace_invariant(content_box: &gtk4::Box, state: &Rc<AppState>) ->
     }
 
     if crate::app::quake_mode() {
-        let window_id = window_id_of(content_box.upcast_ref::<gtk4::Widget>())
-            .unwrap_or_else(crate::ui::quick_terminal::quick_window_id);
-        let mut ws = Workspace::new();
-        ws.window_id = Some(window_id);
-        ws.custom_title = Some("Quick Terminal".to_string());
-        let mut tm = lock_or_recover(&state.shared.tab_manager);
-        let id = tm.add_workspace(ws);
-        tm.select_for_window(window_id, id);
+        // Spawn a fresh workspace + tab so the drop-down console is never empty.
+        // It becomes the global selection (this is the only window), so the
+        // console renders it — a plain workspace, not a dedicated one.
+        lock_or_recover(&state.shared.tab_manager).add_workspace(Workspace::new());
         true
     } else {
         if let Some(app) = content_box
