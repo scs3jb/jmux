@@ -170,11 +170,20 @@ fn truncate_scrollback(text: &str) -> String {
 }
 
 /// Create a snapshot from the current application state.
-pub fn create_snapshot(state: &crate::app::AppState) -> AppSessionSnapshot {
+pub fn create_snapshot(
+    state: &crate::app::AppState,
+    capture_scrollback: bool,
+) -> AppSessionSnapshot {
     // Capture scrollback text for all terminal panels before locking tab_manager.
     // Skipped when persist_scrollback=false to avoid persisting sensitive data.
+    //
+    // `capture_scrollback` is false for the periodic autosave: reading every
+    // terminal's grid (an FFI walk, up to 400k chars each) and serialising it
+    // every 8s stalls the main loop on a long-running daemon — which shows up as
+    // the global hotkey getting sluggish. The structure is still saved often;
+    // the full scrollback is captured on shutdown (clean quit or SIGTERM).
     let app_settings = crate::settings::load();
-    let persist_scrollback = app_settings.persist_scrollback;
+    let persist_scrollback = capture_scrollback && app_settings.persist_scrollback;
     let split_ratio_persist = app_settings.split_ratio_persist;
     let scrollback_map: std::collections::HashMap<uuid::Uuid, String> = if persist_scrollback {
         state

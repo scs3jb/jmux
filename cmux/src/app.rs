@@ -712,8 +712,9 @@ pub fn run() -> i32 {
     {
         let state = state.clone();
         app.connect_shutdown(move |_app| {
-            // Save session before shutdown
-            let snapshot = session::store::create_snapshot(&state);
+            // Save session before shutdown — capture full scrollback here (the
+            // one place we pay that cost), so a clean quit/SIGTERM preserves it.
+            let snapshot = session::store::create_snapshot(&state, true);
             if let Err(e) = session::store::save_session(&snapshot) {
                 tracing::error!("Failed to save session on shutdown: {}", e);
             }
@@ -735,7 +736,41 @@ pub fn run() -> i32 {
         });
     }
 
+    // Quit cleanly on SIGTERM (e.g. `pkill cmux-app`) so `connect_shutdown` runs
+    // and the shutdown snapshot — the only one that captures scrollback now — is
+    // written before exit. The handler restores the default disposition, so a
+    // second SIGTERM still terminates hard if the loop is wedged.
+    {
+        unsafe {
+            libc::signal(
+                libc::SIGTERM,
+                sigterm_handler as *const () as libc::sighandler_t,
+            );
+        }
+        let app_weak = app.downgrade();
+        glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
+            if !SIGTERM_RECEIVED.load(Ordering::Relaxed) {
+                return glib::ControlFlow::Continue;
+            }
+            if let Some(app) = app_weak.upgrade() {
+                tracing::info!("SIGTERM received — quitting to save session");
+                app.quit();
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
     app.run().into()
+}
+
+static SIGTERM_RECEIVED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn sigterm_handler(sig: libc::c_int) {
+    SIGTERM_RECEIVED.store(true, Ordering::Relaxed);
+    // Restore default so a second SIGTERM terminates immediately.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+    }
 }
 
 /// One-time per-process initialization: ghostty, theme, session restore, and
@@ -810,7 +845,9 @@ fn first_launch_init(app: &adw::Application, state: &Rc<AppState>, quake: bool) 
                     }
                 }
             }
-            let snapshot = session::store::create_snapshot(&state);
+            // Periodic autosave: structure only (no per-terminal scrollback
+            // read), so it stays cheap no matter how long the daemon runs.
+            let snapshot = session::store::create_snapshot(&state, false);
             if let Err(e) = session::store::save_session(&snapshot) {
                 tracing::warn!("Autosave failed: {}", e);
             }
