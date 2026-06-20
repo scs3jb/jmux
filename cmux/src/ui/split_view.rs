@@ -401,6 +401,11 @@ fn build_tab_button(
         close_btn.add_css_class("circular");
         close_btn.add_css_class("pane-tab-close");
         close_btn.set_tooltip_text(Some("Close tab"));
+        // Never let keyboard focus land on the close button: after a tab closes
+        // and the bar rebuilds, focus would otherwise settle on an adjacent
+        // tab's close button, where a stray Enter/Space closes another tab.
+        close_btn.set_can_focus(false);
+        close_btn.set_focus_on_click(false);
         {
             let state = Rc::clone(state);
             close_btn.connect_clicked(move |_| {

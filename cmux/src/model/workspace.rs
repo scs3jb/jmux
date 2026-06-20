@@ -300,11 +300,33 @@ impl Workspace {
             let drop = self.closed_panels.len() - CLOSED_PANELS_CAP;
             self.closed_panels.drain(0..drop);
         }
+
+        // If we're closing the focused tab, shift focus to the tab on its left in
+        // the same pane (or the right neighbour if it was leftmost) — captured
+        // before the layout mutates. This keeps focus on an adjacent tab instead
+        // of jumping to the first pane.
+        let removing_focused = self.focused_panel_id == Some(panel_id);
+        let neighbor = if removing_focused {
+            self.layout
+                .find_pane_with_panel_readonly(panel_id)
+                .and_then(|pane| {
+                    let idx = pane.iter().position(|&id| id == panel_id)?;
+                    if idx > 0 {
+                        Some(pane[idx - 1])
+                    } else {
+                        pane.get(idx + 1).copied()
+                    }
+                })
+        } else {
+            None
+        };
+
         self.layout.remove_panel(panel_id);
 
-        // Update focused panel if needed
-        if self.focused_panel_id == Some(panel_id) {
-            self.focused_panel_id = self.layout.all_panel_ids().into_iter().next();
+        if removing_focused {
+            self.focused_panel_id = neighbor
+                .filter(|id| self.panels.contains_key(id))
+                .or_else(|| self.layout.all_panel_ids().into_iter().next());
         }
 
         true
