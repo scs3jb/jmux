@@ -80,7 +80,11 @@ pub fn load_session() -> anyhow::Result<Option<AppSessionSnapshot>> {
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let tmp_path = path.with_extension(format!("json.tmp.{}", std::process::id()));
+    // Unique per write (pid + counter) so a background autosave write can't
+    // collide on the temp path with the synchronous shutdown save.
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = path.with_extension(format!("json.tmp.{}.{}", std::process::id(), seq));
     // Prevent symlink attacks: remove any existing file/symlink at the temp path
     // before creating a new file with O_CREAT|O_EXCL semantics.
     let _ = std::fs::remove_file(&tmp_path);

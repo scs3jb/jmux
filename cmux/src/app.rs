@@ -847,10 +847,19 @@ fn first_launch_init(app: &adw::Application, state: &Rc<AppState>, quake: bool) 
                 }
             }
             // Periodic autosave: structure only (no per-terminal scrollback
-            // read), so it stays cheap no matter how long the daemon runs.
+            // read), so it stays cheap no matter how long the daemon runs. Write
+            // it off the main loop — save_session fsyncs, which under I/O load
+            // would otherwise freeze the GLib main loop (and so the Ctrl+`
+            // hotkey) every 8s. Skip a tick if a prior write is still running.
             let snapshot = session::store::create_snapshot(&state, false);
-            if let Err(e) = session::store::save_session(&snapshot) {
-                tracing::warn!("Autosave failed: {}", e);
+            static AUTOSAVE_WRITING: AtomicBool = AtomicBool::new(false);
+            if !AUTOSAVE_WRITING.swap(true, Ordering::AcqRel) {
+                std::thread::spawn(move || {
+                    if let Err(e) = session::store::save_session(&snapshot) {
+                        tracing::warn!("Autosave failed: {}", e);
+                    }
+                    AUTOSAVE_WRITING.store(false, Ordering::Release);
+                });
             }
             // Flush browser history to disk
             crate::browser_history::flush();
