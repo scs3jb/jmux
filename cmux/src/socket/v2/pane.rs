@@ -15,10 +15,30 @@ pub(super) fn handle_pane_new(id: Value, params: &Value, state: &Arc<SharedState
         Some("vertical") => SplitOrientation::Vertical,
         _ => SplitOrientation::Horizontal,
     };
+    // Honour the requested panel type — the V1 `open_browser` shim sends
+    // "panel_type", other callers send "type". Without this, `cmux browser`
+    // opened a terminal instead of a browser. Defaults to a terminal.
+    let panel_type = match params
+        .get("panel_type")
+        .or_else(|| params.get("type"))
+        .and_then(|v| v.as_str())
+    {
+        Some("browser") => PanelType::Browser,
+        _ => PanelType::Terminal,
+    };
+    let url = params
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let mut tm = lock_or_recover(&state.tab_manager);
     if let Some(ws) = tm.selected_mut() {
-        let panel_id = ws.split(orientation, PanelType::Terminal);
+        let panel_id = ws.split(orientation, panel_type);
+        if panel_type == PanelType::Browser {
+            if let Some(panel) = ws.panels.get_mut(&panel_id) {
+                panel.browser_url = url;
+            }
+        }
         drop(tm);
         state.notify_ui_refresh();
         Response::success(id, serde_json::json!({"panel_id": panel_id.to_string()}))

@@ -363,7 +363,9 @@ fn create_browser_widget(
     };
     let widget = super::browser_panel::create_browser_widget(
         panel.id,
-        panel.directory.as_deref(),
+        // The initial URL lives in `browser_url` (set by new-browser / open_browser
+        // / surface.create); `directory` is unrelated for a browser panel.
+        panel.browser_url.as_deref(),
         is_attention_source,
         panel.pending_zoom,
         proxy_port,
