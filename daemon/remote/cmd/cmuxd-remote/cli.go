@@ -147,6 +147,13 @@ doneFlags:
 		return runBrowserRelay(socketPath, cmdArgs, jsonOutput, refreshAddr)
 	}
 
+	// Bash-compatible human command vocabulary (matches the local bash `cmux`).
+	// Consulted before the long-form registry so `cmux open`/`notes`/`tree`/…
+	// typed in a remote shell behave exactly like the local CLI.
+	if code, handled := runBashCompat(socketPath, cmdName, cmdArgs, jsonOutput, refreshAddr); handled {
+		return code
+	}
+
 	spec, ok := commandIndex[cmdName]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "cmux: unknown command %q\n", cmdName)
@@ -741,6 +748,16 @@ func cliUsage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  ping                     Check connectivity")
+	fmt.Fprintln(os.Stderr, "  open <path-or-url>...     Open files/dirs/URLs (resolved on this host)")
+	fmt.Fprintln(os.Stderr, "  notes [--tab|--down] [f]  Open a notes scratchpad")
+	fmt.Fprintln(os.Stderr, "  tree                      Dump the full state tree")
+	fmt.Fprintln(os.Stderr, "  list, ls                  List workspaces")
+	fmt.Fprintln(os.Stderr, "  new [dir]                 Create a workspace")
+	fmt.Fprintln(os.Stderr, "  select, sel <id|index>    Select a workspace")
+	fmt.Fprintln(os.Stderr, "  read [--scrollback]       Read terminal text")
+	fmt.Fprintln(os.Stderr, "  diff [--staged] [dir]     Open a git diff viewer")
+	fmt.Fprintln(os.Stderr, "  project [dir]             Open a project visualizer")
+	fmt.Fprintln(os.Stderr, "  send <text>               Send text to the focused terminal")
 	fmt.Fprintln(os.Stderr, "  capabilities              List server capabilities")
 	fmt.Fprintln(os.Stderr, "  list-workspaces           List all workspaces")
 	fmt.Fprintln(os.Stderr, "  new-window                Create a new window")

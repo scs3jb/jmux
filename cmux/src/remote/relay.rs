@@ -328,12 +328,29 @@ fn install_remote_metadata(
 
     // Write JSON: {"relay_id":"...","relay_token":"..."} (matches Go relayAuthState)
     // chmod 700 the relay dir and 600 the auth file so only the owner can read them.
+    //
+    // Then install the interactive bridge (Stage 2): symlink the daemon binary as
+    // `cmux` so it runs in CLI mode, write a `cmux-env.sh` that puts ~/.cmux/bin on
+    // PATH and points CMUX_SOCKET_PATH at the relay, and idempotently source it from
+    // the remote login shells. The daemon path may begin with `~/` (shell_escape
+    // quotes the tilde, blocking expansion), so expand a leading `~/` to $HOME with
+    // POSIX parameter substitution before creating the symlink.
     let script = format!(
         r#"mkdir -p ~/.cmux/relay ~/.cmux/bin && chmod 700 ~/.cmux/relay
 echo '127.0.0.1:{remote_port}' > ~/.cmux/socket_addr
 printf '{{"relay_id":"%s","relay_token":"%s"}}' {esc_relay_id} {esc_auth_token} > ~/.cmux/relay/{remote_port}.auth
 chmod 600 ~/.cmux/relay/{remote_port}.auth
-echo {esc_daemon} > ~/.cmux/relay/{remote_port}.daemon_path"#,
+echo {esc_daemon} > ~/.cmux/relay/{remote_port}.daemon_path
+CMUX_DAEMON={esc_daemon}
+case "$CMUX_DAEMON" in "~/"*) CMUX_DAEMON="$HOME/${{CMUX_DAEMON#"~/"}}" ;; esac
+ln -sf "$CMUX_DAEMON" "$HOME/.cmux/bin/cmux"
+printf 'export PATH="$HOME/.cmux/bin:$PATH"\nexport CMUX_SOCKET_PATH="$HOME/.cmux/socket_addr"\n' > "$HOME/.cmux/bin/cmux-env.sh"
+chmod 600 "$HOME/.cmux/bin/cmux-env.sh"
+for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
+  [ -e "$rc" ] || continue
+  grep -q cmux-env.sh "$rc" 2>/dev/null && continue
+  printf '\n# >>> cmux >>>\n[ -f "$HOME/.cmux/bin/cmux-env.sh" ] && . "$HOME/.cmux/bin/cmux-env.sh"\n# <<< cmux <<<\n' >> "$rc"
+done"#,
         remote_port = remote_port,
         esc_relay_id = esc_relay_id,
         esc_auth_token = esc_auth_token,
