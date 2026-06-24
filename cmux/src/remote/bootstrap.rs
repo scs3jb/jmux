@@ -149,20 +149,34 @@ pub fn upload_daemon(
     // Build scp destination from ssh_args (extract destination)
     let destination = ssh_args.last().ok_or("No SSH destination in args")?;
 
-    // Extract port if present
+    // Translate the SSH options (everything before the trailing destination) into
+    // their scp equivalents. scp shares ssh's -i identity and -o KEY=VAL options,
+    // but spells the port -P instead of -p and has no agent-forwarding flag, so -A
+    // is dropped (it isn't needed to copy a file). Forwarding -o is essential:
+    // options like ProxyJump/User/StrictHostKeyChecking are what let the earlier
+    // ssh probe reach the host, and scp fails without them.
+    let opts = &ssh_args[..ssh_args.len() - 1];
     let mut scp_args: Vec<String> = Vec::new();
     let mut i = 0;
-    while i < ssh_args.len() - 1 {
-        if ssh_args[i] == "-p" && i + 1 < ssh_args.len() - 1 {
-            scp_args.push("-P".to_string()); // scp uses -P not -p
-            scp_args.push(ssh_args[i + 1].clone());
-            i += 2;
-        } else if ssh_args[i] == "-i" && i + 1 < ssh_args.len() - 1 {
-            scp_args.push("-i".to_string());
-            scp_args.push(ssh_args[i + 1].clone());
-            i += 2;
-        } else {
-            i += 1;
+    while i < opts.len() {
+        match opts[i].as_str() {
+            "-p" if i + 1 < opts.len() => {
+                scp_args.push("-P".to_string()); // scp uses -P, not -p
+                scp_args.push(opts[i + 1].clone());
+                i += 2;
+            }
+            "-i" if i + 1 < opts.len() => {
+                scp_args.push("-i".to_string());
+                scp_args.push(opts[i + 1].clone());
+                i += 2;
+            }
+            "-o" if i + 1 < opts.len() => {
+                scp_args.push("-o".to_string());
+                scp_args.push(opts[i + 1].clone());
+                i += 2;
+            }
+            // -A (agent forwarding) has no scp equivalent; skip it and its absence.
+            _ => i += 1,
         }
     }
 

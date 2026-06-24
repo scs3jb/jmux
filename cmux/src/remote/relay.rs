@@ -331,8 +331,13 @@ fn install_remote_metadata(
     //
     // Then install the interactive bridge (Stage 2): symlink the daemon binary as
     // `cmux` so it runs in CLI mode, write a `cmux-env.sh` that puts ~/.cmux/bin on
-    // PATH and points CMUX_SOCKET_PATH at the relay, and idempotently source it from
-    // the remote login shells. The daemon path may begin with `~/` (shell_escape
+    // PATH, and idempotently source it from the remote login shells. We deliberately
+    // do NOT export CMUX_SOCKET_PATH: the CLI treats that variable as a literal
+    // socket address (a `/`-prefixed value is dialed as a Unix socket), so pointing
+    // it at the socket_addr *file* breaks every command. Leaving it unset makes the
+    // CLI read the relay address from ~/.cmux/socket_addr and enables its
+    // stale-address refresh when a later session rewrites that file with a new port.
+    // The daemon path may begin with `~/` (shell_escape
     // quotes the tilde, blocking expansion), so expand a leading `~/` to $HOME with
     // POSIX parameter substitution before creating the symlink.
     let script = format!(
@@ -344,7 +349,7 @@ echo {esc_daemon} > ~/.cmux/relay/{remote_port}.daemon_path
 CMUX_DAEMON={esc_daemon}
 case "$CMUX_DAEMON" in "~/"*) CMUX_DAEMON="$HOME/${{CMUX_DAEMON#"~/"}}" ;; esac
 ln -sf "$CMUX_DAEMON" "$HOME/.cmux/bin/cmux"
-printf 'export PATH="$HOME/.cmux/bin:$PATH"\nexport CMUX_SOCKET_PATH="$HOME/.cmux/socket_addr"\n' > "$HOME/.cmux/bin/cmux-env.sh"
+printf 'export PATH="$HOME/.cmux/bin:$PATH"\n' > "$HOME/.cmux/bin/cmux-env.sh"
 chmod 600 "$HOME/.cmux/bin/cmux-env.sh"
 for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
   [ -e "$rc" ] || continue
