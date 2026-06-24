@@ -284,9 +284,12 @@ fn forward_to_socket(socket_path: &str, command: &str) -> Result<String, String>
 }
 
 /// Find an available port on the remote host for the reverse tunnel.
+///
+/// Scans the configured `remote_relay_ports` range (default 10000–10100) and
+/// returns the first free port, so concurrent remote sessions don't collide.
 fn allocate_remote_port(ssh_args: &[String]) -> Result<u16, String> {
-    // Try ports in the high ephemeral range
-    for port in (49200..49300).rev() {
+    let (start, end) = crate::settings::load().remote_relay_ports.bounds();
+    for port in (start..=end).rev() {
         let check = Command::new("ssh")
             .args(["-T", "-S", "none", "-o", "ConnectTimeout=4"])
             .args(ssh_args)
@@ -304,8 +307,8 @@ fn allocate_remote_port(ssh_args: &[String]) -> Result<u16, String> {
         }
     }
 
-    // Fallback: just use a fixed port and hope for the best
-    Ok(49200)
+    // Fallback: use the low end of the range and hope for the best.
+    Ok(start)
 }
 
 /// Install relay metadata files on the remote host.

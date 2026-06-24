@@ -1240,6 +1240,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
                 pane_flash_enabled: flash_row.is_active(),
                 link_routing: settings::load().link_routing,
                 remote_ssh_enabled: remote_ssh_row.is_active(),
+                remote_relay_ports: current_settings.remote_relay_ports,
                 persist_scrollback: current_settings.persist_scrollback,
                 warn_before_closing_tab: warn_close_tab_row.is_active(),
                 copy_on_select: copy_on_select_row.is_active(),

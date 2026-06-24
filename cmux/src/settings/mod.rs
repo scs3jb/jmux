@@ -36,6 +36,11 @@ pub struct AppSettings {
     pub link_routing: LinkRoutingSettings,
     /// Enable remote SSH workspaces (off by default for security).
     pub remote_ssh_enabled: bool,
+    /// Port range (inclusive) scanned on the remote host for the CLI relay's
+    /// reverse-tunnel listener. The first free port in the range is used, so a
+    /// range avoids collisions when several remote sessions are open at once.
+    #[serde(default)]
+    pub remote_relay_ports: RemotePortRange,
     /// Hide the titlebar (header bar) for a distraction-free terminal.
     pub minimal_mode: bool,
     /// Show the close (X) button on each tab. When false, tabs can only be
@@ -888,6 +893,36 @@ impl AppSettings {
     }
 }
 
+/// Inclusive port range scanned on the remote host for the CLI relay tunnel.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RemotePortRange {
+    pub start: u16,
+    pub end: u16,
+}
+
+impl Default for RemotePortRange {
+    fn default() -> Self {
+        Self {
+            start: 10000,
+            end: 10100,
+        }
+    }
+}
+
+impl RemotePortRange {
+    /// Normalized (low, high) bounds, guarding against a misconfigured range
+    /// where `end < start` by falling back to the default span.
+    pub fn bounds(&self) -> (u16, u16) {
+        if self.end >= self.start {
+            (self.start, self.end)
+        } else {
+            let d = Self::default();
+            (d.start, d.end)
+        }
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -904,6 +939,7 @@ impl Default for AppSettings {
             pane_flash_enabled: true,
             link_routing: LinkRoutingSettings::default(),
             remote_ssh_enabled: false,
+            remote_relay_ports: RemotePortRange::default(),
             minimal_mode: false,
             show_tab_close_button: true,
             persist_scrollback: true,
