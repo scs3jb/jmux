@@ -103,15 +103,25 @@ An opt-in multi-line input below a terminal for composing multi-line agent promp
 
 ### Panels — more than terminals
 
-Any pane can hold a non-terminal view: a **rendered Markdown** file, a **git diff** (with a Staged toggle and branch compare), a **project tree** with a file-type summary, an **editable Notes** scratchpad beside your terminal, or a full **WebKit browser** with a Playwright-style automation API.
+Any pane can hold a non-terminal view: a **rendered Markdown** file, a **git diff** (with a Staged toggle and branch compare), a **project tree** with a file-type summary, **scope-grouped Notes** beside your terminal, or a full **WebKit browser** with a Playwright-style automation API.
 
 | Markdown viewer | Diff viewer |
 |---|---|
 | ![Markdown viewer](docs/screenshots/markdown.png) | ![Diff viewer](docs/screenshots/diff.png) |
-| **Project visualizer** | **Notes scratchpad** |
-| ![Project visualizer](docs/screenshots/project.png) | ![Notes scratchpad](docs/screenshots/notes.png) |
+| **Project visualizer** | **Integrated browser** |
+| ![Project visualizer](docs/screenshots/project.png) | ![Integrated browser](docs/screenshots/browser.png) |
 
-![Integrated browser](docs/screenshots/browser.png)
+### Notes — scope-grouped scratchpads
+
+`cmux notes` opens an editable, auto-saved notes panel that knows **where you are**. Notes are organised into colour-coded **scope groups**, each holding any number of tabs (one per file, labelled by filename):
+
+- 🔵 **Global** — notes shared everywhere, not tied to a folder.
+- 🟢 **Folder** — notes for the current **git repo root** (or the working directory when it isn't a repo).
+- 🟣 **Host** — for `cmux ssh` sessions, notes scoped to the whole remote host (plus a Folder group for the remote project).
+
+Hit **+** to add a note (auto-named, double-click its tab to rename), and a note is **deleted from disk the moment it's empty** — they only persist once they have content. Everything is stored client-side under `~/.local/share/cmux/notes/`, so remote notes never touch the SSH bridge.
+
+![Scope-grouped notes](docs/screenshots/notes.png)
 
 ### Command palette & custom commands
 
@@ -148,7 +158,7 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - **Project visualizer** — `cmux project [path]` directory tree + file-type/size summary
 - **Finder previews** — inline image / video / **PDF** (poppler) previews in the file-preview panel
 - **File explorer** — sidebar tree with configurable double-click action (preview / default app / preferred editor) and **Insert Path / Insert Relative Path** into the focused terminal
-- **Notes scratchpad** — `cmux notes [file]` editable, auto-saved; path configurable in Settings
+- **Notes** — `cmux notes` scope-grouped scratchpads (colour-coded **Global / Host / Folder** tab groups, keyed to the git repo root), multiple notes per scope with a **+** to add and double-click-to-rename tabs; empty notes auto-delete, stored client-side under `~/.local/share/cmux/notes/`. `cmux notes <file>` still opens a single file
 - **Word wrap** — toggle line wrapping for the file preview/editor and notes panels (Settings → Editor & Files)
 - **History pane** — `cmux history` searchable day-grouped closed/focused workspaces
 - **Vault pane** — `cmux vault` searchable index of past Claude Code / Codex sessions, click to resume

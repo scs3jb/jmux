@@ -39,20 +39,41 @@ printf 'pub mod api;\npub fn serve() {}\n' > "$W/src/lib.rs"
 printf 'pub mod users;\n' > "$W/src/api/mod.rs"
 printf 'pub fn list() -> Vec<String> { vec![] }\n' > "$W/src/api/users.rs"
 printf '#[test]\nfn validates_jwt() { assert!(true); }\n' > "$W/tests/auth_test.rs"
-cat > "$SB/notes.md" <<'NOTES'
-# Scratchpad
+# ---- notes: scope-grouped scratchpads (Global = blue, Folder = green) ----------
+# The notes panel reads HOME=$SB; populate the mirror tree it scans. The Folder
+# scope is keyed to the git repo root of the workspace cwd ($W).
+ND="$SB/.local/share/cmux/notes"
+mkdir -p "$ND/global" "$ND/local${W}"
+cat > "$ND/global/architecture.md" <<'NOTES'
+# Architecture
 
-## Today
-- [x] add JWT validation to auth module
+- auth module → src/auth.rs (JWT issue/validate)
+- request handlers → src/api/
+- tokens expire after 24h
+NOTES
+cat > "$ND/global/conventions.md" <<'NOTES'
+# Conventions
+
+- conventional commits
+- rustfmt for Rust, 2-space indent in JS
+NOTES
+cat > "$ND/local${W}/auth-plan.md" <<'NOTES'
+# Auth plan
+
+- [x] JWT validation
+- [ ] refresh tokens
 - [ ] rate-limit /api/login
-- [ ] write integration tests for the feed
+NOTES
+cat > "$ND/local${W}/todo.md" <<'NOTES'
+# webapp — TODO
+
+## In progress
+- [ ] rate-limit /api/login
+- [ ] integration tests for the feed
 
 ## Ideas
 - cache user lookups (frecency?)
 - switch deploy to fly.io
-
-## Snippets
-    curl -s localhost:3000/api/users | jq '.[].name'
 NOTES
 # a git repo with an unstaged change for the diff viewer
 ( cd "$W"
@@ -77,7 +98,7 @@ start_sway
 shot(){ local p="$1"; start_cmux
   case "$p" in
     markdown) stage_only docs-ws; R open "$W/README.md" >/dev/null 2>&1 ;;
-    notes)    stage_only docs-ws; R notes "$SB/notes.md" >/dev/null 2>&1 ;;
+    notes)    stage_only demo; R notes >/dev/null 2>&1 ;;
     browser)  stage_only docs-ws; R open http://localhost:8137/ >/dev/null 2>&1; sleep 2 ;;
     diff)     R diff "$W" >/dev/null 2>&1; sleep 2; keep_selected ;;
     project)  R project "$W" >/dev/null 2>&1; sleep 2; keep_selected ;;
