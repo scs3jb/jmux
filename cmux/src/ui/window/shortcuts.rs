@@ -84,6 +84,7 @@ pub(super) fn setup_shortcuts(
                 "tab.new",
                 "tab.reopen",
                 "textbox.focus",
+                "notes.open",
                 "dock.toggle",
                 "close.tab",
                 "close.tab.others",
@@ -155,6 +156,11 @@ pub(super) fn setup_shortcuts(
                                 if let Some(panel_id) = panel_id {
                                     crate::ui::textbox::focus_textbox(panel_id);
                                 }
+                            }
+                            // Open the scope-grouped Notes panel beside the pane.
+                            "notes.open" => {
+                                crate::ui::command_palette::insert_notes_panel(&state);
+                                super::refresh_ui(&list_box, &content_box, &state);
                             }
                             // Toggle the Dock panel for this window.
                             "dock.toggle" => {

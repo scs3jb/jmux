@@ -9,6 +9,92 @@ use crate::settings::{
     SearchEngine, SidebarDisplaySettings, SidebarFocusStyle, SocketAccess, ThemeMode,
 };
 
+/// Friendly, categorised catalog of keyboard-shortcut actions for the Keyboard
+/// page: `(category, [(action_id, label)])`. Actions present in the config but
+/// missing here are still shown under an "Other" group, so nothing is lost.
+fn shortcut_catalog() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
+    vec![
+        (
+            "Tabs & Panes",
+            vec![
+                ("tab.new", "New tab"),
+                ("tab.reopen", "Reopen closed tab"),
+                ("close.tab", "Close tab"),
+                ("close.tab.others", "Close other tabs"),
+                ("tab.close_others", "Close other tabs"),
+                ("pane.split_horizontal", "Split pane horizontally"),
+                ("pane.split_vertical", "Split pane vertically"),
+                ("pane.close", "Close pane"),
+                ("pane.rename", "Rename pane"),
+                ("pane.focus_left", "Focus pane left"),
+                ("pane.focus_right", "Focus pane right"),
+                ("pane.focus_up", "Focus pane up"),
+                ("pane.focus_down", "Focus pane down"),
+                ("pane.focus_prev", "Focus previous pane"),
+                ("pane.focus_next", "Focus next pane"),
+                ("overview.open", "Open pane overview"),
+            ],
+        ),
+        (
+            "Workspaces",
+            vec![
+                ("workspace.new", "New workspace"),
+                ("workspace.close", "Close workspace"),
+                ("workspace.rename", "Rename workspace"),
+                ("workspace.latest_unread", "Go to latest unread"),
+                ("workspace.move_up", "Move workspace up"),
+                ("workspace.move_down", "Move workspace down"),
+            ],
+        ),
+        (
+            "Panels",
+            vec![
+                ("notes.open", "Open Notes"),
+                ("dock.toggle", "Toggle Dock"),
+                ("textbox.focus", "Focus TextBox composer"),
+                ("agent.resume", "Resume agent session"),
+                ("browser.split_horizontal", "Open browser (split right)"),
+                ("browser.split_vertical", "Open browser (split down)"),
+                ("browser.console_toggle", "Toggle browser console"),
+            ],
+        ),
+        (
+            "Find",
+            vec![
+                ("find", "Find"),
+                ("find.next", "Find next"),
+                ("find.previous", "Find previous"),
+                ("find.use_selection", "Use selection for find"),
+                ("find.in_directory", "Find in directory"),
+            ],
+        ),
+        (
+            "Terminal & View",
+            vec![
+                ("surface.clear", "Clear terminal"),
+                ("font.increase", "Increase font size"),
+                ("font.decrease", "Decrease font size"),
+                ("font.reset", "Reset font size"),
+            ],
+        ),
+        (
+            "Notifications",
+            vec![
+                ("notifications.toggle", "Toggle notifications panel"),
+                ("notification.defer_unread", "Defer unread"),
+                ("notification.toggle_unread", "Toggle unread"),
+            ],
+        ),
+        (
+            "Application",
+            vec![
+                ("settings", "Open Settings"),
+                ("config.reload", "Reload config"),
+            ],
+        ),
+    ]
+}
+
 /// Create and show the settings preferences window.
 /// `on_close` is called after settings are saved so callers can refresh the UI.
 pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'static) {
@@ -18,11 +104,28 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     // above the content — including the layer-shell quake drop-down.
     let window = adw::PreferencesDialog::new();
     window.set_title("Settings");
+    // Searchable: type in the dialog's search to filter rows by title/subtitle
+    // across every page — the main fix for "hard to find a setting".
+    window.set_search_enabled(true);
 
     // ── Appearance page ──
     let appearance_page = adw::PreferencesPage::new();
     appearance_page.set_title("Appearance");
     appearance_page.set_icon_name(Some("preferences-desktop-appearance-symbolic"));
+
+    // Split the formerly-overloaded Appearance page into focused pages so
+    // features are easier to find (alongside the dialog's new search).
+    let terminal_page = adw::PreferencesPage::new();
+    terminal_page.set_title("Terminal");
+    terminal_page.set_icon_name(Some("utilities-terminal-symbolic"));
+
+    let workspace_page = adw::PreferencesPage::new();
+    workspace_page.set_title("Workspace");
+    workspace_page.set_icon_name(Some("preferences-system-windows-symbolic"));
+
+    let editor_page = adw::PreferencesPage::new();
+    editor_page.set_title("Editor & Files");
+    editor_page.set_icon_name(Some("accessories-text-editor-symbolic"));
 
     let theme_group = adw::PreferencesGroup::new();
     theme_group.set_title("Theme");
@@ -126,7 +229,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
             }
         }
 
-        appearance_page.add(&ghostty_theme_group);
+        terminal_page.add(&ghostty_theme_group);
     }
 
     // ── Behavior group ──
@@ -231,7 +334,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
         .set_subtitle("Last port scanned on the remote host for the cmux CLI relay tunnel");
     behavior_group.add(&relay_ports_end_row);
 
-    appearance_page.add(&behavior_group);
+    workspace_page.add(&behavior_group);
 
     // ── Sidebar display group ──
     let sidebar_group = adw::PreferencesGroup::new();
@@ -420,7 +523,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     split_ratio_persist_row.set_active(current_settings.split_ratio_persist);
     workspace_group.add(&split_ratio_persist_row);
 
-    appearance_page.add(&workspace_group);
+    workspace_page.add(&workspace_group);
 
     // ── Terminal group ──
     let terminal_group = adw::PreferencesGroup::new();
@@ -441,7 +544,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     notes_path_row.set_text(&current_settings.notes_path);
     terminal_group.add(&notes_path_row);
 
-    appearance_page.add(&terminal_group);
+    terminal_page.add(&terminal_group);
 
     // ── TextBox group ──
     let textbox_group = adw::PreferencesGroup::new();
@@ -466,7 +569,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     textbox_lines_row.set_text(&current_settings.textbox_max_lines.to_string());
     textbox_group.add(&textbox_lines_row);
 
-    appearance_page.add(&textbox_group);
+    workspace_page.add(&textbox_group);
 
     // ── Dock group ──
     let dock_group = adw::PreferencesGroup::new();
@@ -492,7 +595,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     }
     dock_group.add(&edit_dock_row);
 
-    appearance_page.add(&dock_group);
+    workspace_page.add(&dock_group);
 
     // ── Editor & Files group ──
     let editor_group = adw::PreferencesGroup::new();
@@ -528,7 +631,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     ai_auto_naming_row.set_active(current_settings.ai_auto_naming);
     editor_group.add(&ai_auto_naming_row);
 
-    appearance_page.add(&editor_group);
+    editor_page.add(&editor_group);
 
     // ── Quick Terminal group ──
     let qt_group = adw::PreferencesGroup::new();
@@ -564,9 +667,12 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     qt_height_row.set_title("Height (% of screen)");
     qt_group.add(&qt_height_row);
 
-    appearance_page.add(&qt_group);
+    terminal_page.add(&qt_group);
 
     window.add(&appearance_page);
+    window.add(&terminal_page);
+    window.add(&workspace_page);
+    window.add(&editor_page);
 
     // ── Notifications page ──
     let notif_page = adw::PreferencesPage::new();
@@ -771,20 +877,35 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     keyboard_page.set_title("Keyboard");
     keyboard_page.set_icon_name(Some("input-keyboard-symbolic"));
 
-    let shortcuts_group = adw::PreferencesGroup::new();
-    shortcuts_group.set_title("Keyboard Shortcuts");
-    shortcuts_group.set_description(Some(
+    let shortcuts_intro = adw::PreferencesGroup::new();
+    shortcuts_intro.set_title("Keyboard Shortcuts");
+    shortcuts_intro.set_description(Some(
         "Click a shortcut to record a new binding. Press Escape to cancel.",
     ));
+    keyboard_page.add(&shortcuts_intro);
 
     let shortcuts_state =
         std::rc::Rc::new(std::cell::RefCell::new(current_settings.shortcuts.clone()));
+    // Handles for the Reset button to update in place: (action, label, clear btn).
+    let row_handles: std::rc::Rc<
+        std::cell::RefCell<Vec<(String, gtk4::Label, gtk4::Button)>>,
+    > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
 
-    let mut sorted_bindings: Vec<_> = current_settings.shortcuts.bindings.iter().collect();
-    sorted_bindings.sort_by_key(|(action, _)| (*action).clone());
-    for (action, opt_binding) in &sorted_bindings {
+    // Build one labelled row (title = friendly label, subtitle = action id) with
+    // click-to-record + clear, and add it to `group`.
+    let add_shortcut_row = {
+        let shortcuts_state = shortcuts_state.clone();
+        let row_handles = row_handles.clone();
+        move |group: &adw::PreferencesGroup, action: &str, label: &str| {
+        let opt_binding: Option<settings::shortcuts::Keybinding> = shortcuts_state
+            .borrow()
+            .bindings
+            .get(action)
+            .cloned()
+            .flatten();
         let row = adw::ActionRow::new();
-        row.set_title(action.as_str());
+        row.set_title(label);
+        row.set_subtitle(action);
         row.set_activatable(true);
 
         let binding_text = opt_binding
@@ -810,7 +931,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
         // Only show/enable when there is a binding
         clear_btn.set_sensitive(opt_binding.is_some());
         {
-            let action_name_clear = (*action).clone();
+            let action_name_clear = action.to_string();
             let label_clear = shortcut_label.clone();
             let conflict_clear = conflict_label.clone();
             let state_clear = shortcuts_state.clone();
@@ -830,7 +951,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
         row.add_suffix(&clear_btn);
 
         // Click-to-record: when the row is activated, listen for a key press
-        let action_name = (*action).clone();
+        let action_name = action.to_string();
         let label_clone = shortcut_label.clone();
         let conflict_clone = conflict_label.clone();
         let state = shortcuts_state.clone();
@@ -970,58 +1091,74 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
             row.add_controller(focus_controller);
         });
 
-        shortcuts_group.add(&row);
+        row_handles
+            .borrow_mut()
+            .push((action.to_string(), shortcut_label.clone(), clear_btn.clone()));
+        group.add(&row);
+        }
+    };
+
+    // Render the catalog: one PreferencesGroup per category, friendly labels.
+    let mut rendered: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (category, actions) in shortcut_catalog() {
+        let group = adw::PreferencesGroup::new();
+        group.set_title(category);
+        let mut added = false;
+        for (action, label) in actions {
+            if current_settings.shortcuts.bindings.contains_key(action) {
+                add_shortcut_row(&group, action, label);
+                rendered.insert(action.to_string());
+                added = true;
+            }
+        }
+        if added {
+            keyboard_page.add(&group);
+        }
+    }
+    // Any configured action not covered by the catalog → "Other".
+    let mut leftovers: Vec<&String> = current_settings
+        .shortcuts
+        .bindings
+        .keys()
+        .filter(|k| !rendered.contains(*k))
+        .collect();
+    leftovers.sort();
+    if !leftovers.is_empty() {
+        let group = adw::PreferencesGroup::new();
+        group.set_title("Other");
+        for action in leftovers {
+            add_shortcut_row(&group, action, action);
+        }
+        keyboard_page.add(&group);
     }
 
-    // Reset to defaults button
+    // Reset-to-defaults row in its own group; updates labels via tracked handles.
+    let reset_group = adw::PreferencesGroup::new();
     let reset_row = adw::ActionRow::new();
     reset_row.set_title("Reset All to Defaults");
     reset_row.set_activatable(true);
     reset_row.add_css_class("error");
     {
         let state = shortcuts_state.clone();
-        let shortcuts_group_weak = shortcuts_group.downgrade();
+        let row_handles = row_handles.clone();
         reset_row.connect_activated(move |_| {
-            *state.borrow_mut() = settings::shortcuts::ShortcutConfig::default();
-            // Update all labels in the group
-            if let Some(group) = shortcuts_group_weak.upgrade() {
-                let defaults = settings::shortcuts::ShortcutConfig::default();
-                // Walk children and update suffix labels
-                let mut child = group.first_child();
-                while let Some(widget) = child {
-                    if let Ok(row) = widget.clone().downcast::<adw::ActionRow>() {
-                        let action_name = row.title().to_string();
-                        if let Some(binding) = defaults.bindings.get(&action_name).and_then(|opt| opt.as_ref()) {
-                            // Find the suffix label
-                            let mut suffix = row.first_child();
-                            while let Some(s) = suffix {
-                                if let Ok(label) = s.clone().downcast::<gtk4::Label>() {
-                                    label.set_text(&binding.display());
-                                    break;
-                                }
-                                // Check inside Box containers (Adw wraps suffixes)
-                                if let Ok(bx) = s.clone().downcast::<gtk4::Box>() {
-                                    let mut inner = bx.first_child();
-                                    while let Some(ic) = inner {
-                                        if let Ok(label) = ic.clone().downcast::<gtk4::Label>() {
-                                            label.set_text(&binding.display());
-                                            break;
-                                        }
-                                        inner = ic.next_sibling();
-                                    }
-                                }
-                                suffix = s.next_sibling();
-                            }
-                        }
-                    }
-                    child = widget.next_sibling();
-                }
+            let defaults = settings::shortcuts::ShortcutConfig::default();
+            *state.borrow_mut() = defaults.clone();
+            for (action, label, clear_btn) in row_handles.borrow().iter() {
+                let binding = defaults.bindings.get(action).and_then(|o| o.as_ref());
+                label.set_text(
+                    &binding
+                        .map(|b| b.display())
+                        .unwrap_or_else(|| "unbound".to_string()),
+                );
+                label.remove_css_class("accent");
+                label.add_css_class("dim-label");
+                clear_btn.set_sensitive(binding.is_some());
             }
         });
     }
-    shortcuts_group.add(&reset_row);
-
-    keyboard_page.add(&shortcuts_group);
+    reset_group.add(&reset_row);
+    keyboard_page.add(&reset_group);
     window.add(&keyboard_page);
 
     // ── Agent Integrations page ──

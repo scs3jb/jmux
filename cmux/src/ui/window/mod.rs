@@ -274,6 +274,21 @@ pub fn create_window(
     }
     header.pack_end(&overview_btn);
 
+    // Notes button — opens the scope-grouped notes panel beside the current pane.
+    let notes_btn = gtk4::Button::from_icon_name("accessories-text-editor-symbolic");
+    notes_btn.set_tooltip_text(Some("Notes"));
+    notes_btn.add_css_class("flat");
+    {
+        let state = Rc::clone(state);
+        let list_box = list_box.clone();
+        let content_box = content_box.clone();
+        notes_btn.connect_clicked(move |_| {
+            crate::ui::command_palette::insert_notes_panel(&state);
+            refresh_ui(&list_box, &content_box, &state);
+        });
+    }
+    header.pack_end(&notes_btn);
+
     let outer_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     outer_box.append(&header);
     outer_box.append(&split_view);

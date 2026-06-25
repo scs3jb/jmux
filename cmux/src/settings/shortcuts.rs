@@ -89,6 +89,11 @@ impl Default for ShortcutConfig {
         // Open the pane overview grid (unbound by default; header button +
         // palette are the reliable triggers over a focused terminal).
         bindings.insert("overview.open".into(), None);
+        // Open the scope-grouped Notes panel beside the current pane. Default
+        // Ctrl+Shift+N; like dock/overview this is eaten by ghostty's Kitty
+        // keyboard protocol over a focused terminal, so the header Notes button
+        // is the reliable trigger there.
+        bindings.insert("notes.open".into(), Some(Keybinding::ctrl_shift("N")));
 
         // Workspace management. `workspace.new` has no default key (Ctrl+Shift+T
         // opens a new tab); it's reachable via the palette / sidebar / `cmux new`.

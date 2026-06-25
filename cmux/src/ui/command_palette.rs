@@ -612,6 +612,18 @@ fn do_custom_command(entry: &CommandEntry, base_dir: &str, state: &Rc<AppState>)
     }
 }
 
+/// Open the scope-grouped Notes panel as a split beside the current pane.
+/// Shared by the command palette, the header-bar Notes button, and the
+/// `notes.open` keyboard shortcut. Callers are responsible for refreshing the UI.
+pub fn insert_notes_panel(state: &Rc<AppState>) {
+    let mut tm = lock_or_recover(&state.shared.tab_manager);
+    if let Some(ws) = tm.selected_mut() {
+        let panel =
+            crate::model::Panel::new_notes(&crate::ui::notes_panel::default_notes_path());
+        ws.insert_panel(panel, SplitOrientation::Horizontal);
+    }
+}
+
 fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
     match name {
         "workspace.new" => {
@@ -661,13 +673,7 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
         }
         "workspace.new_notes" => {
             // Open notes as a split beside the current pane (consistent with open).
-            let mut tm = lock_or_recover(&state.shared.tab_manager);
-            if let Some(ws) = tm.selected_mut() {
-                let panel = crate::model::Panel::new_notes(
-                    &crate::ui::notes_panel::default_notes_path(),
-                );
-                ws.insert_panel(panel, SplitOrientation::Horizontal);
-            }
+            insert_notes_panel(state);
         }
         "workspace.open_history" => {
             let mut tm = lock_or_recover(&state.shared.tab_manager);
