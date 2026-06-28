@@ -86,7 +86,7 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     let window = crate::ui::window::create_window(app, state, window_id, rx, true);
 
     let cfg = crate::settings::load().quick_terminal;
-    let height = height_for_fraction(cfg.height_fraction);
+    let height = height_for_fraction(&window, cfg.height_fraction);
 
     // Top-anchored, full-width overlay layer surface (no decorations).
     window.init_layer_shell();
@@ -129,7 +129,7 @@ const RESIZE_ZONE_PX: i32 = 12;
 /// hidden, flush at margin 0 while shown. Used by the drag handle and by the
 /// monitor-change watcher.
 fn set_height(qs: &mut QuickState, height: i32) {
-    let max_h = monitor_height().unwrap_or_else(|| height.max(MIN_HEIGHT));
+    let max_h = monitor_height_for(&qs.window).unwrap_or_else(|| height.max(MIN_HEIGHT));
     let height = height.clamp(MIN_HEIGHT, max_h.max(MIN_HEIGHT));
     qs.height = height;
     qs.window.set_default_height(height);
@@ -197,10 +197,16 @@ fn install_resize_handle(window: &adw::ApplicationWindow) {
         });
     }
     drag.connect_drag_end(move |_gesture, _ox, _oy| {
-        let Some(height) = QUICK.with(|q| q.borrow().as_ref().map(|s| s.height)) else {
+        let Some((height, mon_h)) = QUICK.with(|q| {
+            q.borrow().as_ref().map(|s| {
+                (
+                    s.height,
+                    monitor_height_for(&s.window).unwrap_or(1080).max(1),
+                )
+            })
+        }) else {
             return;
         };
-        let mon_h = monitor_height().unwrap_or(1080).max(1);
         let fraction = (height as f32 / mon_h as f32).clamp(0.1, 1.0);
         let mut settings = crate::settings::load();
         settings.quick_terminal.height_fraction = fraction;
@@ -220,9 +226,9 @@ fn watch_monitor() {
 
     let refit: Rc<dyn Fn()> = Rc::new(|| {
         let fraction = crate::settings::load().quick_terminal.height_fraction;
-        let height = height_for_fraction(fraction);
         QUICK.with(|q| {
             if let Some(qs) = q.borrow_mut().as_mut() {
+                let height = height_for_fraction(&qs.window, fraction);
                 set_height(qs, height);
             }
         });
@@ -242,8 +248,14 @@ fn watch_monitor() {
     }
 
     // Outputs being added/removed/replaced changes the monitor list; re-fit from
-    // whichever monitor is now primary.
-    monitors.connect_items_changed(move |_, _, _, _| refit());
+    // whichever monitor the drop-down now lives on. A newly plugged output often
+    // reports its real mode a beat after the list changes, so re-fit again once
+    // it has settled rather than latching onto a transient 0-height geometry.
+    monitors.connect_items_changed(move |_, _, _, _| {
+        refit();
+        let refit = refit.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || refit());
+    });
 }
 
 fn slide_in(qs: &mut QuickState) {
@@ -314,19 +326,40 @@ fn slide(qs: &mut QuickState, to: i32) {
     });
 }
 
-fn monitor_height() -> Option<i32> {
+/// Height (px) of the monitor the drop-down is actually displayed on.
+///
+/// Using the surface's own monitor (rather than blindly `monitors().item(0)`)
+/// keeps us correct across hotplug: when a second output is added the primary
+/// index can shift to the new monitor — whose geometry may still be 0 mid-plug
+/// — which previously collapsed the window to the minimum height. Falls back to
+/// the tallest connected monitor with a known geometry, ignoring transient
+/// 0-height readings.
+fn monitor_height_for(window: &adw::ApplicationWindow) -> Option<i32> {
     let display = gtk4::gdk::Display::default()?;
-    let monitor = display
-        .monitors()
-        .item(0)?
-        .downcast::<gtk4::gdk::Monitor>()
-        .ok()?;
-    Some(monitor.geometry().height())
+    if let Some(surface) = window.surface() {
+        if let Some(mon) = display.monitor_at_surface(&surface) {
+            let h = mon.geometry().height();
+            if h > 0 {
+                return Some(h);
+            }
+        }
+    }
+    let monitors = display.monitors();
+    let mut best = 0;
+    for i in 0..monitors.n_items() {
+        if let Some(mon) = monitors
+            .item(i)
+            .and_then(|m| m.downcast::<gtk4::gdk::Monitor>().ok())
+        {
+            best = best.max(mon.geometry().height());
+        }
+    }
+    (best > 0).then_some(best)
 }
 
 /// Pixel height for the configured monitor-height `fraction`, falling back to a
 /// 1080p assumption when the monitor can't be queried.
-fn height_for_fraction(fraction: f32) -> i32 {
-    let mon_h = monitor_height().unwrap_or(1080);
+fn height_for_fraction(window: &adw::ApplicationWindow, fraction: f32) -> i32 {
+    let mon_h = monitor_height_for(window).unwrap_or(1080);
     ((mon_h as f32) * fraction.clamp(0.1, 1.0)).round() as i32
 }
