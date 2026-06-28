@@ -6,12 +6,13 @@
 //! edge of the screen. Layer surfaces have no compositor decorations, so there
 //! are no maximize/close buttons by construction.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita as adw;
+use libadwaita::prelude::AdwApplicationWindowExt;
 
 use crate::app::{lock_or_recover, AppState, QuickTermAction};
 
@@ -85,8 +86,7 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     let window = crate::ui::window::create_window(app, state, window_id, rx, true);
 
     let cfg = crate::settings::load().quick_terminal;
-    let mon_h = monitor_height().unwrap_or(1080);
-    let height = ((mon_h as f32) * cfg.height_fraction.clamp(0.1, 1.0)).round() as i32;
+    let height = height_for_fraction(cfg.height_fraction);
 
     // Top-anchored, full-width overlay layer surface (no decorations).
     window.init_layer_shell();
@@ -102,6 +102,9 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     window.set_margin(Edge::Top, -height); // hidden above the screen
     window.set_visible(false);
 
+    install_resize_handle(&window);
+    watch_monitor();
+
     QUICK.with(|q| {
         *q.borrow_mut() = Some(QuickState {
             window,
@@ -112,6 +115,135 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
             generation: 0,
         });
     });
+}
+
+/// Smallest height the drop-down can be dragged to (px).
+const MIN_HEIGHT: i32 = 120;
+/// Thickness of the visible grab strip along the bottom edge (px).
+const RESIZE_GRIP_PX: i32 = 6;
+/// How close to the bottom edge a press must start to begin a resize (px).
+const RESIZE_ZONE_PX: i32 = 12;
+
+/// Resize the drop-down to `height` px, re-clamping to the current monitor, and
+/// keep it correctly positioned: parked at `-height` above the top edge while
+/// hidden, flush at margin 0 while shown. Used by the drag handle and by the
+/// monitor-change watcher.
+fn set_height(qs: &mut QuickState, height: i32) {
+    let max_h = monitor_height().unwrap_or_else(|| height.max(MIN_HEIGHT));
+    let height = height.clamp(MIN_HEIGHT, max_h.max(MIN_HEIGHT));
+    qs.height = height;
+    qs.window.set_default_height(height);
+    qs.window.set_height_request(height);
+    let margin = if qs.visible { 0 } else { -height };
+    qs.current_margin = margin;
+    qs.window.set_margin(Edge::Top, margin);
+}
+
+/// Add a thin grab strip along the bottom edge plus a drag gesture so the user
+/// can resize the drop-down by dragging its lower border. The chosen height is
+/// persisted as a fraction of the monitor height, so it survives restarts and
+/// keeps matching the screen across resolution changes.
+fn install_resize_handle(window: &adw::ApplicationWindow) {
+    // Reach the vertical box holding [header, split_view] (built in
+    // `window::create_window`): we append the grip below the content and host the
+    // gesture on this top-anchored box so the gesture's coordinate origin stays
+    // fixed while we change the height.
+    let Some(outer_box) = window
+        .content()
+        .and_then(|c| c.downcast::<adw::ToastOverlay>().ok())
+        .and_then(|t| t.child())
+        .and_then(|c| c.downcast::<gtk4::Box>().ok())
+    else {
+        tracing::warn!("quick terminal: content box not found; resize handle unavailable");
+        return;
+    };
+
+    let grip = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    grip.set_hexpand(true);
+    grip.set_height_request(RESIZE_GRIP_PX);
+    grip.add_css_class("quick-terminal-resize-grip");
+    grip.set_cursor(gtk4::gdk::Cursor::from_name("ns-resize", None).as_ref());
+    outer_box.append(&grip);
+
+    let drag = gtk4::GestureDrag::new();
+    // Height at the moment the drag starts; live updates move the bottom edge but
+    // not this origin, so the offset never feeds back on itself.
+    let start_height = Rc::new(Cell::new(0));
+    {
+        let outer_box = outer_box.clone();
+        let start_height = start_height.clone();
+        drag.connect_drag_begin(move |gesture, _x, y| {
+            // Only treat presses near the bottom edge as a resize; let everything
+            // else propagate to the terminal/UI untouched.
+            let zone = (outer_box.height() - RESIZE_ZONE_PX).max(0) as f64;
+            if y < zone {
+                gesture.set_state(gtk4::EventSequenceState::Denied);
+                return;
+            }
+            let h = QUICK.with(|q| q.borrow().as_ref().map(|s| s.height).unwrap_or(0));
+            start_height.set(h);
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+        });
+    }
+    {
+        let start_height = start_height.clone();
+        drag.connect_drag_update(move |_gesture, _ox, oy| {
+            let target = start_height.get() + oy.round() as i32;
+            QUICK.with(|q| {
+                if let Some(qs) = q.borrow_mut().as_mut() {
+                    set_height(qs, target);
+                }
+            });
+        });
+    }
+    drag.connect_drag_end(move |_gesture, _ox, _oy| {
+        let Some(height) = QUICK.with(|q| q.borrow().as_ref().map(|s| s.height)) else {
+            return;
+        };
+        let mon_h = monitor_height().unwrap_or(1080).max(1);
+        let fraction = (height as f32 / mon_h as f32).clamp(0.1, 1.0);
+        let mut settings = crate::settings::load();
+        settings.quick_terminal.height_fraction = fraction;
+        if let Err(e) = crate::settings::save(&settings) {
+            tracing::warn!("quick terminal: failed to persist height: {e}");
+        }
+    });
+    outer_box.add_controller(drag);
+}
+
+/// Re-fit the drop-down whenever the monitor geometry or layout changes, so it
+/// keeps matching the screen after the desktop resolution is changed.
+fn watch_monitor() {
+    let Some(display) = gtk4::gdk::Display::default() else {
+        return;
+    };
+
+    let refit: Rc<dyn Fn()> = Rc::new(|| {
+        let fraction = crate::settings::load().quick_terminal.height_fraction;
+        let height = height_for_fraction(fraction);
+        QUICK.with(|q| {
+            if let Some(qs) = q.borrow_mut().as_mut() {
+                set_height(qs, height);
+            }
+        });
+    });
+
+    let monitors = display.monitors();
+
+    // A resolution change on an existing output updates that monitor's geometry.
+    for i in 0..monitors.n_items() {
+        if let Some(mon) = monitors
+            .item(i)
+            .and_then(|m| m.downcast::<gtk4::gdk::Monitor>().ok())
+        {
+            let refit = refit.clone();
+            mon.connect_geometry_notify(move |_| refit());
+        }
+    }
+
+    // Outputs being added/removed/replaced changes the monitor list; re-fit from
+    // whichever monitor is now primary.
+    monitors.connect_items_changed(move |_, _, _, _| refit());
 }
 
 fn slide_in(qs: &mut QuickState) {
@@ -190,4 +322,11 @@ fn monitor_height() -> Option<i32> {
         .downcast::<gtk4::gdk::Monitor>()
         .ok()?;
     Some(monitor.geometry().height())
+}
+
+/// Pixel height for the configured monitor-height `fraction`, falling back to a
+/// 1080p assumption when the monitor can't be queried.
+fn height_for_fraction(fraction: f32) -> i32 {
+    let mon_h = monitor_height().unwrap_or(1080);
+    ((mon_h as f32) * fraction.clamp(0.1, 1.0)).round() as i32
 }

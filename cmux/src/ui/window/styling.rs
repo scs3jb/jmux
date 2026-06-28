@@ -27,6 +27,15 @@ pub(super) fn install_css() {
     let provider = gtk4::CssProvider::new();
     provider.load_from_data(
         "
+        /* ── Quick-terminal resize grip (bottom border drag handle) ── */
+        .quick-terminal-resize-grip {
+            background: alpha(@window_fg_color, 0.10);
+            min-height: 6px;
+        }
+        .quick-terminal-resize-grip:hover {
+            background: alpha(@accent_color, 0.45);
+        }
+
         /* ── Workspace rows ── */
         .workspace-row {
             border-radius: 8px;
