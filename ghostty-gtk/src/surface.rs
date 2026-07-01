@@ -154,6 +154,11 @@ mod imp {
 
             let surface = self.surface.get();
             if !surface.is_null() {
+                // Confirms the surface (and its up-to-10 MB scrollback grid) is
+                // actually reclaimed on panel close — the event-controller/IME/
+                // action closures used to form a reference cycle that pinned the
+                // widget forever, leaking to multi-GB RSS and OOM kills.
+                tracing::debug!(?surface, "freeing ghostty surface on dispose");
                 #[cfg(feature = "link-ghostty")]
                 unsafe {
                     ghostty_surface_free(surface);
@@ -310,20 +315,25 @@ impl GhosttyGlSurface {
         // allocated real pixel dimensions. We pass those as
         // initial_width/initial_height so the PTY starts at the correct size.
         let created = Rc::new(Cell::new(false));
-        let widget = self.clone();
         let wd = working_directory.map(|s| s.to_string());
         let cmd = command.map(|s| s.to_string());
         let env: Vec<(String, String)> = env_vars
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        self.connect_resize(move |_w, width, height| {
-            if !created.get() && width > 0 && height > 0 {
-                created.set(true);
-                widget.create_surface(app, wd.as_deref(), cmd.as_deref(), &env);
-                widget.grab_focus();
+        // Weak ref: the widget owns this signal handler, so a strong `self`
+        // clone here would be a permanent reference cycle (see setup_event_controllers).
+        self.connect_resize(glib::clone!(
+            #[weak(rename_to = widget)]
+            self,
+            move |_w, width, height| {
+                if !created.get() && width > 0 && height > 0 {
+                    created.set(true);
+                    widget.create_surface(app, wd.as_deref(), cmd.as_deref(), &env);
+                    widget.grab_focus();
+                }
             }
-        });
+        ));
     }
 
     #[allow(clippy::needless_return)] // guard clauses before cfg-gated body
@@ -459,11 +469,21 @@ impl GhosttyGlSurface {
     }
 
     fn setup_event_controllers(&self) {
+        // All controller closures below hold a *weak* ref to the surface widget.
+        // The widget owns each controller, the controller owns its closure — a
+        // strong `self` clone here would close a reference cycle that keeps the
+        // widget (and its up-to-10 MB ghostty scrollback grid) alive forever,
+        // so `dispose()` would never run and the surface would never be freed.
+        // See the module-level teardown notes; this was a multi-GB leak.
+
         // Keyboard events
         let key_controller = gtk4::EventControllerKey::new();
-        {
-            let surface_widget = self.clone();
-            key_controller.connect_key_pressed(move |controller, keyval, keycode, state| {
+        key_controller.connect_key_pressed(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |controller, keyval, keycode, state| {
                 tracing::trace!(
                     keyval = keyval.into_glib(),
                     keycode,
@@ -477,11 +497,12 @@ impl GhosttyGlSurface {
                     state,
                     ghostty_input_action_e::GHOSTTY_ACTION_PRESS,
                 )
-            });
-        }
-        {
-            let surface_widget = self.clone();
-            key_controller.connect_key_released(move |controller, keyval, keycode, state| {
+            }
+        ));
+        key_controller.connect_key_released(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |controller, keyval, keycode, state| {
                 tracing::trace!(
                     keyval = keyval.into_glib(),
                     keycode,
@@ -495,8 +516,8 @@ impl GhosttyGlSurface {
                     state,
                     ghostty_input_action_e::GHOSTTY_ACTION_RELEASE,
                 );
-            });
-        }
+            }
+        ));
         self.add_controller(key_controller);
 
         // Right-click context menu (Copy / Paste)
@@ -506,9 +527,10 @@ impl GhosttyGlSurface {
         // Mouse click events
         let click = gtk4::GestureClick::new();
         click.set_button(0); // All buttons
-        {
-            let surface_widget = self.clone();
-            click.connect_pressed(move |gesture, _n_press, x, y| {
+        click.connect_pressed(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |gesture, _n_press, x, y| {
                 // Grab focus on click so key events go to this widget
                 surface_widget.grab_focus();
                 let button = gesture.current_button();
@@ -518,18 +540,23 @@ impl GhosttyGlSurface {
                     y,
                     ghostty_input_mouse_state_e::GHOSTTY_MOUSE_PRESS,
                 );
-            });
-        }
-        {
-            let surface_widget = self.clone();
-            let menu = context_menu.clone();
-            click.connect_released(move |gesture, _n_press, x, y| {
+            }
+        ));
+        // `context_menu` is parented to the widget, so the widget already keeps
+        // it alive; a strong capture here doesn't reference `self` back, so it's
+        // cycle-free.
+        click.connect_released(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            #[strong]
+            context_menu,
+            move |gesture, _n_press, x, y| {
                 let button = gesture.current_button();
                 // Right-click: show context menu instead of forwarding to ghostty
                 if button == 3 {
                     let rect = gdk4::Rectangle::new(x as i32, y as i32, 1, 1);
-                    menu.set_pointing_to(Some(&rect));
-                    menu.popup();
+                    context_menu.set_pointing_to(Some(&rect));
+                    context_menu.popup();
                     return;
                 }
                 surface_widget.on_mouse_button(
@@ -538,32 +565,34 @@ impl GhosttyGlSurface {
                     y,
                     ghostty_input_mouse_state_e::GHOSTTY_MOUSE_RELEASE,
                 );
-            });
-        }
+            }
+        ));
         // If the gesture is cancelled (e.g. widget reparented during a click),
         // send a synthetic mouse release so Ghostty doesn't get stuck in
         // selection mode.
-        {
-            let surface_widget = self.clone();
-            click.connect_cancel(move |_gesture, _sequence| {
+        click.connect_cancel(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_gesture, _sequence| {
                 surface_widget.on_mouse_button(
                     1,
                     0.0,
                     0.0,
                     ghostty_input_mouse_state_e::GHOSTTY_MOUSE_RELEASE,
                 );
-            });
-        }
+            }
+        ));
         self.add_controller(click);
 
         // Mouse motion events
         let motion = gtk4::EventControllerMotion::new();
-        {
-            let surface_widget = self.clone();
-            motion.connect_motion(move |_controller, x, y| {
+        motion.connect_motion(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_controller, x, y| {
                 surface_widget.on_mouse_motion(x, y);
-            });
-        }
+            }
+        ));
         self.add_controller(motion);
 
         // Scroll events
@@ -571,37 +600,45 @@ impl GhosttyGlSurface {
             gtk4::EventControllerScrollFlags::BOTH_AXES
                 | gtk4::EventControllerScrollFlags::DISCRETE,
         );
-        {
-            let surface_widget = self.clone();
-            scroll.connect_scroll(move |_controller, dx, dy| {
+        scroll.connect_scroll(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |_controller, dx, dy| {
                 surface_widget.on_scroll(dx, dy);
                 glib::Propagation::Stop
-            });
-        }
+            }
+        ));
         self.add_controller(scroll);
 
         // Focus events
         let focus = gtk4::EventControllerFocus::new();
-        {
-            let surface_widget = self.clone();
-            focus.connect_enter(move |_| {
+        focus.connect_enter(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_| {
                 surface_widget.on_focus_change(true);
-            });
-        }
-        {
-            let surface_widget = self.clone();
-            focus.connect_leave(move |_| {
+            }
+        ));
+        focus.connect_leave(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_| {
                 surface_widget.on_focus_change(false);
-            });
-        }
+            }
+        ));
         self.add_controller(focus);
 
         // File drag-and-drop — paste shell-escaped paths into the terminal
         let drop_target =
             gtk4::DropTarget::new(gdk4::FileList::static_type(), gdk4::DragAction::COPY);
-        {
-            let surface_widget = self.clone();
-            drop_target.connect_drop(move |_target, value, _x, _y| {
+        drop_target.connect_drop(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            #[upgrade_or]
+            false,
+            move |_target, value, _x, _y| {
                 let Ok(file_list) = value.get::<gdk4::FileList>() else {
                     return false;
                 };
@@ -619,8 +656,8 @@ impl GhosttyGlSurface {
                     surface_widget.send_text(&text);
                 }
                 true
-            });
-        }
+            }
+        ));
         self.add_controller(drop_target);
     }
 
@@ -1227,25 +1264,40 @@ impl GhosttyGlSurface {
         im_context.set_client_widget(Some(self));
         im_context.set_use_preedit(true);
 
-        let surface_widget = self.clone();
-        im_context.connect_preedit_start(move |_context| {
-            surface_widget.im_preedit_start();
-        });
+        // Weak refs: `im_context` is stored on the widget's imp, so strong `self`
+        // clones in these handlers would be permanent reference cycles that keep
+        // the surface (and its scrollback grid) alive forever.
+        im_context.connect_preedit_start(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_context| {
+                surface_widget.im_preedit_start();
+            }
+        ));
 
-        let surface_widget = self.clone();
-        im_context.connect_commit(move |_context, text| {
-            surface_widget.im_commit(text);
-        });
+        im_context.connect_commit(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_context, text| {
+                surface_widget.im_commit(text);
+            }
+        ));
 
-        let surface_widget = self.clone();
-        im_context.connect_preedit_changed(move |context| {
-            surface_widget.im_preedit_changed(context);
-        });
+        im_context.connect_preedit_changed(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |context| {
+                surface_widget.im_preedit_changed(context);
+            }
+        ));
 
-        let surface_widget = self.clone();
-        im_context.connect_preedit_end(move |_context| {
-            surface_widget.im_preedit_end();
-        });
+        im_context.connect_preedit_end(glib::clone!(
+            #[weak(rename_to = surface_widget)]
+            self,
+            move |_context| {
+                surface_widget.im_preedit_end();
+            }
+        ));
     }
 
     fn im_preedit_start(&self) {
@@ -1417,41 +1469,49 @@ impl GhosttyGlSurface {
 
         // Copy: read the primary selection (highlighted text) into the system clipboard
         let copy_action = gtk4::gio::SimpleAction::new("copy", None);
-        let widget_for_copy = self.clone();
-        copy_action.connect_activate(move |_, _| {
-            let primary = widget_for_copy.primary_clipboard();
-            let system = widget_for_copy.clipboard();
-            primary.read_text_async(
-                None::<&gtk4::gio::Cancellable>,
-                glib::clone!(
-                    #[weak]
-                    system,
-                    move |result| {
-                        if let Ok(Some(text)) = result {
-                            if !text.is_empty() {
-                                system.set_text(&text);
+        // Weak ref: the action group is inserted into the widget (below), so a
+        // strong `self` clone here would be a permanent reference cycle.
+        copy_action.connect_activate(glib::clone!(
+            #[weak(rename_to = widget_for_copy)]
+            self,
+            move |_, _| {
+                let primary = widget_for_copy.primary_clipboard();
+                let system = widget_for_copy.clipboard();
+                primary.read_text_async(
+                    None::<&gtk4::gio::Cancellable>,
+                    glib::clone!(
+                        #[weak]
+                        system,
+                        move |result| {
+                            if let Ok(Some(text)) = result {
+                                if !text.is_empty() {
+                                    system.set_text(&text);
+                                }
                             }
                         }
-                    }
-                ),
-            );
-        });
+                    ),
+                );
+            }
+        ));
         action_group.add_action(&copy_action);
 
         // Paste: read system clipboard and send to the terminal
         let paste_action = gtk4::gio::SimpleAction::new("paste", None);
-        let widget_for_paste = self.clone();
-        paste_action.connect_activate(move |_, _| {
-            let clipboard = widget_for_paste.clipboard();
-            let surface = widget_for_paste.clone();
-            clipboard.read_text_async(None::<&gtk4::gio::Cancellable>, move |result| {
-                if let Ok(Some(text)) = result {
-                    if !text.is_empty() {
-                        surface.send_text(&text);
+        paste_action.connect_activate(glib::clone!(
+            #[weak(rename_to = widget_for_paste)]
+            self,
+            move |_, _| {
+                let clipboard = widget_for_paste.clipboard();
+                let surface = widget_for_paste.clone();
+                clipboard.read_text_async(None::<&gtk4::gio::Cancellable>, move |result| {
+                    if let Ok(Some(text)) = result {
+                        if !text.is_empty() {
+                            surface.send_text(&text);
+                        }
                     }
-                }
-            });
-        });
+                });
+            }
+        ));
         action_group.add_action(&paste_action);
 
         self.insert_action_group("surface", Some(&action_group));
