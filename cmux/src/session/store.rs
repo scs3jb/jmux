@@ -26,6 +26,28 @@ pub fn session_file_exists() -> bool {
     session_path().exists()
 }
 
+/// Total live workspaces across all windows in a snapshot.
+fn live_workspace_count(snapshot: &AppSessionSnapshot) -> usize {
+    snapshot
+        .windows
+        .iter()
+        .map(|w| w.tab_manager.workspaces.len())
+        .sum()
+}
+
+/// Parse a session file with no side effects (no corrupt-rename, no warnings).
+/// Used to peek at the on-disk state before deciding whether to overwrite it.
+fn read_snapshot_quiet(path: &Path) -> Option<AppSessionSnapshot> {
+    let json = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+/// Set once this process has ever held live workspaces. Guards against a
+/// freshly-restarted process — whose `restore_session` produced nothing (e.g.
+/// after an OOM kill left the machine under memory pressure) — silently
+/// overwriting a good on-disk session with an empty one on its first autosave.
+static HAD_WORKSPACES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Save a session snapshot to disk.
 pub fn save_session(snapshot: &AppSessionSnapshot) -> anyhow::Result<()> {
     let path = session_path();
@@ -34,10 +56,38 @@ pub fn save_session(snapshot: &AppSessionSnapshot) -> anyhow::Result<()> {
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
     }
 
+    let new_live = live_workspace_count(snapshot);
+    if new_live > 0 {
+        HAD_WORKSPACES.store(true, std::sync::atomic::Ordering::Relaxed);
+    } else if !HAD_WORKSPACES.load(std::sync::atomic::Ordering::Relaxed) {
+        // This process has never had a live workspace, yet it's trying to
+        // persist an empty session. That's the OOM-restart clobber path: the
+        // previous cmux was SIGKILLed, systemd restarted it, restore failed,
+        // and this empty autosave would wipe the real session. Refuse it.
+        if let Some(existing) = read_snapshot_quiet(&path) {
+            let existing_live = live_workspace_count(&existing);
+            if existing_live > 0 {
+                tracing::warn!(
+                    "Refusing to overwrite session ({} live workspaces) with an \
+                     empty snapshot — this process never restored any workspaces",
+                    existing_live
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    // Keep one rolling backup of the last good (non-empty) session, so even a
+    // bad overwrite or corruption leaves a recoverable generation behind.
+    if new_live > 0 && path.exists() {
+        let backup = path.with_extension("json.bak");
+        let _ = std::fs::copy(&path, &backup);
+    }
+
     let json = serde_json::to_string_pretty(snapshot)?;
     write_atomic(&path, json.as_bytes())?;
 
-    tracing::debug!("Session saved to {}", path.display());
+    tracing::debug!("Session saved to {} ({} live workspaces)", path.display(), new_live);
     Ok(())
 }
 
@@ -45,7 +95,8 @@ pub fn save_session(snapshot: &AppSessionSnapshot) -> anyhow::Result<()> {
 pub fn load_session() -> anyhow::Result<Option<AppSessionSnapshot>> {
     let path = session_path();
     if !path.exists() {
-        return Ok(None);
+        // Primary gone — a prior crash/clobber may have lost it. Try the backup.
+        return Ok(load_backup(&path));
     }
 
     // Warn if session file has overly permissive permissions
@@ -71,12 +122,35 @@ pub fn load_session() -> anyhow::Result<Option<AppSessionSnapshot>> {
             );
             let backup = path.with_extension("json.corrupt");
             let _ = std::fs::rename(&path, &backup);
-            return Ok(None);
+            return Ok(load_backup(&path));
         }
     };
 
+    // A readable-but-empty primary next to a non-empty backup means a previous
+    // run clobbered the session before the guard existed — prefer the backup.
+    if live_workspace_count(&snapshot) == 0 {
+        if let Some(backup) = load_backup(&path) {
+            if live_workspace_count(&backup) > 0 {
+                tracing::warn!("Primary session is empty; recovering from backup");
+                return Ok(Some(backup));
+            }
+        }
+    }
+
     tracing::debug!("Session loaded from {}", path.display());
     Ok(Some(snapshot))
+}
+
+/// Load the rolling backup (`session.json.bak`) if it holds a non-empty session.
+fn load_backup(path: &Path) -> Option<AppSessionSnapshot> {
+    let backup = path.with_extension("json.bak");
+    let snapshot = read_snapshot_quiet(&backup)?;
+    if live_workspace_count(&snapshot) > 0 {
+        tracing::warn!("Recovered session from backup {}", backup.display());
+        Some(snapshot)
+    } else {
+        None
+    }
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {

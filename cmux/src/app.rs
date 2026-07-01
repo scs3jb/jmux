@@ -866,6 +866,56 @@ fn first_launch_init(app: &adw::Application, state: &Rc<AppState>, quake: bool) 
             glib::ControlFlow::Continue
         });
     }
+
+    // Memory watchdog. cmux has been OOM-killed (uncatchable SIGKILL) after
+    // leaking to tens of GB, which skips the shutdown save — and the periodic
+    // autosave above never captures scrollback. Poll our own RSS and, once it
+    // crosses a threshold, force a *full* synchronous save (scrollback and all)
+    // before the kernel gets to us. Re-fires each additional GB so the last
+    // save on disk is as fresh as possible when the kill lands.
+    {
+        let state = state.clone();
+        let threshold_mb: u64 = std::env::var("CMUX_MEMORY_SAVE_THRESHOLD_MB")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4096);
+        let threshold = threshold_mb.saturating_mul(1024 * 1024);
+        let mut last_saved_at: u64 = 0;
+        glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
+            if let Some(rss) = current_rss_bytes() {
+                // Once over the threshold, save again for every extra GB grown.
+                let step: u64 = 1024 * 1024 * 1024;
+                if rss >= threshold && rss >= last_saved_at.saturating_add(step) {
+                    tracing::warn!(
+                        "Memory watchdog: RSS {} MB ≥ {} MB threshold — forcing full \
+                         session save before a possible OOM kill",
+                        rss / (1024 * 1024),
+                        threshold_mb
+                    );
+                    let snapshot = session::store::create_snapshot(&state, true);
+                    if let Err(e) = session::store::save_session(&snapshot) {
+                        tracing::error!("Watchdog save failed: {}", e);
+                    }
+                    last_saved_at = rss;
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+}
+
+/// Current resident set size (RSS) of this process in bytes, from
+/// `/proc/self/statm`. Returns `None` if it can't be read/parsed.
+fn current_rss_bytes() -> Option<u64> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    // Fields: size resident shared text lib data dt (in pages).
+    let resident_pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+    // SAFETY: sysconf(_SC_PAGESIZE) is always safe to call.
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if page_size <= 0 {
+        return None;
+    }
+    Some(resident_pages.saturating_mul(page_size as u64))
 }
 
 /// Open a new window with its own event channel and workspace set.
