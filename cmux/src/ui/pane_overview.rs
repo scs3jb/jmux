@@ -1,7 +1,8 @@
-//! Pane overview — a full-window grid of status tiles for every pane in the
-//! active workspace. Each tile shows the pane's type, title, directory, a
-//! status dot (busy / idle / attention / browser), and a one-line activity
-//! snippet. Clicking a tile (or arrow-keys + Enter) jumps to that pane.
+//! Pane overview — a full-window view of status tiles for every pane in every
+//! workspace, grouped into clearly labelled per-workspace sections. Each tile
+//! shows the pane's type, title, directory, a status dot (busy / idle /
+//! attention / browser), and a one-line activity snippet. Clicking a tile (or
+//! arrow-keys + Enter) selects that workspace and jumps to that pane.
 
 use std::rc::Rc;
 
@@ -24,9 +25,17 @@ struct TileInfo {
     focused: bool,
 }
 
-/// Show the pane overview for the active workspace.
+struct WorkspaceSection {
+    workspace_id: Uuid,
+    title: String,
+    is_current: bool,
+    unread_count: u32,
+    tiles: Vec<TileInfo>,
+}
+
+/// Show the pane overview for all workspaces.
 pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>) {
-    let tiles = collect_tiles(state);
+    let sections = collect_sections(state);
 
     // An in-surface adw::Dialog (not a separate top-level window) so it renders
     // above the content — including the layer-shell quake drop-down, which sits
@@ -38,24 +47,112 @@ pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>)
 
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
-    let count = tiles.len();
-    let attention = tiles.iter().filter(|t| t.dot_class == "overview-dot-attention").count();
-    let subtitle = if attention > 0 {
-        format!("{count} panes · {attention} need attention")
-    } else {
-        format!("{count} panes")
-    };
+    let pane_count: usize = sections.iter().map(|s| s.tiles.len()).sum();
+    let attention = sections
+        .iter()
+        .flat_map(|s| s.tiles.iter())
+        .filter(|t| t.dot_class == "overview-dot-attention")
+        .count();
+    let mut subtitle = format!(
+        "{pane_count} panes across {} workspaces",
+        sections.len()
+    );
+    if attention > 0 {
+        subtitle.push_str(&format!(" · {attention} need attention"));
+    }
     header.set_title_widget(Some(&adw::WindowTitle::new("Overview", &subtitle)));
     toolbar.add_top_bar(&header);
 
-    if tiles.is_empty() {
-        let empty = gtk4::Label::new(Some("No panes in this workspace."));
+    if pane_count == 0 {
+        let empty = gtk4::Label::new(Some("No panes open."));
         empty.add_css_class("dim-label");
         empty.set_vexpand(true);
         toolbar.set_content(Some(&empty));
         dialog.set_child(Some(&toolbar));
         dialog.present(Some(parent));
         return;
+    }
+
+    let column = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
+    column.set_margin_start(16);
+    column.set_margin_end(16);
+    column.set_margin_top(16);
+    column.set_margin_bottom(16);
+
+    let mut current_header: Option<gtk4::Widget> = None;
+    for section in &sections {
+        let widget = build_section(section, state, &dialog);
+        if section.is_current {
+            current_header = Some(widget.clone());
+        }
+        column.append(&widget);
+    }
+
+    let scrolled = gtk4::ScrolledWindow::new();
+    scrolled.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    scrolled.set_vexpand(true);
+    scrolled.set_child(Some(&column));
+    toolbar.set_content(Some(&scrolled));
+    dialog.set_child(Some(&toolbar));
+
+    // Scroll the current workspace's section into view once sizes are known.
+    if let Some(widget) = current_header {
+        let scrolled = scrolled.clone();
+        gtk4::glib::idle_add_local_once(move || {
+            if let Some((_, y)) = widget.translate_coordinates(&scrolled, 0.0, 0.0) {
+                let adj = scrolled.vadjustment();
+                adj.set_value((adj.value() + y).clamp(adj.lower(), adj.upper()));
+            }
+        });
+    }
+
+    // adw::Dialog closes on Escape natively — no key controller needed.
+    dialog.present(Some(parent));
+}
+
+fn build_section(
+    section: &WorkspaceSection,
+    state: &Rc<AppState>,
+    dialog: &adw::Dialog,
+) -> gtk4::Widget {
+    let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+
+    // Section header: workspace name + current badge + pane/unread counts.
+    let head = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let name = gtk4::Label::new(Some(&section.title));
+    name.set_xalign(0.0);
+    name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    name.add_css_class("heading");
+    head.append(&name);
+    if section.is_current {
+        let badge = gtk4::Label::new(Some("current"));
+        badge.add_css_class("overview-ws-current");
+        head.append(&badge);
+    }
+    let mut meta = format!("{} panes", section.tiles.len());
+    if section.tiles.len() == 1 {
+        meta = "1 pane".to_string();
+    }
+    if section.unread_count > 0 {
+        meta.push_str(&format!(" · {} unread", section.unread_count));
+    }
+    let counts = gtk4::Label::new(Some(&meta));
+    counts.add_css_class("dim-label");
+    counts.add_css_class("caption");
+    head.append(&counts);
+    let rule = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    rule.set_hexpand(true);
+    rule.set_valign(gtk4::Align::Center);
+    head.append(&rule);
+    vbox.append(&head);
+
+    if section.tiles.is_empty() {
+        let empty = gtk4::Label::new(Some("No panes in this workspace."));
+        empty.set_xalign(0.0);
+        empty.add_css_class("dim-label");
+        empty.add_css_class("caption");
+        vbox.append(&empty);
+        return vbox.upcast();
     }
 
     let flow = gtk4::FlowBox::new();
@@ -65,27 +162,21 @@ pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>)
     flow.set_max_children_per_line(4);
     flow.set_row_spacing(12);
     flow.set_column_spacing(12);
-    flow.set_margin_start(16);
-    flow.set_margin_end(16);
-    flow.set_margin_top(16);
-    flow.set_margin_bottom(16);
 
-    for tile in &tiles {
-        flow.append(&build_tile(tile, state, &dialog));
+    for tile in &section.tiles {
+        flow.append(&build_tile(tile, section.workspace_id, state, dialog));
     }
+    vbox.append(&flow);
 
-    let scrolled = gtk4::ScrolledWindow::new();
-    scrolled.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
-    scrolled.set_vexpand(true);
-    scrolled.set_child(Some(&flow));
-    toolbar.set_content(Some(&scrolled));
-    dialog.set_child(Some(&toolbar));
-
-    // adw::Dialog closes on Escape natively — no key controller needed.
-    dialog.present(Some(parent));
+    vbox.upcast()
 }
 
-fn build_tile(tile: &TileInfo, state: &Rc<AppState>, dialog: &adw::Dialog) -> gtk4::Widget {
+fn build_tile(
+    tile: &TileInfo,
+    workspace_id: Uuid,
+    state: &Rc<AppState>,
+    dialog: &adw::Dialog,
+) -> gtk4::Widget {
     let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     vbox.set_size_request(200, 120);
     vbox.add_css_class("overview-tile");
@@ -145,6 +236,7 @@ fn build_tile(tile: &TileInfo, state: &Rc<AppState>, dialog: &adw::Dialog) -> gt
     button.connect_clicked(move |_| {
         {
             let mut tm = lock_or_recover(&state.shared.tab_manager);
+            tm.select_by_id(workspace_id);
             if let Some(ws) = tm.selected_mut() {
                 ws.focus_panel(panel_id);
             }
@@ -156,70 +248,83 @@ fn build_tile(tile: &TileInfo, state: &Rc<AppState>, dialog: &adw::Dialog) -> gt
     button.upcast()
 }
 
-fn collect_tiles(state: &Rc<AppState>) -> Vec<TileInfo> {
+fn collect_sections(state: &Rc<AppState>) -> Vec<WorkspaceSection> {
     let tm = lock_or_recover(&state.shared.tab_manager);
-    let Some(ws) = tm.selected() else {
-        return Vec::new();
-    };
-    let focused = ws.focused_panel_id;
-    let attention = ws.attention_panel_id;
+    let selected_id = tm.selected_id();
 
-    ws.layout
-        .all_panel_ids()
-        .into_iter()
-        .filter_map(|pid| {
-            let panel = ws.panels.get(&pid)?;
-            let is_browser = panel.panel_type == PanelType::Browser;
+    tm.iter()
+        .map(|ws| {
+            let is_current = selected_id == Some(ws.id);
+            let focused = ws.focused_panel_id;
+            let attention = ws.attention_panel_id;
 
-            // Activity snippet + status.
-            let (activity, busy) = if panel.panel_type == PanelType::Terminal {
-                let activity = state
-                    .terminal_cache
-                    .borrow()
-                    .get(&pid)
-                    .and_then(|s| s.read_screen_text())
-                    .map(|t| {
-                        t.lines()
-                            .rev()
-                            .find(|l| !l.trim().is_empty())
-                            .unwrap_or("")
-                            .chars()
-                            .take(120)
-                            .collect::<String>()
+            let tiles = ws
+                .layout
+                .all_panel_ids()
+                .into_iter()
+                .filter_map(|pid| {
+                    let panel = ws.panels.get(&pid)?;
+                    let is_browser = panel.panel_type == PanelType::Browser;
+
+                    // Activity snippet + status.
+                    let (activity, busy) = if panel.panel_type == PanelType::Terminal {
+                        let activity = state
+                            .terminal_cache
+                            .borrow()
+                            .get(&pid)
+                            .and_then(|s| s.read_screen_text())
+                            .map(|t| {
+                                t.lines()
+                                    .rev()
+                                    .find(|l| !l.trim().is_empty())
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(120)
+                                    .collect::<String>()
+                            })
+                            .unwrap_or_default();
+                        (activity, crate::app::pane_is_busy(pid))
+                    } else if is_browser {
+                        (panel.browser_url.clone().unwrap_or_default(), None)
+                    } else {
+                        (
+                            panel.directory.clone().unwrap_or_default(),
+                            None,
+                        )
+                    };
+
+                    let (dot, dot_class) = if attention == Some(pid) {
+                        ("●", "overview-dot-attention")
+                    } else if is_browser {
+                        ("⬤", "overview-dot-browser")
+                    } else {
+                        match busy {
+                            Some(true) => ("●", "overview-dot-busy"),
+                            Some(false) => ("○", "overview-dot-idle"),
+                            None => ("•", "overview-dot-idle"),
+                        }
+                    };
+
+                    Some(TileInfo {
+                        panel_id: pid,
+                        title: panel.display_title().to_string(),
+                        directory: panel.directory.clone().unwrap_or_default(),
+                        activity,
+                        icon: icon_for(panel.panel_type),
+                        dot,
+                        dot_class,
+                        focused: is_current && focused == Some(pid),
                     })
-                    .unwrap_or_default();
-                (activity, crate::app::pane_is_busy(pid))
-            } else if is_browser {
-                (panel.browser_url.clone().unwrap_or_default(), None)
-            } else {
-                (
-                    panel.directory.clone().unwrap_or_default(),
-                    None,
-                )
-            };
+                })
+                .collect();
 
-            let (dot, dot_class) = if attention == Some(pid) {
-                ("●", "overview-dot-attention")
-            } else if is_browser {
-                ("⬤", "overview-dot-browser")
-            } else {
-                match busy {
-                    Some(true) => ("●", "overview-dot-busy"),
-                    Some(false) => ("○", "overview-dot-idle"),
-                    None => ("•", "overview-dot-idle"),
-                }
-            };
-
-            Some(TileInfo {
-                panel_id: pid,
-                title: panel.display_title().to_string(),
-                directory: panel.directory.clone().unwrap_or_default(),
-                activity,
-                icon: icon_for(panel.panel_type),
-                dot,
-                dot_class,
-                focused: focused == Some(pid),
-            })
+            WorkspaceSection {
+                workspace_id: ws.id,
+                title: ws.display_title().to_string(),
+                is_current,
+                unread_count: ws.unread_count,
+                tiles,
+            }
         })
         .collect()
 }

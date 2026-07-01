@@ -411,6 +411,13 @@ pub(super) fn install_css() {
         .overview-tile-focused {
             border: 2px solid alpha(@accent_color, 0.8);
         }
+        .overview-ws-current {
+            background: alpha(@accent_color, 0.15);
+            color: @accent_color;
+            border-radius: 99px;
+            padding: 1px 8px;
+            font-size: 0.8em;
+        }
         .overview-dot-busy { color: @success_color; }
         .overview-dot-idle { color: alpha(@window_fg_color, 0.4); }
         .overview-dot-attention { color: @accent_color; }
