@@ -57,10 +57,7 @@ pub fn create_sidebar(state: &Rc<AppState>) -> SidebarWidgets {
                 return true;
             }
             // Walk the row's widget tree to find the workspace-title label
-            let Some(outer) = row.child() else {
-                return true;
-            };
-            let Some(outer_box) = outer.downcast_ref::<gtk4::Box>() else {
+            let Some(outer_box) = row_outer_box(row) else {
                 return true;
             };
             let Some(header) = outer_box.first_child() else {
@@ -358,6 +355,16 @@ fn setup_row_drag_drop(row: &gtk4::ListBoxRow, index: usize, state: &Rc<AppState
         });
     }
     row.add_controller(drop_target);
+}
+
+/// The outer content box of a workspace row — unwrapping the Claude-sprite
+/// Overlay when present (rows with an active agent wrap `outer` in one).
+fn row_outer_box(row: &gtk4::ListBoxRow) -> Option<gtk4::Box> {
+    let child = row.child()?;
+    if let Some(overlay) = child.downcast_ref::<gtk4::Overlay>() {
+        return overlay.child()?.downcast::<gtk4::Box>().ok();
+    }
+    child.downcast::<gtk4::Box>().ok()
 }
 
 fn create_workspace_row(
@@ -981,7 +988,22 @@ fn create_workspace_row(
     }
     row.add_controller(motion);
 
-    row.set_child(Some(&outer));
+    // Claude state sprite — the deck octopus, bottom-right, when an agent in
+    // this workspace is working / needs input / waiting on a background task.
+    if let Some(cs) = crate::ui::state_sprite::workspace_claude_state(workspace, state) {
+        let overlay = gtk4::Overlay::new();
+        overlay.set_child(Some(&outer));
+        let sprite = crate::ui::state_sprite::sprite_image(cs, &outer);
+        sprite.set_halign(gtk4::Align::End);
+        sprite.set_valign(gtk4::Align::End);
+        sprite.set_margin_end(8);
+        sprite.set_margin_bottom(3);
+        sprite.set_can_target(false); // clicks fall through to the row
+        overlay.add_overlay(&sprite);
+        row.set_child(Some(&overlay));
+    } else {
+        row.set_child(Some(&outer));
+    }
     row
 }
 
@@ -2058,9 +2080,7 @@ fn color_css_value(name: &str) -> &str {
 /// Wire up the hover close button on a row.
 fn setup_row_close_button(row: &gtk4::ListBoxRow, index: usize, state: &Rc<AppState>) {
     // Find the close button (it's the last child in the header box)
-    let Some(outer) = row.child() else { return };
-    let outer = outer.downcast_ref::<gtk4::Box>().cloned();
-    let Some(outer) = outer else { return };
+    let Some(outer) = row_outer_box(row) else { return };
     let Some(header) = outer.first_child() else {
         return;
     };

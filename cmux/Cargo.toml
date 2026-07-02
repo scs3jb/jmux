@@ -23,6 +23,7 @@ gtk4 = { workspace = true }
 libadwaita = { workspace = true }
 glib = { workspace = true }
 gdk4 = { workspace = true }
+gdk-pixbuf = { workspace = true }
 gio = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

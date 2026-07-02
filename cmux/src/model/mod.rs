@@ -1,5 +1,6 @@
 //! Data models — Panel, Workspace, TabManager, and layout tree types.
 
+pub mod claude_state;
 pub mod panel;
 pub mod tab_manager;
 pub mod workspace;
