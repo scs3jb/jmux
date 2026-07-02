@@ -57,6 +57,24 @@ prompt but the lookup times out.
 
 ![Pane Overview](docs/demos/pane-overview.gif)
 
+### The sidebar octopus — Claude state per workspace
+
+Every sidebar workspace row grows a tiny animated octopus when a Claude agent in it is active — the state is classified live from the pane's title and terminal text (spinner, `esc to interrupt` footer, selection menus, trailing questions), and the workspace shows its **most urgent** pane:
+
+| ![working](cmux/assets/working.gif) | ![needs input](cmux/assets/needs_input.gif) | ![waiting](cmux/assets/waiting.gif) |
+|:---:|:---:|:---:|
+| **working** — hammering an anvil: the main turn is running | **needs input** — holding a sparkler: a question or menu is waiting on you | **waiting** — typing at a laptop: a background shell/agent is still running |
+
+One shared wall-clock frame iterator per state keeps every octopus in phase across sidebar rebuilds, and the sprite scales with your UI font.
+
+### Stream Deck Plus companion — your fleet on physical keys
+
+[deck](https://home.jacobbriggs.com/git/jbriggs/deck) mirrors the same octopus state model onto a **Stream Deck Plus**: each key is a cmux workspace (amber = needs input, blue = working, teal = waiting), press a key to focus it, and use the dials/touchscreen to switch Claude tabs and **answer questions without touching the keyboard**.
+
+![Stream Deck Plus companion](docs/demos/streamdeck.gif)
+
+*(Rendered by deck's own key renderer with synthetic session data — [`docs/capture-tools/make-streamdeck-mock.py`](docs/capture-tools/make-streamdeck-mock.py) — so it's pixel-identical to the real device.)*
+
 ### Agent integrations — teammates as native panes
 
 `cmux claude-teams` (Claude Code agent-teams) and `cmux omo` (OpenCode / oh-my-openagent) launch agents whose teammates and subagents open as **native cmux panes**. A private tmux shim translates `split-window` / `send-keys` / `capture-pane` → cmux's `surface.split` / `send_text` / `read_text`, and `terminal-notifier` → `cmux notify` — no real tmux required.
@@ -164,6 +182,8 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - **Vault pane** — `cmux vault` searchable index of past Claude Code / Codex sessions, click to resume
 
 ### AI agent workflow
+- **Sidebar Claude-state octopus** — animated sprite on each workspace row (hammering = working, sparkler = needs input, laptop = background task); classified from pane title + terminal text, most-urgent pane wins, hibernated agents excluded
+- **Stream Deck Plus companion** — [deck](https://home.jacobbriggs.com/git/jbriggs/deck) shows workspaces as keys with the live octopus state; press to focus, dials + touchscreen to pick Claude tabs and answer questions
 - **Agent integrations** — `cmux claude-teams` & `cmux omo` open teammates/subagents as native panes via a tmux shim; `terminal-notifier` → `cmux notify`. Turnkey status/notification hooks: `cmux claude-hook` / `codex-hook` / `kiro-hook` / `cursor-hook` / `gemini-hook` (or generic `cmux agent hook … --cli <name>`)
 - **AI workspace auto-naming** — opt-in: name an untitled workspace from its agent transcript when the agent finishes (`cmux ai-name`, or auto via Settings; uses `ANTHROPIC_API_KEY`)
 - **Task Manager** — `cmux top` CPU/RAM monitor (also `cmux ps` for JSON)
