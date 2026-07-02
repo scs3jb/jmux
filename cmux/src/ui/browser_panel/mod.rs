@@ -603,13 +603,12 @@ pub fn create_browser_widget_with_profile(
 
     // -- Navigation + download policy --
     {
-        let wv_policy = web_view.clone();
         let shared_for_policy = shared.clone();
         let settings_for_policy = browser_settings.clone();
         // Redirect loop detection: track (last_url, first_seen, count).
         let redirect_state: Rc<RefCell<(String, std::time::Instant, u32)>> =
             Rc::new(RefCell::new((String::new(), std::time::Instant::now(), 0)));
-        web_view.connect_decide_policy(move |_wv, decision, decision_type| {
+        web_view.connect_decide_policy(move |wv, decision, decision_type| {
             tracing::trace!(?decision_type, "decide_policy fired");
 
             // Response policy: convert non-displayable responses to downloads
@@ -638,7 +637,7 @@ pub fn create_browser_widget_with_profile(
                                 let url = uri.to_string();
                                 tracing::debug!(%url, "decide_policy: NewWindowAction \u{2192} loading in current view");
                                 decision.ignore();
-                                wv_policy.load_uri(&url);
+                                wv.load_uri(&url);
                                 return true;
                             }
                         }
@@ -793,7 +792,7 @@ pub fn create_browser_widget_with_profile(
                                                     util::insecure_http_interstitial(
                                                         &url,
                                                     );
-                                                wv_policy
+                                                wv
                                                     .load_html(&html, Some(&url));
                                                 return true;
                                             }
@@ -862,9 +861,8 @@ pub fn create_browser_widget_with_profile(
 
     // -- Context menu: augment default WebKit menu --
     {
-        let wv = web_view.clone();
         let shared_for_ctx = shared.clone();
-        web_view.connect_context_menu(move |_wv, menu, hit_test| {
+        web_view.connect_context_menu(move |wv, menu, hit_test| {
             // Remove "Open * in New Window" items -- we're an embedded browser,
             // not a standalone window-based browser.
             let items_to_remove: Vec<_> = menu
@@ -1073,8 +1071,7 @@ pub fn create_browser_widget_with_profile(
 
     // -- File chooser: handle window.showOpenFilePicker() and <input type="file"> --
     {
-        let wv = web_view.clone();
-        web_view.connect_run_file_chooser(move |_webview, request| {
+        web_view.connect_run_file_chooser(move |wv, request| {
             use gtk4::prelude::FileChooserExt;
 
             let select_multiple = request.selects_multiple();
