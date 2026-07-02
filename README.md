@@ -65,7 +65,11 @@ Every sidebar workspace row grows a tiny animated octopus when a Claude agent in
 |:---:|:---:|:---:|
 | **working** — hammering an anvil: the main turn is running | **needs input** — holding a sparkler: a question or menu is waiting on you | **waiting** — typing at a laptop: a background shell/agent is still running |
 
-One shared wall-clock frame iterator per state keeps every octopus in phase across sidebar rebuilds, and the sprite scales with your UI font.
+One shared wall-clock frame iterator per state keeps every octopus in phase across sidebar rebuilds, and the sprite scales with your UI font. In context, each workspace row carries its most-urgent pane's octopus, so the whole fleet's state reads down the sidebar at a glance.
+
+<!-- Run `bash docs/autocapture.sh` to (re)generate the in-context sidebar capture, then add:
+![Sidebar octopus states](docs/screenshots/sidebar-octopus.png) -->
+
 
 ### Stream Deck Plus companion — your fleet on physical keys
 

@@ -50,6 +50,32 @@ demo_script dev '  npm run dev
   ➜  Local:   http://localhost:3000/
   10:42:18 [vite] hmr update /src/App.tsx'
 
+# ── agent-state demo panes: each body+title triggers a distinct Claude octopus
+# state via cmux/src/model/claude_state.rs — a braille-spinner title (or an "esc
+# to interrupt" footer) = working; a ❯ numbered menu = needs input; "N shell(s)
+# still running" = waiting. Custom title (not "cmux"), so it's read as an agent.
+agent_script(){ printf '#!/bin/bash\nprintf "\\033]0;%s\\007"\nclear\ncat <<'"'"'TXT'"'"'\n%s\nTXT\nsleep 100000\n' "$2" "$3" > "$SB/bin/$1.sh"; chmod +x "$SB/bin/$1.sh"; }
+agent_script oct-working '⠹ claude' '  Claude Code · auth
+  ────────────────────────────────
+  > add JWT validation to the auth module
+
+  ● Editing src/auth.rs
+    + fn validate_jwt(token: &str) -> Result<Claims> {
+
+  ✳ Working… (1m 8s · esc to interrupt)'
+agent_script oct-needs 'claude' '  Claude Code · api
+  ────────────────────────────────
+  Which migration strategy should I use?
+
+  ❯ 1. Online — zero downtime, slower
+    2. Offline — fast, needs a maintenance window'
+agent_script oct-waiting 'claude' '  Claude Code · docs
+  ────────────────────────────────
+  ● Ran npm run build in the background
+
+  ⎿ 1 shell still running (↓ to manage)
+  > '
+
 cat > "$SB/.cmux/cmux.json" <<EOF
 { "commands": [
   { "name": "demo", "workspace": { "name": "web", "cwd": "$SB/web", "color": "#3b82f6",
@@ -59,7 +85,13 @@ cat > "$SB/.cmux/cmux.json" <<EOF
   { "name": "api-ws",  "workspace": { "name": "api",  "cwd": "$SB/api",
       "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/codex.sh", "focus": true } ] } } } },
   { "name": "docs-ws", "workspace": { "name": "docs", "cwd": "$SB/docs",
-      "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/dev.sh", "focus": true } ] } } } }
+      "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/dev.sh", "focus": true } ] } } } },
+  { "name": "octw", "workspace": { "name": "auth", "cwd": "$SB/web",  "color": "#265ca8",
+      "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/oct-working.sh", "focus": true } ] } } } },
+  { "name": "octa", "workspace": { "name": "api",  "cwd": "$SB/api",  "color": "#e49626",
+      "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/oct-needs.sh", "focus": true } ] } } } },
+  { "name": "octd", "workspace": { "name": "docs", "cwd": "$SB/docs", "color": "#208084",
+      "layout": { "pane": { "surfaces": [ { "command": "bash $SB/bin/oct-waiting.sh", "focus": true } ] } } } }
 ] }
 EOF
 for d in web api docs; do cp "$SB/.cmux/cmux.json" "$SB/$d/.cmux/cmux.json"; done
@@ -125,4 +157,20 @@ scene task-manager   top
 scene pdf-preview    open "$SB/docs/sample.pdf"
 # history needs a closed workspace
 launch; stage; run clear-closed; sleep 0.5; run run api-ws; sleep 1.0; run close; sleep 0.7; run history; sleep 1.4; grab history-pane; kcmux
+# sidebar octopus — three workspaces each in a distinct Claude state, so the
+# animated deck sprites render bottom-right of every workspace row. Cropped to
+# just the sidebar column (tweak the crop geometry if the sidebar width changes).
+launch
+run run octw; sleep 1.0; run run octa; sleep 1.0; run run octd; sleep 1.2
+oct_ids=$(env CMUX_SOCKET="$SOCK" HOME="$SB" bash "$CLI" list 2>/dev/null | python3 -c "import sys,json
+try: d=json.load(sys.stdin)
+except: sys.exit()
+for w in d['result']['workspaces']:
+    if w.get('title') not in ('auth','api','docs'): print(w['id'])")
+for id in $oct_ids; do run close "$id"; sleep 0.4; done
+OW=$(wsid_exact "$SB/web"); [ -n "$OW" ]&&{ run select "$OW"; sleep 0.6; }
+sleep 3.2   # let each pane paint so the state classifier sees the agent output
+WAYLAND_DISPLAY="$WD" XDG_RUNTIME_DIR="$RT" grim "$SB/oct-full.png"
+magick "$SB/oct-full.png" -crop 282x300+0+86 +repage "$SHOTS/sidebar-octopus.png" 2>/dev/null && echo "  ✓ sidebar-octopus"
+kcmux
 echo done
