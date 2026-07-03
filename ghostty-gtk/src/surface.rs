@@ -192,6 +192,29 @@ mod imp {
 
         fn unrealize(&self) {
             tracing::debug!("GLArea unrealize");
+            // Release the renderer GL state that realize() allocated via
+            // ghostty_surface_display_realized (glyph atlas, cell buffers, FBOs).
+            // GtkGLArea gives no guarantee the context is current on unrealize,
+            // so make it current first — mirroring ghostty's own apprt. Without
+            // this the renderer's textures orphan in the driver on every
+            // reparent/workspace switch (measured: ~27 MB leaked per unrealize,
+            // the dominant heap leak over a long session). Must run before
+            // parent_unrealize tears the context down.
+            let widget = self.obj();
+            let surface = self.surface.get();
+            if !surface.is_null() {
+                widget.make_current();
+                if widget.error().is_some() {
+                    tracing::warn!(
+                        "make_current failed in unrealize — OpenGL resources likely leaked"
+                    );
+                } else {
+                    #[cfg(feature = "link-ghostty")]
+                    unsafe {
+                        ghostty_surface_display_unrealized(surface);
+                    }
+                }
+            }
             self.parent_unrealize();
         }
     }
