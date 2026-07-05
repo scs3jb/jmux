@@ -722,7 +722,7 @@ impl LinkRoutingSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AgentRestoreSettings {
-    /// Restore Claude Code sessions on launch (`claude --resume`).
+    /// Restore Claude Code sessions on launch (`claude --continue`).
     pub claude_code: bool,
     /// Restore Codex CLI sessions on launch (`codex`).
     pub codex: bool,
@@ -873,7 +873,7 @@ impl FileOpenAction {
 
 fn default_resume_command_approvals() -> Vec<String> {
     vec![
-        "claude --resume".to_string(),
+        "claude --continue".to_string(),
         "codex".to_string(),
         "opencode --resume".to_string(),
         "gemini".to_string(),

@@ -1175,7 +1175,7 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
 
     let agent_claude_row = adw::SwitchRow::new();
     agent_claude_row.set_title("Claude Code");
-    agent_claude_row.set_subtitle("Resume with `claude --resume`");
+    agent_claude_row.set_subtitle("Resume with `claude --continue`");
     agent_claude_row.set_active(current_settings.agent_restore.claude_code);
     agents_group.add(&agent_claude_row);
 

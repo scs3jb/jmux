@@ -127,7 +127,7 @@ pub struct SessionPanelSnapshot {
     pub tty_name: Option<String>,
     #[serde(default)]
     pub command: Option<String>,
-    /// Resume command to use when restoring an agent session (e.g. "claude --resume").
+    /// Resume command to use when restoring an agent session (e.g. "claude --continue").
     /// Populated at save time when an agent process is detected running in this panel.
     #[serde(default)]
     pub agent_resume_command: Option<String>,
@@ -246,7 +246,9 @@ impl SessionWorkspaceLayoutSnapshot {
 /// process name.
 ///
 /// Recognised agents and their resume commands:
-/// - Claude Code:     `claude --resume`
+/// - Claude Code:     `claude --continue`  (auto-resumes the most recent
+///   conversation in the panel's directory — no interactive picker, so a
+///   restored tab reopens straight into its session after a crash/restart)
 /// - Codex CLI:       `codex`
 /// - OpenCode:        `opencode --resume`
 /// - Gemini CLI:      `gemini`  (stateless; no explicit resume flag)
@@ -283,7 +285,12 @@ pub fn detect_agent_resume_command(
     // Match against known agent binary/process names.  The patterns are kept
     // intentionally simple — substring match is enough for process titles.
     if haystack.contains("claude") {
-        Some("claude --resume".to_string())
+        // `--continue` resumes the most recent conversation in the current
+        // directory automatically; `--resume` (no id) would instead drop the
+        // restored tab at an interactive picker, which reads as "did not
+        // resume". The Vault pane still uses `--resume <id>` for an explicit
+        // past session the user picks by hand.
+        Some("claude --continue".to_string())
     } else if haystack.contains("opencode") {
         Some("opencode --resume".to_string())
     } else if haystack.contains("codex") {
@@ -421,7 +428,7 @@ mod tests {
     fn test_detect_agent_resume_claude_by_title() {
         assert_eq!(
             detect_agent_resume_command(Some("claude"), None),
-            Some("claude --resume".to_string())
+            Some("claude --continue".to_string())
         );
     }
 
@@ -429,7 +436,7 @@ mod tests {
     fn test_detect_agent_resume_claude_code_by_command() {
         assert_eq!(
             detect_agent_resume_command(None, Some("claude")),
-            Some("claude --resume".to_string())
+            Some("claude --continue".to_string())
         );
     }
 
@@ -540,7 +547,7 @@ mod tests {
     fn test_detect_agent_resume_case_insensitive() {
         assert_eq!(
             detect_agent_resume_command(Some("Claude Code"), None),
-            Some("claude --resume".to_string())
+            Some("claude --continue".to_string())
         );
         assert_eq!(
             detect_agent_resume_command(Some("CODEX"), None),
