@@ -134,6 +134,21 @@ pub(crate) fn remote_shell_path(path: &str) -> String {
     }
 }
 
+/// Render a remote path for an `scp` destination (`host:<path>`). Since OpenSSH
+/// 9.0, `scp` speaks the SFTP protocol by default and the SFTP server does NOT
+/// perform shell tilde expansion — a destination like `host:~/.cmux/bin/x` is
+/// written to a *literal* `~` directory under `$HOME` (the `~/~/.cmux/…` bug),
+/// unlike `mkdir`/`chmod` which run through the remote shell via
+/// [`remote_shell_path`]. SFTP resolves relative paths against the user's home,
+/// so strip a leading `~/` and hand scp a home-relative path; this also works
+/// with the legacy scp protocol, whose start directory is likewise `$HOME`.
+pub(crate) fn remote_scp_path(path: &str) -> String {
+    if path == "~" {
+        return ".".to_string();
+    }
+    path.strip_prefix("~/").unwrap_or(path).to_string()
+}
+
 /// Build an `ssh` command that runs a single one-shot remote shell command with
 /// the shared hardening flags (`-T -S none -o ConnectTimeout=<secs>`). All the
 /// one-shot probes (uname, mkdir, chmod, test, relay metadata, port scan) go
@@ -204,7 +219,9 @@ pub fn upload_daemon(
         }
     }
 
-    let scp_dest = format!("{}:{}", destination, remote_path);
+    // Use a home-relative destination: modern scp (SFTP mode) won't expand a
+    // leading `~`, which would upload the binary into a literal `~` directory.
+    let scp_dest = format!("{}:{}", destination, remote_scp_path(remote_path));
 
     tracing::info!(
         local = local_path,
@@ -474,6 +491,23 @@ mod tests {
         // A space in the remainder is quoted, but the tilde still expands.
         let q = remote_shell_path("~/a b");
         assert!(q.starts_with("\"$HOME\"/") && q.contains("'a b'"), "got: {q}");
+    }
+
+    #[test]
+    fn test_remote_scp_path_strips_tilde() {
+        // Modern scp speaks SFTP and does NOT expand `~`, so a `host:~/…`
+        // destination writes to a literal `~` dir (the `~/~/.cmux/…` bug).
+        // The destination must be home-relative instead.
+        assert_eq!(
+            remote_scp_path("~/.cmux/bin/cmuxd-remote/1.2.3/linux-amd64/cmuxd-remote"),
+            ".cmux/bin/cmuxd-remote/1.2.3/linux-amd64/cmuxd-remote"
+        );
+        assert!(!remote_scp_path("~/.cmux/bin/x").starts_with('~'), "tilde must be stripped");
+        // A bare ~ becomes the home directory itself.
+        assert_eq!(remote_scp_path("~"), ".");
+        // Absolute and already-relative paths pass through unchanged.
+        assert_eq!(remote_scp_path("/tmp/x"), "/tmp/x");
+        assert_eq!(remote_scp_path(".cmux/bin/x"), ".cmux/bin/x");
     }
 
     #[test]
