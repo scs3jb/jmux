@@ -108,6 +108,16 @@ pub fn dispatch(line: &str, state: &Arc<SharedState>) -> String {
             target(&mut p, workspace_id, panel_id);
             ("workspace.report_tty", p)
         }
+        "report_agent_session" => {
+            // `report_agent_session <agent> <session_id> --panel=<uuid>` — the
+            // shell `claude` wrapper reports the session id it pinned so a
+            // restored tab can resume that exact conversation.
+            let agent = args.first().map(|s| s.as_str()).unwrap_or("");
+            let session_id = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            let mut p = json!({"agent": agent, "session_id": session_id});
+            target(&mut p, workspace_id, panel_id);
+            ("workspace.report_agent_session", p)
+        }
         "ports_kick" => ("workspace.ports_kick", json!({})),
         "report_shell_state" => {
             let state_val = args.first().map(|s| s.as_str()).unwrap_or("prompt");
@@ -864,6 +874,39 @@ mod tests {
         assert_eq!(args, vec!["/home/user"]);
         assert_eq!(flags.get("tab").unwrap(), "abc");
         assert_eq!(flags.get("panel").unwrap(), "def");
+    }
+
+    #[test]
+    fn test_report_agent_session_sets_panel_id() {
+        use std::sync::Arc;
+        let shared = Arc::new(crate::app::SharedState::new());
+        let panel_id = shared
+            .tab_manager
+            .lock()
+            .unwrap()
+            .selected()
+            .and_then(|ws| ws.focused_panel_id)
+            .expect("default panel");
+        let sid = "3dea5939-b01c-467b-ae34-d45ea3380cd4";
+        let resp = dispatch(
+            &format!("report_agent_session claude {sid} --panel={panel_id}"),
+            &shared,
+        );
+        assert!(!resp.contains("\"error\""), "unexpected error: {resp}");
+        let stored = shared
+            .tab_manager
+            .lock()
+            .unwrap()
+            .selected()
+            .and_then(|ws| ws.panels.get(&panel_id).and_then(|p| p.agent_session_id.clone()));
+        assert_eq!(stored.as_deref(), Some(sid));
+
+        // A non-UUID session id is rejected without mutating anything.
+        let resp = dispatch(
+            &format!("report_agent_session claude not-a-uuid --panel={panel_id}"),
+            &shared,
+        );
+        assert!(resp.contains("\"error\""), "should reject bad id: {resp}");
     }
 
     #[test]

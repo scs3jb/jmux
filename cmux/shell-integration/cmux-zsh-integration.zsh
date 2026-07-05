@@ -325,6 +325,36 @@ _cmux_report_tty() {
   [[ -n "$tty_name" ]] && _cmux_send_fire_forget "report_tty $tty_name $(_cmux_flags)"
 }
 
+# ── Agent session capture ────────────────────────────────────────────
+# Wrap `claude` so every launch pins a known session id and reports it to cmux,
+# letting a restored tab resume that exact conversation (`claude --resume <id>`)
+# instead of the directory-level `--continue`. Skips injection when the user
+# already selects a session, so explicit resumes pass through untouched.
+if command -v claude >/dev/null 2>&1; then
+  claude() {
+    local arg inject=1
+    for arg in "$@"; do
+      case "$arg" in
+        -r|--resume|--resume=*|-c|--continue|--session-id|--session-id=*|--fork-session)
+          inject=0
+          break
+          ;;
+      esac
+    done
+    if [[ "$inject" == 1 ]]; then
+      local _cmux_sid
+      _cmux_sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null) \
+        || _cmux_sid=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')
+      if [[ -n "$_cmux_sid" ]]; then
+        _cmux_send_fire_forget "report_agent_session claude $_cmux_sid $(_cmux_flags)"
+        command claude --session-id "$_cmux_sid" "$@"
+        return
+      fi
+    fi
+    command claude "$@"
+  }
+fi
+
 # ── Port scanning kick ──────────────────────────────────────────────
 _cmux_ports_kick() {
   _cmux_send_fire_forget "ports_kick"

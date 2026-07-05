@@ -251,6 +251,30 @@ function _cmux_fish_setup --on-event fish_prompt -d "cmux shell integration setu
         test -n "$tty_name"; and _cmux_send_fire_forget "report_tty $tty_name "(_cmux_flags)
     end
 
+    # ── Agent session capture ────────────────────────────────────────
+    # Wrap `claude` so every launch pins a known session id and reports it to
+    # cmux, letting a restored tab resume that exact conversation (`claude
+    # --resume <id>`) instead of the directory-level `--continue`. Skips
+    # injection when the user already selects a session.
+    if command -v claude >/dev/null 2>&1
+        function claude
+            for arg in $argv
+                switch $arg
+                    case -r --resume '--resume=*' -c --continue --session-id '--session-id=*' --fork-session
+                        command claude $argv
+                        return
+                end
+            end
+            set -l _cmux_sid (cat /proc/sys/kernel/random/uuid 2>/dev/null; or uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')
+            if test -n "$_cmux_sid"
+                _cmux_send_fire_forget "report_agent_session claude $_cmux_sid "(_cmux_flags)
+                command claude --session-id "$_cmux_sid" $argv
+            else
+                command claude $argv
+            end
+        end
+    end
+
     # ── Port scanning kick ──────────────────────────────────────────
     function _cmux_ports_kick
         _cmux_send_fire_forget "ports_kick"

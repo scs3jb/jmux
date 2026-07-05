@@ -393,8 +393,10 @@ impl SessionPanelSnapshot {
             tty_name: panel.tty_name.clone(),
             command: panel.command.clone(),
             agent_resume_command,
-            // Resolved from the live process in create_snapshot() (needs /proc).
-            agent_session_id: None,
+            // The shell wrapper's reported id (local or remote); create_snapshot()
+            // falls back to /proc resolution for locally-launched Claude that
+            // wasn't wrapped.
+            agent_session_id: panel.agent_session_id.clone(),
             terminal: if panel.panel_type == crate::model::PanelType::Terminal {
                 Some(SessionTerminalPanelSnapshot {
                     working_directory: panel.directory.clone(),

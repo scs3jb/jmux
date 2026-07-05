@@ -296,6 +296,9 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         }
         "workspace.clear_ports" => workspace::handle_workspace_clear_ports(id, &req.params, state),
         "workspace.report_tty" => workspace::handle_workspace_report_tty(id, &req.params, state),
+        "workspace.report_agent_session" => {
+            workspace::handle_workspace_report_agent_session(id, &req.params, state)
+        }
         "workspace.ports_kick" => workspace::handle_workspace_ports_kick(id),
 
         // Settings

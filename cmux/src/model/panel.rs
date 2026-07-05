@@ -62,6 +62,13 @@ pub struct Panel {
     /// spawned as a subagent of the referenced parent panel.
     #[serde(default)]
     pub parent_panel_id: Option<Uuid>,
+    /// Exact agent session id for a Claude Code tab, reported by the shell
+    /// integration's `claude` wrapper (which pins `claude --session-id <uuid>`)
+    /// over the cmux socket — locally and, via the relay, from remote hosts.
+    /// Persisted into the snapshot so a restored tab resumes this precise
+    /// conversation. `None` until a wrapped `claude` launches in the panel.
+    #[serde(default)]
+    pub agent_session_id: Option<String>,
 }
 
 impl Panel {
@@ -84,6 +91,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -106,6 +114,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -128,6 +137,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -150,6 +160,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -177,6 +188,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -203,6 +215,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -229,6 +242,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -251,6 +265,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 
@@ -273,6 +288,7 @@ impl Panel {
             pending_scrollback: None,
             pending_zoom: None,
             parent_panel_id: None,
+            agent_session_id: None,
         }
     }
 

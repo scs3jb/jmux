@@ -2079,6 +2079,65 @@ pub(super) fn handle_workspace_report_tty(
     Response::success(id, serde_json::json!({"ok": true}))
 }
 
+/// Record the exact agent session id the shell `claude` wrapper pinned for a
+/// tab (`report_agent_session claude <uuid> --panel=<id>`), so a restored tab
+/// can `claude --resume <uuid>` into the same conversation. Sent over the unix
+/// socket locally and, from a remote host, via the relay. Only Claude Code is
+/// resumed by id today; other agents are accepted-and-ignored for forward
+/// compatibility. The id must be a valid UUID (Claude's session id form).
+pub(super) fn handle_workspace_report_agent_session(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let agent = params
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let session_id = match params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s.trim()).ok())
+    {
+        Some(u) => u.to_string(),
+        None => return Response::error(id, "invalid_params", "Provide a UUID 'session_id'"),
+    };
+
+    // Only Claude is resumable by session id right now; ack others without
+    // storing so the wrapper can stay agent-agnostic.
+    if !agent.contains("claude") {
+        return Response::success(id, serde_json::json!({"ok": true, "ignored": true}));
+    }
+
+    let panel_id = params
+        .get("panel")
+        .or_else(|| params.get("surface"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let mut tm = lock_or_recover(&state.tab_manager);
+    let ws = if let Some(pid) = panel_id {
+        tm.find_workspace_with_panel_mut(pid)
+    } else {
+        tm.selected_mut()
+    };
+
+    let Some(ws) = ws else {
+        return Response::error(id, "not_found", "No workspace");
+    };
+
+    let target_panel_id = panel_id.or(ws.focused_panel_id);
+    if let Some(pid) = target_panel_id {
+        if let Some(panel) = ws.panels.get_mut(&pid) {
+            panel.agent_session_id = Some(session_id);
+        }
+    }
+
+    drop(tm);
+    Response::success(id, serde_json::json!({"ok": true}))
+}
+
 // -----------------------------------------------------------------------
 // workspace.ports_kick (no-op for API parity)
 // -----------------------------------------------------------------------

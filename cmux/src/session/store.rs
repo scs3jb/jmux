@@ -351,11 +351,19 @@ pub fn create_snapshot(
                 if let Some(ref mut terminal) = snapshot.terminal {
                     terminal.scrollback = scrollback_map.get(&panel.id).cloned();
                 }
-                // Pin the exact Claude session for this tab when we resolved one
-                // from its live process, overriding the `--continue` fallback so
-                // restore reopens the same conversation. This also activates the
-                // resume path for an idle Claude whose title no longer names it.
-                if let Some(id) = claude_session_ids.get(&panel.id) {
+                // Pin the exact Claude session for this tab. Prefer the id the
+                // shell wrapper reported (already on the snapshot via from_panel);
+                // otherwise fall back to the local /proc resolution for a Claude
+                // that wasn't launched through the wrapper. Rewriting
+                // agent_resume_command reopens the same conversation on local
+                // restore (remote restore rebuilds its own ssh command from the
+                // id) and also activates resume for an idle Claude whose title no
+                // longer names it.
+                let session_id = snapshot
+                    .agent_session_id
+                    .clone()
+                    .or_else(|| claude_session_ids.get(&panel.id).cloned());
+                if let Some(id) = session_id {
                     snapshot.agent_session_id = Some(id.clone());
                     snapshot.agent_resume_command = Some(format!("claude --resume {id}"));
                 }
