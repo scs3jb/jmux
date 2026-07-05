@@ -1103,6 +1103,43 @@ pub fn pane_is_busy(panel_id: Uuid) -> Option<bool> {
     Some(tpgid > 0 && tpgid as u32 != shell_pid)
 }
 
+/// Build the local command that reconnects a remote tab over SSH and resumes a
+/// captured Claude session directly on the far host: `ssh -t <opts> <dest> 'cd
+/// <dir>; exec claude --resume <id>'`. Mirrors the SSH flag construction in
+/// `handle_workspace_create_ssh` and adds `-t` so Claude gets a real tty. The
+/// session id is a uuid (safe), but is escaped alongside the rest for defence.
+fn build_remote_claude_resume(
+    remote_config: &crate::remote::session::RemoteConfig,
+    directory: Option<&str>,
+    session_id: &str,
+) -> String {
+    let mut cmd = "ssh -t".to_string();
+    if remote_config.agent_forward {
+        cmd += " -A";
+    }
+    if let Some(port) = remote_config.port {
+        cmd += &format!(" -p {port}");
+    }
+    if let Some(ref identity) = remote_config.identity {
+        cmd += &format!(" -i {}", shell_escape::escape(identity.into()));
+    }
+    cmd += &format!(" {}", shell_escape::escape(remote_config.destination.clone().into()));
+
+    // Remote-side command: cd into the tab's directory (best-effort — a missing
+    // dir shouldn't block the resume) then exec Claude resuming the session.
+    let escaped_id = shell_escape::escape(session_id.into());
+    let remote_cmd = match directory {
+        Some(dir) => format!(
+            "cd {} 2>/dev/null; exec claude --resume {}",
+            shell_escape::escape(dir.into()),
+            escaped_id
+        ),
+        None => format!("exec claude --resume {}", escaped_id),
+    };
+    cmd += &format!(" {}", shell_escape::escape(remote_cmd.into()));
+    cmd
+}
+
 /// Reconstruct a `Workspace` from its session snapshot (used for both live
 /// workspaces and the persisted closed-history entries).
 fn build_workspace_from_snapshot(
@@ -1158,21 +1195,48 @@ fn build_workspace_from_snapshot(
                 .and_then(|b| b.url_string.clone()),
             markdown_file: panel_snapshot.markdown.as_ref().map(|m| m.file_path.clone()),
             command: {
-                // Prefer the agent resume command when one was detected at save time
-                // and the per-agent toggle is enabled in settings.
-                let agent_cmd = panel_snapshot
-                    .agent_resume_command
+                let claude_enabled = agent_restore_settings.is_enabled_for("claude");
+                let claude_id = panel_snapshot
+                    .agent_session_id
                     .as_deref()
-                    .filter(|cmd| agent_restore_settings.is_enabled_for(cmd));
-                if let Some(cmd) = agent_cmd {
-                    tracing::info!(
-                        panel_id = %panel_snapshot.id,
-                        cmd,
-                        "Restoring agent session with resume command"
-                    );
-                    Some(cmd.to_string())
+                    .filter(|_| claude_enabled);
+                if let Some(remote_config) = ws_snapshot.remote_config.as_ref() {
+                    // Remote tab: NEVER run the agent command locally (it would
+                    // launch Claude on this machine). With a captured session id,
+                    // relaunch Claude on the remote in its directory; otherwise
+                    // just reconnect the remote shell as before.
+                    match claude_id {
+                        Some(id) => {
+                            tracing::info!(
+                                panel_id = %panel_snapshot.id,
+                                "Restoring remote Claude session over ssh"
+                            );
+                            Some(build_remote_claude_resume(
+                                remote_config,
+                                panel_snapshot.directory.as_deref(),
+                                id,
+                            ))
+                        }
+                        None => panel_snapshot.command.clone(),
+                    }
                 } else {
-                    panel_snapshot.command.clone()
+                    // Local tab: prefer the agent resume command detected at save
+                    // time (already `claude --resume <id>` when we captured one)
+                    // if its per-agent toggle is enabled.
+                    let agent_cmd = panel_snapshot
+                        .agent_resume_command
+                        .as_deref()
+                        .filter(|cmd| agent_restore_settings.is_enabled_for(cmd));
+                    if let Some(cmd) = agent_cmd {
+                        tracing::info!(
+                            panel_id = %panel_snapshot.id,
+                            cmd,
+                            "Restoring agent session with resume command"
+                        );
+                        Some(cmd.to_string())
+                    } else {
+                        panel_snapshot.command.clone()
+                    }
                 }
             },
             pending_scrollback: panel_snapshot
@@ -1185,6 +1249,7 @@ fn build_workspace_from_snapshot(
                 .map(|b| b.page_zoom)
                 .filter(|&z| z != 1.0),
             parent_panel_id: None,
+            agent_session_id: panel_snapshot.agent_session_id.clone(),
         };
         panels.insert(panel.id, panel);
     }
@@ -2178,6 +2243,31 @@ fn parse_deep_link(uri: &str) -> Option<UiEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_claude_resume_command_shape() {
+        use crate::remote::session::RemoteConfig;
+        let rc = RemoteConfig {
+            destination: "user@host".to_string(),
+            port: Some(2222),
+            identity: Some("/home/u/.ssh/id".to_string()),
+            ssh_options: Vec::new(),
+            agent_forward: true,
+            remote_daemon_path: None,
+        };
+        let cmd = build_remote_claude_resume(&rc, Some("/srv/app"), "abc-123");
+        // ssh gets a tty, forwards the agent, uses the port + identity, and runs
+        // Claude resuming the exact session in the remote directory.
+        assert!(cmd.starts_with("ssh -t -A -p 2222 -i "), "got: {cmd}");
+        assert!(cmd.contains("user@host"), "got: {cmd}");
+        assert!(cmd.contains("cd "), "got: {cmd}");
+        assert!(cmd.contains("claude --resume abc-123"), "got: {cmd}");
+
+        // No directory -> resume without a cd.
+        let cmd2 = build_remote_claude_resume(&rc, None, "id2");
+        assert!(cmd2.contains("exec claude --resume id2"), "got: {cmd2}");
+        assert!(!cmd2.contains("cd "), "got: {cmd2}");
+    }
 
     #[test]
     fn close_panel_closes_empty_workspace() {
