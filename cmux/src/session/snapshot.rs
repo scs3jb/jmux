@@ -131,6 +131,13 @@ pub struct SessionPanelSnapshot {
     /// Populated at save time when an agent process is detected running in this panel.
     #[serde(default)]
     pub agent_resume_command: Option<String>,
+    /// Exact agent session id captured from the live process at save time (Claude
+    /// Code only, local panels). When set, restore resumes this precise
+    /// conversation (`claude --resume <id>`) instead of the directory-level
+    /// `--continue`, so each tab reopens its own session. Resolved in
+    /// `store::create_snapshot`; `from_panel` leaves it `None`.
+    #[serde(default)]
+    pub agent_session_id: Option<String>,
     pub terminal: Option<SessionTerminalPanelSnapshot>,
     pub browser: Option<SessionBrowserPanelSnapshot>,
     pub markdown: Option<SessionMarkdownPanelSnapshot>,
@@ -386,6 +393,8 @@ impl SessionPanelSnapshot {
             tty_name: panel.tty_name.clone(),
             command: panel.command.clone(),
             agent_resume_command,
+            // Resolved from the live process in create_snapshot() (needs /proc).
+            agent_session_id: None,
             terminal: if panel.panel_type == crate::model::PanelType::Terminal {
                 Some(SessionTerminalPanelSnapshot {
                     working_directory: panel.directory.clone(),

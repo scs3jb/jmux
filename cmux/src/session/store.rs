@@ -303,6 +303,44 @@ pub fn create_snapshot(
         .unwrap_or_default()
         .as_secs_f64();
 
+    // Resolve the exact Claude Code session id backing each local terminal panel
+    // so a restored tab can `claude --resume <id>` into its precise conversation
+    // (not the directory-level `--continue`, which collapses multiple same-dir
+    // tabs onto one session). One /proc walk maps panel -> claude cwd; per cwd we
+    // hand out transcripts newest-first so tabs sharing a directory get distinct
+    // sessions. Remote panels' claude runs on the far host, never appears in the
+    // local /proc, and so is absent here — it keeps the `--continue` fallback.
+    let claude_session_ids: std::collections::HashMap<uuid::Uuid, String> = {
+        let mut entries: Vec<(uuid::Uuid, String)> =
+            crate::session::claude_resume::all_local_claude_cwds()
+                .into_iter()
+                .collect();
+        // Stable claim order across saves (panel id is a fixed per-tab key).
+        entries.sort_by_key(|(id, _)| *id);
+        let mut ids_by_cwd: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        let mut next_idx: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut out = std::collections::HashMap::new();
+        for (panel_id, cwd) in entries {
+            let ids = ids_by_cwd
+                .entry(cwd.clone())
+                .or_insert_with(|| crate::session::claude_resume::session_ids_for_cwd(&cwd));
+            if ids.is_empty() {
+                continue;
+            }
+            let idx = next_idx.entry(cwd).or_insert(0);
+            // Claim the next-newest unclaimed transcript; if there are more tabs
+            // than transcripts, extra tabs share the oldest resolved id.
+            let pick = ids.get(*idx).or_else(|| ids.last()).cloned();
+            *idx += 1;
+            if let Some(id) = pick {
+                out.insert(panel_id, id);
+            }
+        }
+        out
+    };
+
     // Helper: create a workspace snapshot with scrollback/browser data attached
     let make_ws_snapshot = |ws: &crate::model::workspace::Workspace| -> SessionWorkspaceSnapshot {
         let panels: Vec<SessionPanelSnapshot> = ws
@@ -312,6 +350,14 @@ pub fn create_snapshot(
                 let mut snapshot = SessionPanelSnapshot::from_panel(panel);
                 if let Some(ref mut terminal) = snapshot.terminal {
                     terminal.scrollback = scrollback_map.get(&panel.id).cloned();
+                }
+                // Pin the exact Claude session for this tab when we resolved one
+                // from its live process, overriding the `--continue` fallback so
+                // restore reopens the same conversation. This also activates the
+                // resume path for an idle Claude whose title no longer names it.
+                if let Some(id) = claude_session_ids.get(&panel.id) {
+                    snapshot.agent_session_id = Some(id.clone());
+                    snapshot.agent_resume_command = Some(format!("claude --resume {id}"));
                 }
                 if let Some(ref mut browser) = snapshot.browser {
                     if let Some(&zoom) = browser_zoom_map.get(&panel.id) {
