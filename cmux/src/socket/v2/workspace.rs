@@ -373,6 +373,10 @@ pub(crate) fn handle_workspace_create_ssh(
 
     // Build SSH command (shell-escape user-supplied values to prevent injection)
     let mut ssh_cmd = "ssh".to_string();
+    // Forward the panel/workspace id to the remote (LC_ names ride stock sshd
+    // `AcceptEnv LANG LC_*`) so the remote `claude` wrapper can attribute its
+    // session-id report to this tab. Harmless where the host doesn't accept it.
+    ssh_cmd += " -o SendEnv=LC_CMUX_PANEL_ID -o SendEnv=LC_CMUX_WORKSPACE_ID";
     if agent_forward {
         ssh_cmd += " -A";
     }

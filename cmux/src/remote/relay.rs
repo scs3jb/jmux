@@ -391,7 +391,33 @@ echo '127.0.0.1:{remote_port}' > ~/.cmux/socket_addr
 printf '{{"relay_id":"%s","relay_token":"%s"}}' {esc_relay_id} {esc_auth_token} > ~/.cmux/relay/{remote_port}.auth
 chmod 600 ~/.cmux/relay/{remote_port}.auth
 ln -sf {daemon_target} "$HOME/.cmux/bin/cmux"
-printf 'export PATH="$HOME/.cmux/bin:$PATH"\n' > "$HOME/.cmux/bin/cmux-env.sh"
+cat > "$HOME/.cmux/bin/cmux-env.sh" <<'CMUX_ENV_EOF'
+export PATH="$HOME/.cmux/bin:$PATH"
+# Panel/workspace ids forwarded over SSH as LC_* (stock sshd AcceptEnv LANG LC_*).
+[ -n "$LC_CMUX_PANEL_ID" ] && export CMUX_PANEL_ID="$LC_CMUX_PANEL_ID"
+[ -n "$LC_CMUX_WORKSPACE_ID" ] && export CMUX_WORKSPACE_ID="$LC_CMUX_WORKSPACE_ID"
+# Wrap `claude` so each launch pins a session id and reports it to cmux via the
+# relay CLI, letting a restored remote tab resume that exact conversation. Runs
+# in a subshell so no state leaks; skips injection when a session is already
+# selected. Best-effort: with no panel id or `cmux` CLI, it just runs claude.
+if command -v claude >/dev/null 2>&1; then
+claude() (
+  for _cmux_a in "$@"; do
+    case "$_cmux_a" in
+      -r|--resume|--resume=*|-c|--continue|--session-id|--session-id=*|--fork-session)
+        command claude "$@"; exit ;;
+    esac
+  done
+  _cmux_sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  if [ -n "$_cmux_sid" ] && [ -n "$CMUX_PANEL_ID" ] && command -v cmux >/dev/null 2>&1; then
+    cmux rpc workspace.report_agent_session "{{\"agent\":\"claude\",\"session_id\":\"$_cmux_sid\",\"surface\":\"$CMUX_PANEL_ID\"}}" >/dev/null 2>&1 &
+    command claude --session-id "$_cmux_sid" "$@"
+    exit
+  fi
+  command claude "$@"
+)
+fi
+CMUX_ENV_EOF
 chmod 600 "$HOME/.cmux/bin/cmux-env.sh"
 for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
   [ -e "$rc" ] || continue

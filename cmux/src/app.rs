@@ -119,9 +119,16 @@ impl AppState {
         let mut env_vars: Vec<(&str, &str)> = vec![
             ("CMUX_SOCKET", &socket_path),
             ("CMUX_PANEL_ID", &panel_id_str),
+            // LC_-prefixed mirrors so an `ssh` child can forward the panel id to a
+            // remote host via `SendEnv=LC_CMUX_*`: stock sshd ships `AcceptEnv
+            // LANG LC_*`, and a non-locale `LC_*` name is ignored by libc. The
+            // remote cmux-env.sh maps these back to CMUX_PANEL_ID/WORKSPACE_ID so
+            // the remote `claude` wrapper can attribute its session-id report.
+            ("LC_CMUX_PANEL_ID", &panel_id_str),
         ];
         if !workspace_id_str.is_empty() {
             env_vars.push(("CMUX_WORKSPACE_ID", &workspace_id_str));
+            env_vars.push(("LC_CMUX_WORKSPACE_ID", &workspace_id_str));
         }
         // Per-workspace environment variables (from cmux.json `workspace.env`).
         for (k, v) in &workspace_env {
