@@ -35,6 +35,14 @@ pub struct AppState {
     pub terminal_cache: RefCell<HashMap<Uuid, ghostty_gtk::surface::GhosttyGlSurface>>,
     /// Cached browser panel widgets — survive layout rebuilds (like terminal_cache).
     pub browser_cache: RefCell<HashMap<Uuid, gtk4::Widget>>,
+    /// Signature of the layout each workspace's content page was last built
+    /// from, keyed by workspace id. The pages themselves live in each window's
+    /// content GtkStack and stay realized (just hidden) while another workspace
+    /// is shown, so switching workspaces is a `set_visible_child` and never
+    /// unrealizes the GL surfaces — which previously leaked GTK's GLArea
+    /// compositing texture (~4.7 MB) on every switch. The page is only rebuilt
+    /// when this signature changes (split/close/new-tab/zoom), not on selection.
+    pub workspace_page_signatures: RefCell<HashMap<Uuid, u64>>,
     /// Cached ghostty config values for UI decisions (background, opacity, etc.).
     pub ghostty_ui_config: RefCell<crate::ghostty_config::GhosttyUiConfig>,
     /// Stored to keep the callbacks alive for the lifetime of the app.
@@ -48,6 +56,7 @@ impl AppState {
             ghostty_app: RefCell::new(None),
             terminal_cache: RefCell::new(HashMap::new()),
             browser_cache: RefCell::new(HashMap::new()),
+            workspace_page_signatures: RefCell::new(HashMap::new()),
             ghostty_ui_config: RefCell::new(Default::default()),
             _callbacks: RefCell::new(None),
         }
