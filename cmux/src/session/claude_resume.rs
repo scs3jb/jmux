@@ -98,6 +98,71 @@ pub fn all_local_claude_cwds() -> HashMap<Uuid, String> {
     map
 }
 
+/// Map every local terminal panel to its shell's live working directory, in a
+/// single `/proc` walk. Keyed by `CMUX_PANEL_ID`; the value is the cwd of the
+/// panel's shell — the process that is a direct child of this cmux process, so
+/// its cwd tracks `cd` even while an agent (claude, etc.) holds the foreground.
+///
+/// This is the authoritative directory for session capture: the stored
+/// `panel.directory` is only refreshed by shell-integration pwd reports (OSC-7),
+/// which never fire while a long-running foreground process like Claude owns the
+/// terminal — so it can be frozen at the workspace's launch directory (often
+/// HOME). Reading `/proc/<shell>/cwd` sidesteps that entirely.
+///
+/// Remote panels' shells live on the far host and never appear here, so they are
+/// absent from the map and keep their stored (remote) directory.
+pub fn all_local_panel_cwds() -> HashMap<Uuid, String> {
+    // Only consider processes that are DIRECT children of this cmux process. A
+    // panel's shell (or a directly-launched agent) is always such a child, so
+    // this both scopes the walk to *this* cmux instance — a second cmux running
+    // concurrently has its own child shells we must not read — and picks the
+    // authoritative process whose cwd tracks the tab's `cd`. Grandchildren (an
+    // agent running under the shell, systemd-inhibit wrappers) inherit the env
+    // but have a different ppid, so they're skipped. Lowest pid wins on the rare
+    // chance a panel has two direct children, for deterministic output.
+    let me = std::process::id();
+    let mut best: HashMap<Uuid, (u32, String)> = HashMap::new();
+    let Ok(read_dir) = std::fs::read_dir("/proc") else {
+        return HashMap::new();
+    };
+    for entry in read_dir.flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        let proc_dir = entry.path();
+        let is_direct_child = std::fs::read_to_string(proc_dir.join("stat"))
+            .ok()
+            .and_then(|s| parse_ppid_stat(&s))
+            == Some(me);
+        if !is_direct_child {
+            continue;
+        }
+        let Ok(environ) = std::fs::read(proc_dir.join("environ")) else {
+            continue;
+        };
+        let Some(panel_id) = panel_id_from_environ(&environ) else {
+            continue;
+        };
+        let Ok(cwd) = std::fs::read_link(proc_dir.join("cwd")) else {
+            continue;
+        };
+        let Some(cwd) = cwd.to_str() else { continue };
+        if best.get(&panel_id).map(|(p, _)| pid < *p).unwrap_or(true) {
+            best.insert(panel_id, (pid, cwd.to_string()));
+        }
+    }
+    best.into_iter().map(|(k, (_, cwd))| (k, cwd)).collect()
+}
+
+/// Parse the parent pid (field 4) from a `/proc/<pid>/stat` line, accounting for
+/// the `comm` field being parenthesised and able to contain spaces/parens.
+fn parse_ppid_stat(stat: &str) -> Option<u32> {
+    let close = stat.rfind(')')?;
+    let rest = stat.get(close + 1..)?;
+    // After ")" the fields are: state ppid ...
+    rest.split_whitespace().nth(1)?.parse().ok()
+}
+
 /// Session ids (transcript file stems) for a working directory, newest first.
 /// Tries the deterministic encoded project dir; returns empty if it can't be
 /// found or read (the caller then falls back to `--continue`).
@@ -146,5 +211,27 @@ mod tests {
         assert_eq!(panel_id_from_environ(blob.as_bytes()), Some(id));
         assert_eq!(panel_id_from_environ(b"PATH=/bin\0HOME=/root\0"), None);
         assert_eq!(panel_id_from_environ(b"CMUX_PANEL_ID=not-a-uuid\0"), None);
+    }
+
+    #[test]
+    fn test_parse_ppid_stat() {
+        // Normal comm.
+        assert_eq!(
+            parse_ppid_stat("3548725 (head) R 3548655 3548725 3548655 0 -1"),
+            Some(3548655)
+        );
+        // comm containing parentheses — must use the LAST ')'.
+        assert_eq!(
+            parse_ppid_stat("1265 ((sd-pam)) S 1263 1263 1263 0 -1"),
+            Some(1263)
+        );
+        // comm containing spaces and parens.
+        assert_eq!(
+            parse_ppid_stat("42 (weird (proc) name) S 7 7 7"),
+            Some(7)
+        );
+        // Malformed input yields None rather than panicking.
+        assert_eq!(parse_ppid_stat("garbage without paren"), None);
+        assert_eq!(parse_ppid_stat(""), None);
     }
 }

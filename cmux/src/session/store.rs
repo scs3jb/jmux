@@ -297,6 +297,16 @@ pub fn create_snapshot(
     let browser_history_map: std::collections::HashMap<uuid::Uuid, (Vec<String>, Vec<String>)> =
         Default::default();
 
+    // Authoritative live cwd per local terminal panel, read from /proc in one
+    // walk. The stored `panel.directory` is only refreshed by shell-integration
+    // pwd reports, which never fire while a foreground agent (Claude) owns the
+    // terminal — so it can be frozen at the launch directory (often HOME),
+    // causing restored tabs to reopen in the wrong folder and `claude --resume`
+    // to run in a directory where the session doesn't belong. Overriding with
+    // the shell's real cwd fixes both. Remote panels are absent (shell is on the
+    // far host) and keep their stored directory.
+    let live_panel_cwds = crate::session::claude_resume::all_local_panel_cwds();
+
     let tm = lock_or_recover(&state.shared.tab_manager);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -348,6 +358,15 @@ pub fn create_snapshot(
             .values()
             .map(|panel| {
                 let mut snapshot = SessionPanelSnapshot::from_panel(panel);
+                // Override the stored directory with the shell's live cwd when we
+                // could read it (local terminal panels only). Keeps restored tabs
+                // in the folder the shell is actually in, not a stale launch dir.
+                if let Some(live_cwd) = live_panel_cwds.get(&panel.id) {
+                    snapshot.directory = Some(live_cwd.clone());
+                    if let Some(ref mut terminal) = snapshot.terminal {
+                        terminal.working_directory = Some(live_cwd.clone());
+                    }
+                }
                 if let Some(ref mut terminal) = snapshot.terminal {
                     terminal.scrollback = scrollback_map.get(&panel.id).cloned();
                 }
@@ -391,12 +410,23 @@ pub fn create_snapshot(
             snapshot
         };
 
+        // Prefer the focused panel's live cwd for the workspace directory (falling
+        // back to any panel's live cwd, then the stored value). Same rationale as
+        // the per-panel override: ws.current_directory is only moved by pwd
+        // reports and can be frozen at HOME while an agent holds the terminal.
+        let current_directory = ws
+            .focused_panel_id
+            .and_then(|id| live_panel_cwds.get(&id))
+            .or_else(|| ws.panels.keys().find_map(|id| live_panel_cwds.get(id)))
+            .cloned()
+            .unwrap_or_else(|| ws.current_directory.clone());
+
         SessionWorkspaceSnapshot {
             process_title: ws.process_title.clone(),
             custom_title: ws.custom_title.clone(),
             custom_color: ws.custom_color.clone(),
             is_pinned: ws.is_pinned,
-            current_directory: ws.current_directory.clone(),
+            current_directory,
             focused_panel_id: ws.focused_panel_id,
             group_id: ws.group_id,
             layout,
