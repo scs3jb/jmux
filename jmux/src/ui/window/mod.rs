@@ -451,89 +451,6 @@ pub(crate) fn focus_active_terminal(state: &Rc<AppState>) {
     }
 }
 
-/// Name used for the non-workspace stack page (welcome screen / empty state);
-/// never a valid workspace UUID, so it's skipped when pruning stale pages.
-const NO_WORKSPACE_PAGE: &str = "::no-workspace::";
-
-/// Get the persistent content `GtkStack` that holds one page per workspace,
-/// creating it as the sole child of `content_box` on first use.
-///
-/// Workspaces are switched by making a page visible, never by tearing the tree
-/// down — hidden pages stay *realized* (GtkStack only unmaps them), so their GL
-/// surfaces are never unrealized and GTK never downloads+orphans the GLArea
-/// compositing texture, which used to leak ~4.7 MB on every switch.
-fn content_stack(content_box: &gtk4::Box) -> gtk4::Stack {
-    if let Some(child) = content_box.first_child() {
-        if let Ok(stack) = child.downcast::<gtk4::Stack>() {
-            return stack;
-        }
-    }
-    let stack = gtk4::Stack::new();
-    stack.set_hexpand(true);
-    stack.set_vexpand(true);
-    // No animation: a workspace switch should be instant, and crossfade would
-    // keep the outgoing page mapped (rendering) mid-transition for no benefit.
-    stack.set_transition_type(gtk4::StackTransitionType::None);
-    content_box.append(&stack);
-    stack
-}
-
-/// Fold everything `build_layout`/`build_zoomed` consume into one hash. Two
-/// workspace states with the same signature produce identical widget trees, so
-/// the page can be reused as-is (just re-shown) instead of rebuilt. Excludes
-/// divider positions (GtkPaned owns those live) and all panel *metadata* (title,
-/// dir, git branch — handled by `refresh_metadata` without a rebuild).
-fn workspace_signature(
-    layout: &crate::model::panel::LayoutNode,
-    panels: &std::collections::HashMap<uuid::Uuid, Panel>,
-    effective_attention: Option<uuid::Uuid>,
-    zoomed_panel_id: Option<uuid::Uuid>,
-    focused_panel_id: Option<uuid::Uuid>,
-) -> u64 {
-    use std::hash::{Hash, Hasher};
-    fn hash_node(
-        node: &crate::model::panel::LayoutNode,
-        panels: &std::collections::HashMap<uuid::Uuid, Panel>,
-        h: &mut std::collections::hash_map::DefaultHasher,
-    ) {
-        use crate::model::panel::LayoutNode;
-        match node {
-            LayoutNode::Pane {
-                panel_ids,
-                selected_panel_id,
-            } => {
-                0u8.hash(h);
-                for id in panel_ids {
-                    id.hash(h);
-                    // Panel type affects which widget is built (terminal vs browser
-                    // vs markdown …), so a type change must force a rebuild.
-                    if let Some(p) = panels.get(id) {
-                        std::mem::discriminant(&p.panel_type).hash(h);
-                    }
-                }
-                selected_panel_id.hash(h);
-            }
-            LayoutNode::Split {
-                orientation,
-                first,
-                second,
-                ..
-            } => {
-                1u8.hash(h);
-                std::mem::discriminant(orientation).hash(h);
-                hash_node(first, panels, h);
-                hash_node(second, panels, h);
-            }
-        }
-    }
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    hash_node(layout, panels, &mut h);
-    zoomed_panel_id.hash(&mut h);
-    effective_attention.hash(&mut h);
-    focused_panel_id.hash(&mut h);
-    h.finish()
-}
-
 pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id: Option<uuid::Uuid>) {
     tracing::debug!("rebuild_content triggered");
 
@@ -541,7 +458,35 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
     // from the content box's root window. Lets each window render its own
     // workspace and avoid stealing GL surfaces that live in other windows.
     let win_id = window_id.or_else(|| window_id_of(content_box.upcast_ref::<gtk4::Widget>()));
-    let stack = content_stack(content_box);
+    let same_window = |w: &gtk4::Widget| -> bool {
+        match (win_id, window_id_of(w)) {
+            (Some(ours), Some(theirs)) => ours == theirs,
+            _ => true,
+        }
+    };
+
+    // Unparent cached GL surfaces and browser widgets that belong to this window.
+    for surface in state.terminal_cache.borrow().values() {
+        if let Some(parent) = surface.parent() {
+            if !same_window(surface.upcast_ref::<gtk4::Widget>()) {
+                continue;
+            }
+            if let Ok(parent_box) = parent.downcast::<gtk4::Box>() {
+                parent_box.remove(surface);
+            }
+        }
+    }
+    for browser_widget in state.browser_cache.borrow().values() {
+        if browser_widget.parent().is_some() && same_window(browser_widget.upcast_ref::<gtk4::Widget>())
+        {
+            browser_widget.unparent();
+        }
+    }
+
+    // Remove all children from the content box.
+    while let Some(child) = content_box.first_child() {
+        content_box.remove(&child);
+    }
 
     // Clone workspace data out of the lock so we don't hold it during widget construction.
     let workspace_data = {
@@ -570,146 +515,31 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
         } else {
             None
         };
-        let signature = workspace_signature(
-            &layout,
-            &panels,
-            effective_attention,
-            zoomed_panel_id,
-            focused_panel_id,
-        );
-        let page_name = id.to_string();
-
-        // Rebuild this workspace's page only when its structure actually changed
-        // (split/close/new-tab/zoom/type). A pure selection switch keeps the same
-        // signature → we skip straight to `set_visible_child` and never unrealize.
-        let needs_build = state
-            .workspace_page_signatures
-            .borrow()
-            .get(&id)
-            .map(|prev| *prev != signature)
-            .unwrap_or(true);
-
-        if needs_build {
-            // Free this workspace's cached surfaces/browsers from whatever page
-            // currently holds them, so build_layout can reparent them into the
-            // fresh page. Scoped to this workspace's panels — other workspaces'
-            // pages (and their realized surfaces) are left untouched.
-            unparent_workspace_widgets(&panels, state);
-
-            let widget = if let Some(zoomed_id) = zoomed_panel_id {
-                split_view::build_zoomed(zoomed_id, &panels, state)
-            } else {
-                split_view::build_layout(
-                    id,
-                    &layout,
-                    &panels,
-                    effective_attention,
-                    focused_panel_id,
-                    state,
-                )
-            };
-            if let Some(old) = stack.child_by_name(&page_name) {
-                stack.remove(&old);
-            }
-            stack.add_named(&widget, Some(&page_name));
-            state
-                .workspace_page_signatures
-                .borrow_mut()
-                .insert(id, signature);
-        }
-
-        if let Some(page) = stack.child_by_name(&page_name) {
-            stack.set_visible_child(&page);
-        }
-    } else {
-        // No workspace to show — welcome screen or an empty-state label. Rebuilt
-        // each time (cheap, no GL surfaces) under a fixed page name.
-        let widget: gtk4::Widget = if super::welcome::should_show_welcome() {
-            super::welcome::build_welcome()
+        let widget = if let Some(zoomed_id) = zoomed_panel_id {
+            split_view::build_zoomed(zoomed_id, &panels, state)
         } else {
-            let label = gtk4::Label::new(Some("No workspace selected"));
-            label.add_css_class("dim-label");
-            label.upcast()
+            split_view::build_layout(
+                id,
+                &layout,
+                &panels,
+                effective_attention,
+                focused_panel_id,
+                state,
+            )
         };
-        if let Some(old) = stack.child_by_name(NO_WORKSPACE_PAGE) {
-            stack.remove(&old);
-        }
-        stack.add_named(&widget, Some(NO_WORKSPACE_PAGE));
-        stack.set_visible_child(&widget);
+        content_box.append(&widget);
+    } else if super::welcome::should_show_welcome() {
+        content_box.append(&super::welcome::build_welcome());
+    } else {
+        let label = gtk4::Label::new(Some("No workspace selected"));
+        label.add_css_class("dim-label");
+        content_box.append(&label);
     }
-
-    // Drop pages for workspaces that no longer exist in this window (closed).
-    // Removing a page unrealizes its surfaces — correct here, the workspace is
-    // gone — and is what finally releases their GL resources.
-    prune_workspace_pages(&stack, state, win_id);
 
     // A tab was just closed — move keyboard focus onto the now-active pane's
     // terminal (surfaces are re-parented above, so this runs at the right time).
     if FOCUS_ACTIVE_TERMINAL.with(|f| f.replace(false)) {
         focus_active_terminal(state);
-    }
-}
-
-/// Unparent the cached GL surfaces and browser widgets for `panels` from
-/// whatever stack page currently holds them, so they can be reparented into a
-/// freshly-built page. A GL surface must be unparented before it can be added
-/// elsewhere; scoping to one workspace's panels avoids disturbing other
-/// workspaces' still-realized pages.
-fn unparent_workspace_widgets(
-    panels: &std::collections::HashMap<uuid::Uuid, Panel>,
-    state: &Rc<AppState>,
-) {
-    let terminal_cache = state.terminal_cache.borrow();
-    for panel_id in panels.keys() {
-        if let Some(surface) = terminal_cache.get(panel_id) {
-            if let Some(parent) = surface.parent() {
-                if let Ok(parent_box) = parent.downcast::<gtk4::Box>() {
-                    parent_box.remove(surface);
-                }
-            }
-        }
-    }
-    drop(terminal_cache);
-    let browser_cache = state.browser_cache.borrow();
-    for panel_id in panels.keys() {
-        if let Some(browser_widget) = browser_cache.get(panel_id) {
-            if browser_widget.parent().is_some() {
-                browser_widget.unparent();
-            }
-        }
-    }
-}
-
-/// Remove stack pages (and forget the cache entries) for workspaces in this
-/// window that no longer exist. Pages for *other* windows are left alone.
-fn prune_workspace_pages(stack: &gtk4::Stack, state: &Rc<AppState>, win_id: Option<uuid::Uuid>) {
-    let live_ids: std::collections::HashSet<uuid::Uuid> = {
-        let tm = lock_or_recover(&state.shared.tab_manager);
-        tm.iter()
-            .filter(|ws| win_id.is_none() || ws.window_id == win_id)
-            .map(|ws| ws.id)
-            .collect()
-    };
-    // Collect names first (can't mutate the stack while iterating its children).
-    let mut stale: Vec<(uuid::Uuid, gtk4::Widget)> = Vec::new();
-    let mut child = stack.first_child();
-    while let Some(w) = child {
-        child = w.next_sibling();
-        let Some(name) = stack.page(&w).name() else {
-            continue;
-        };
-        if name == NO_WORKSPACE_PAGE {
-            continue;
-        }
-        if let Ok(id) = uuid::Uuid::parse_str(&name) {
-            if !live_ids.contains(&id) {
-                stale.push((id, w));
-            }
-        }
-    }
-    for (id, w) in stale {
-        stack.remove(&w);
-        state.workspace_page_signatures.borrow_mut().remove(&id);
     }
 }
 
