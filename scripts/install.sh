@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Install cmux-gtk into a prefix using the layout the app expects:
+# Install jmux into a prefix using the layout the app expects:
 #
-#   $PREFIX/bin/cmux-app                      GUI binary
-#   $PREFIX/bin/cmux                          CLI (bash wrapper)
-#   $PREFIX/bin/cmux-cli                      typed CLI client (Rust)
-#   $PREFIX/share/cmux/shell-integration/     zsh/bash/fish integration (+ .zshenv)
-#   $PREFIX/share/cmux/bin/                    cmux/claude/xdg-open (PATH-injected in cmux terminals)
+#   $PREFIX/bin/jmux-app                      GUI binary
+#   $PREFIX/bin/jmux                          CLI (bash wrapper)
+#   $PREFIX/bin/jmux-cli                      typed CLI client (Rust)
+#   $PREFIX/share/jmux/shell-integration/     zsh/bash/fish integration (+ .zshenv)
+#   $PREFIX/share/jmux/bin/                    jmux/claude/xdg-open (PATH-injected in jmux terminals)
 #   $PREFIX/share/applications/…desktop       launcher entry
 #   $PREFIX/share/metainfo/…metainfo.xml      AppStream metadata
 #   $PREFIX/share/icons/hicolor/scalable/…    bundled symbolic icons
 #
-# The GUI resolves shell-integration via <exe_dir>/../share/cmux/shell-integration,
+# The GUI resolves shell-integration via <exe_dir>/../share/jmux/shell-integration,
 # so this layout works without any extra configuration.
 #
 # Usage:
@@ -22,55 +22,55 @@ PREFIX="${1:-/usr/local}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REL="$REPO_ROOT/target/release"
 
-if [[ ! -x "$REL/cmux-app" ]]; then
-  echo "error: $REL/cmux-app not found — build first with:" >&2
-  echo "  cargo build --release --features cmux/link-ghostty" >&2
+if [[ ! -x "$REL/jmux-app" ]]; then
+  echo "error: $REL/jmux-app not found — build first with:" >&2
+  echo "  cargo build --release --features jmux/link-ghostty" >&2
   exit 1
 fi
 
-echo "Installing cmux-gtk to $PREFIX"
+echo "Installing jmux to $PREFIX"
 
 # Surface which build is being installed. The quick-terminal (quake) drop-down
 # is an opt-in cargo feature, and install.sh copies whatever was last built — so
 # a stray default build silently ships without the global hotkey/portal. Make
 # that state visible instead of mysterious.
-if grep -aqF 'org.freedesktop.portal.GlobalShortcuts' "$REL/cmux-app" 2>/dev/null; then
+if grep -aqF 'org.freedesktop.portal.GlobalShortcuts' "$REL/jmux-app" 2>/dev/null; then
   echo "  quick-terminal: ENABLED in this build"
 else
   echo "  quick-terminal: NOT in this build — rebuild with"
-  echo "    cargo build --release --features cmux/link-ghostty,cmux/quick-terminal"
+  echo "    cargo build --release --features jmux/link-ghostty,jmux/quick-terminal"
 fi
 
-install -Dm755 "$REL/cmux-app" "$PREFIX/bin/cmux-app"
-# Bash CLI wrapper is the canonical `cmux` (matches the in-terminal PATH prepend).
-install -Dm755 "$REPO_ROOT/cmux/bin/cmux" "$PREFIX/bin/cmux"
+install -Dm755 "$REL/jmux-app" "$PREFIX/bin/jmux-app"
+# Bash CLI wrapper is the canonical `jmux` (matches the in-terminal PATH prepend).
+install -Dm755 "$REPO_ROOT/jmux/bin/jmux" "$PREFIX/bin/jmux"
 # Typed Rust CLI client (optional companion).
-[[ -x "$REL/cmux" ]] && install -Dm755 "$REL/cmux" "$PREFIX/bin/cmux-cli"
+[[ -x "$REL/jmux-cli" ]] && install -Dm755 "$REL/jmux-cli" "$PREFIX/bin/jmux-cli"
 
 # Shell integration (preserve dotfiles like .zshenv and the fish/ subtree).
-dest_si="$PREFIX/share/cmux/shell-integration"
+dest_si="$PREFIX/share/jmux/shell-integration"
 rm -rf "$dest_si"
 mkdir -p "$dest_si"
-cp -a "$REPO_ROOT/cmux/shell-integration/." "$dest_si/"
+cp -a "$REPO_ROOT/jmux/shell-integration/." "$dest_si/"
 
-# Bundled bin scripts (cmux/claude/xdg-open) for the in-terminal PATH prepend.
-dest_bin="$PREFIX/share/cmux/bin"
+# Bundled bin scripts (jmux/claude/xdg-open) for the in-terminal PATH prepend.
+dest_bin="$PREFIX/share/jmux/bin"
 mkdir -p "$dest_bin"
-cp -a "$REPO_ROOT/cmux/bin/." "$dest_bin/"
+cp -a "$REPO_ROOT/jmux/bin/." "$dest_bin/"
 chmod 755 "$dest_bin"/*
 
 # Desktop entry + AppStream metadata.
-install -Dm644 "$REPO_ROOT/data/io.github.douglas.cmux_gtk.desktop" \
-  "$PREFIX/share/applications/io.github.douglas.cmux_gtk.desktop"
-install -Dm644 "$REPO_ROOT/data/io.github.douglas.cmux_gtk.metainfo.xml" \
-  "$PREFIX/share/metainfo/io.github.douglas.cmux_gtk.metainfo.xml"
+install -Dm644 "$REPO_ROOT/data/com.jacobbriggs.jmux.desktop" \
+  "$PREFIX/share/applications/com.jacobbriggs.jmux.desktop"
+install -Dm644 "$REPO_ROOT/data/com.jacobbriggs.jmux.metainfo.xml" \
+  "$PREFIX/share/metainfo/com.jacobbriggs.jmux.metainfo.xml"
 
 # Bundled symbolic icons into the hicolor theme so GTK resolves them.
-if [[ -d "$REPO_ROOT/cmux/icons/scalable" ]]; then
+if [[ -d "$REPO_ROOT/jmux/icons/scalable" ]]; then
   while IFS= read -r -d '' svg; do
-    rel="${svg#"$REPO_ROOT"/cmux/icons/scalable/}"
+    rel="${svg#"$REPO_ROOT"/jmux/icons/scalable/}"
     install -Dm644 "$svg" "$PREFIX/share/icons/hicolor/scalable/$rel"
-  done < <(find "$REPO_ROOT/cmux/icons/scalable" -name '*.svg' -print0)
+  done < <(find "$REPO_ROOT/jmux/icons/scalable" -name '*.svg' -print0)
 fi
 
 # Application icon(s) into the hicolor theme (matches the desktop Icon=).
@@ -84,8 +84,8 @@ if [[ -d "$REPO_ROOT/data/icons/hicolor" ]]; then
   done < <(find "$REPO_ROOT/data/icons/hicolor" \
     \( -name '*.svg' -o -name '*.png' -o -name 'index.theme' \) -print0)
   # Pixmaps fallback — some launchers look here directly by Icon= name.
-  install -Dm644 "$REPO_ROOT/data/icons/hicolor/256x256/apps/io.github.douglas.cmux_gtk.png" \
-    "$PREFIX/share/pixmaps/io.github.douglas.cmux_gtk.png" 2>/dev/null || true
+  install -Dm644 "$REPO_ROOT/data/icons/hicolor/256x256/apps/com.jacobbriggs.jmux.png" \
+    "$PREFIX/share/pixmaps/com.jacobbriggs.jmux.png" 2>/dev/null || true
 fi
 
 # Refresh caches (best-effort).
@@ -100,9 +100,9 @@ command -v gtk-update-icon-cache >/dev/null 2>&1 && \
 # or the user can run `kbuildsycoca6` themselves from within their session.
 
 echo "Done."
-echo "  GUI : $PREFIX/bin/cmux-app"
-echo "  CLI : $PREFIX/bin/cmux"
+echo "  GUI : $PREFIX/bin/jmux-app"
+echo "  CLI : $PREFIX/bin/jmux"
 case ":$PATH:" in
   *":$PREFIX/bin:"*) ;;
-  *) echo "  note: $PREFIX/bin is not on your PATH — add it to run 'cmux-app' by name." ;;
+  *) echo "  note: $PREFIX/bin is not on your PATH — add it to run 'jmux-app' by name." ;;
 esac

@@ -1580,7 +1580,7 @@ impl GhosttyGlSurface {
 /// Save a clipboard image texture to a temp PNG file.
 /// Returns the shell-safe file path on success.
 fn save_clipboard_image(texture: &gdk4::Texture) -> Option<String> {
-    let dir = std::env::temp_dir().join("cmux-clipboard");
+    let dir = std::env::temp_dir().join("jmux-clipboard");
     std::fs::create_dir_all(&dir).ok()?;
     let filename = format!(
         "clipboard-{}.png",

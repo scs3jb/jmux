@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=jmux
+GenericName=Terminal Multiplexer
+Comment=Terminal multiplexer for AI coding agents
+Exec=jmux-app %u
+Icon=com.jacobbriggs.jmux
+Terminal=false
+Type=Application
+Categories=System;TerminalEmulator;Development;
+Keywords=terminal;multiplexer;browser;ai;coding;
+StartupNotify=true
+StartupWMClass=com.jacobbriggs.jmux
+MimeType=x-scheme-handler/jmux;

@@ -3,5 +3,5 @@
 *.swo
 *~
 .DS_Store
-/daemon/remote/cmuxd-remote
+/daemon/remote/jmuxd-remote
 parity-audit.md

@@ -2,15 +2,15 @@
 members = [
     "ghostty-sys",
     "ghostty-gtk",
-    "cmux",
-    "cmux-cli",
+    "jmux",
+    "jmux-cli",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/douglas/cmux-gtk"
+repository = "https://github.com/scs3jb/jmux"
 
 [workspace.dependencies]
 # GTK4 / libadwaita

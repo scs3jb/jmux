@@ -31,14 +31,14 @@ sudo pacman -S spectacle grim slurp wf-recorder ffmpeg gifski
 |------|-------|
 | `hero` | the main window with a few split panes / agents running |
 | `pane-overview` | the Pane Overview grid (header grid button) with several panes |
-| `agent-integrations` | `cmux claude-teams` or `cmux omo` with teammates as panes |
-| `history-pane` | `cmux history` with some closed/focused entries |
-| `vault-pane` | `cmux vault` listing past sessions |
+| `agent-integrations` | `jmux claude-teams` or `jmux omo` with teammates as panes |
+| `history-pane` | `jmux history` with some closed/focused entries |
+| `vault-pane` | `jmux vault` listing past sessions |
 | `dock` | the Dock open with a couple of controls (e.g. lazygit + a log tail) |
 | `dock-editor` | Settings → Dock → Edit Dock Controls |
 | `textbox` | a terminal with the TextBox composer below it |
 | `pdf-preview` | the file-preview panel showing a PDF (or an image) |
-| `task-manager` | `cmux top` |
+| `task-manager` | `jmux top` |
 | `command-palette` | the palette open (`Ctrl+Shift+P`) with custom commands listed |
 
 ### Demo GIFs (`docs/demos/<name>.gif`)

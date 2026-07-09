@@ -28,7 +28,7 @@ use crate::surface::GhosttyGlSurface;
 
 /// Trait for handling ghostty runtime events.
 ///
-/// Implement this trait in the cmux application to receive callbacks from ghostty.
+/// Implement this trait in the jmux application to receive callbacks from ghostty.
 pub trait GhosttyCallbackHandler: 'static {
     /// Called when ghostty needs the host to call `app.tick()`.
     /// The host should schedule this on the GTK main loop via `glib::idle_add_once`.

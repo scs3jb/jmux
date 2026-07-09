@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# jmux claude wrapper - injects hooks and session tracking
+#
+# When running inside a jmux terminal (JMUX_SURFACE_ID is set), this wrapper
+# intercepts `claude` invocations to inject --session-id and --settings flags
+# so that Claude Code hooks fire back into jmux for notifications/status.
+# Outside jmux, it passes through to the real claude binary unchanged.
+
+# Find the real claude binary, skipping our own directory.
+find_real_claude() {
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/claude" ]] && printf '%s' "$d/claude" && return 0
+    done
+    return 1
+}
+
+# Return 0 only when JMUX_SOCKET_PATH points to a live jmux socket.
+jmux_socket_available() {
+    local socket="${JMUX_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+
+    local self_dir jmux_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    jmux_bin="$self_dir/jmux"
+    [[ -x "$jmux_bin" ]] || jmux_bin="$(command -v jmux || true)"
+    [[ -n "$jmux_bin" ]] || return 1
+
+    # Keep stale/hung socket checks bounded so claude startup does not block
+    # behind the CLI default timeout (15s).
+    JMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$jmux_bin" ping >/dev/null 2>&1
+}
+
+# Pass through if not in a jmux terminal, hooks are disabled, or the jmux
+# socket is unavailable (stale env / app not running).
+IN_JMUX=0
+if [[ -n "${JMUX_SURFACE_ID:-}" ]]; then
+    IN_JMUX=1
+fi
+
+if [[ "$IN_JMUX" == "0" || "${JMUX_CLAUDE_HOOKS_DISABLED:-}" == "1" ]] || ! jmux_socket_available; then
+    # In jmux-launched shells, preserve old behavior and always clear nested
+    # Claude session markers, even when we must pass through due to stale socket.
+    if [[ "$IN_JMUX" == "1" ]]; then
+        unset CLAUDECODE
+    fi
+    REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+    exec "$REAL_CLAUDE" "$@"
+fi
+
+# Find real claude.
+REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+
+# Pass through subcommands that don't support session/hook flags.
+case "${1:-}" in
+    mcp|config|api-key|rc|remote-control) exec "$REAL_CLAUDE" "$@" ;;
+esac
+
+# Unset CLAUDECODE to avoid "nested session" detection — jmux terminals are
+# independent sessions even when the parent shell was launched from Claude Code.
+unset CLAUDECODE
+
+# Check if the user already specified a session/resume flag.
+# If so, don't inject our own --session-id (it would conflict).
+SKIP_SESSION_ID=false
+for arg in "$@"; do
+    case "$arg" in
+        --resume|--resume=*|--session-id|--session-id=*|--continue|-c)
+            SKIP_SESSION_ID=true
+            break
+            ;;
+    esac
+done
+
+# Export the wrapper's PID. Because we exec claude below, this PID becomes
+# the actual claude process PID, which hooks use for stale-session detection.
+export JMUX_CLAUDE_PID=$$
+
+# Build hooks settings JSON.
+# Claude Code merges --settings additively with the user's own settings.json.
+# - SessionStart/Stop/Notification: existing lifecycle hooks
+# - SessionEnd: cleanup when Claude exits (covers Ctrl+C where Stop doesn't fire)
+# - UserPromptSubmit: clears "Needs input" and sets "Running" on new prompt
+# - PreToolUse: clears "Needs input" when Claude resumes after permission grant (async to avoid latency)
+HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"jmux claude-hook session-start","timeout":10}]}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"jmux claude-hook stop","timeout":10}]}],"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"jmux claude-hook session-end","timeout":1}]}],"Notification":[{"matcher":"","hooks":[{"type":"command","command":"jmux claude-hook notification","timeout":10}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"jmux claude-hook prompt-submit","timeout":10}]}],"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"jmux claude-hook pre-tool-use","timeout":5,"async":true}]}]}}'
+
+if [[ "$SKIP_SESSION_ID" == true ]]; then
+    exec "$REAL_CLAUDE" --settings "$HOOKS_JSON" "$@"
+else
+    SESSION_ID="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null)"
+    exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_JSON" "$@"
+fi

@@ -1,0 +1,1179 @@
+#!/usr/bin/env bash
+# jmux — CLI for interacting with a running jmux instance via Unix socket.
+#
+# Usage:
+#   jmux <command> [args...]
+#   jmux list                   List workspaces
+#   jmux new [dir]              Create workspace
+#   jmux select <id|index>      Select workspace
+#   jmux send <text>            Send text to focused terminal
+#   jmux tree                   Full state tree
+#   jmux help                   Show help
+#
+# Environment:
+#   JMUX_SOCKET   Override socket path (auto-detected if unset)
+
+set -euo pipefail
+
+# ── Socket path discovery ─────────────────────────────────────────────
+_jmux_socket_path() {
+  if [[ -n "${JMUX_SOCKET:-}" ]]; then
+    echo "$JMUX_SOCKET"
+    return
+  fi
+  # Mirror the Rust socket_path() logic
+  if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" ]]; then
+    local sock="$XDG_RUNTIME_DIR/jmux.sock"
+    if [[ -S "$sock" ]]; then
+      echo "$sock"
+      return
+    fi
+  fi
+  local sock="/tmp/jmux-$(id -u).sock"
+  if [[ -S "$sock" ]]; then
+    echo "$sock"
+    return
+  fi
+  echo "error: jmux socket not found. Is jmux-app running?" >&2
+  exit 1
+}
+
+# ── Socket send ───────────────────────────────────────────────────────
+_jmux_send() {
+  local sock
+  sock=$(_jmux_socket_path)
+  local msg="$1"
+
+  if command -v ncat >/dev/null 2>&1; then
+    echo "$msg" | ncat -U "$sock" 2>/dev/null
+  elif command -v socat >/dev/null 2>&1; then
+    echo "$msg" | socat - UNIX-CONNECT:"$sock" 2>/dev/null
+  elif command -v nc >/dev/null 2>&1; then
+    echo "$msg" | nc -U "$sock" -w 2 2>/dev/null
+  else
+    echo "error: no socket client found. Install ncat, socat, or nc." >&2
+    exit 1
+  fi
+}
+
+# ── JSON-RPC (V2 protocol) ───────────────────────────────────────────
+# Build the request envelope and return the raw response on stdout.
+# NB: do not use ${1:-{}} — bash treats the inner `}` as the closing brace of
+# the expansion and appends a stray `}`, corrupting every params object.
+_jmux_rpc() {
+  local method="$1"; shift
+  local params="${1:-}"; [[ -z "$params" ]] && params="{}"
+  _jmux_send "{\"id\":\"cli\",\"method\":\"$method\",\"params\":$params}"
+}
+
+# Emit an RPC response for an ACTION command: silent on success, error message
+# to stderr (exit 1). Pass --json (or JMUX_JSON=1) to print the raw response.
+_jmux_emit() {
+  local resp="$1"
+  if [[ -n "${JMUX_JSON:-}" ]]; then
+    printf '%s\n' "$resp"
+    return 0
+  fi
+  case "$resp" in
+    *'"ok":false'*)
+      local msg
+      msg=$(printf '%s' "$resp" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      [[ -z "$msg" ]] && msg=$(printf '%s' "$resp" | sed -n 's/.*"code":"\([^"]*\)".*/\1/p')
+      echo "jmux: ${msg:-request failed}" >&2
+      return 1 ;;
+    *) return 0 ;;  # success → silent
+  esac
+}
+
+# Action command: send and emit (silent on success).
+_jmux_json() {
+  _jmux_emit "$(_jmux_rpc "$@")"
+}
+
+# V1 text action: send a text command, emit (silent on success).
+_jmux_act() {
+  _jmux_emit "$(_jmux_send "$1")"
+}
+
+# Print a query response: errors→stderr; otherwise pretty-print JSON (raw on
+# --json/JMUX_JSON or when python3 is absent, or non-JSON like screen text).
+_jmux_print() {
+  local resp="$1"
+  case "$resp" in
+    *'"ok":false'*)
+      _jmux_emit "$resp"; return $? ;;
+  esac
+  if [[ -z "${JMUX_JSON:-}" ]] && command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$resp" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$resp"
+  else
+    printf '%s\n' "$resp"
+  fi
+}
+
+# Query commands: send (V2 JSON / V1 text) and pretty-print the response.
+_jmux_query()    { _jmux_print "$(_jmux_rpc "$@")"; }
+_jmux_query_v1() { _jmux_print "$(_jmux_send "$1")"; }
+
+# ── Theme listing ─────────────────────────────────────────────────
+_jmux_list_themes() {
+  local filter="${1:-}"
+  local dirs=()
+
+  # User themes
+  [[ -d "$HOME/.config/ghostty/themes" ]] && dirs+=("$HOME/.config/ghostty/themes")
+
+  # System themes via GHOSTTY_RESOURCES_DIR
+  local res="${GHOSTTY_RESOURCES_DIR:-/usr/share/ghostty}"
+  [[ -d "$res/themes" ]] && dirs+=("$res/themes")
+
+  # XDG data dirs
+  local IFS=:
+  for d in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+    [[ -d "$d/ghostty/themes" ]] && dirs+=("$d/ghostty/themes")
+  done
+  unset IFS
+
+  if [[ ${#dirs[@]} -eq 0 ]]; then
+    echo "No ghostty theme directories found." >&2
+    return 1
+  fi
+
+  # Collect and deduplicate theme names
+  local themes=()
+  for d in "${dirs[@]}"; do
+    for f in "$d"/*; do
+      [[ -f "$f" ]] || continue
+      local name
+      name="$(basename "$f")"
+      themes+=("$name")
+    done
+  done
+
+  # Sort, deduplicate, optionally filter
+  printf '%s\n' "${themes[@]}" | sort -u | if [[ -n "$filter" ]]; then
+    grep -i "$filter" || echo "No themes matching '$filter'."
+  else
+    cat
+  fi
+}
+
+# ── Tmux compatibility ────────────────────────────────────────────
+# Maps tmux command syntax to jmux socket calls for tool compatibility
+# (e.g., claude-teams agent coordination).
+_jmux_tmux_compat() {
+  local tcmd="$1"; shift
+  case "$tcmd" in
+    new-session|new-window|neww)
+      local name="" cmd=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -n) shift; name="${1:-}"; shift ;;
+          -d|-P|-F*|-t*|-s*|-e*) shift ;; # ignore tmux flags
+          *) cmd="${cmd:+$cmd }$1"; shift ;;
+        esac
+      done
+      local result
+      result=$(_jmux_send "new")
+      [[ -n "$name" ]] && _jmux_send "rename \"$name\""
+      [[ -n "$cmd" ]] && _jmux_send "send $cmd"
+      echo "$result"
+      ;;
+    split-window|splitw)
+      local dir="right"
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -h) dir="right"; shift ;;
+          -v) dir="down"; shift ;;
+          -b) [[ "$dir" == "right" ]] && dir="left" || dir="up"; shift ;;
+          *) shift ;;
+        esac
+      done
+      _jmux_json "surface.split" "{\"direction\":\"$dir\"}"
+      ;;
+    select-window|selectw)
+      local target="${1:-}"
+      [[ "$target" == -t* ]] && target="${target#-t}"
+      _jmux_send "select $target"
+      ;;
+    select-pane|selectp)
+      local target=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -t) shift; target="${1:-}"; shift ;;
+          -t*) target="${1#-t}"; shift ;;
+          *) shift ;;
+        esac
+      done
+      [[ -n "$target" ]] && _jmux_json "pane.focus" "{\"pane\":\"$target\"}"
+      ;;
+    kill-window|killw)
+      _jmux_act "close_workspace ${*}"
+      ;;
+    kill-pane|killp)
+      _jmux_json "surface.close" "{}"
+      ;;
+    send-keys|send)
+      local text=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -l|-t*) shift ;; # ignore literal flag and target
+          *) text="${text:+$text }$1"; shift ;;
+        esac
+      done
+      [[ -n "$text" ]] && _jmux_send "send $text"
+      ;;
+    capture-pane|capturep)
+      _jmux_send "read_screen ${*}"
+      ;;
+    list-windows|lsw)
+      _jmux_send "list"
+      ;;
+    list-panes|lsp)
+      _jmux_json "pane.list" "{}"
+      ;;
+    rename-window|renamew)
+      local name=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -t*) shift ;;
+          *) name="$1"; shift ;;
+        esac
+      done
+      [[ -n "$name" ]] && _jmux_send "rename \"$name\""
+      ;;
+    resize-pane|resizep)
+      local dir="" amount="5"
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -L) dir="left"; shift ;;
+          -R) dir="right"; shift ;;
+          -U) dir="up"; shift ;;
+          -D) dir="down"; shift ;;
+          -t*) shift ;;
+          [0-9]*) amount="$1"; shift ;;
+          *) shift ;;
+        esac
+      done
+      [[ -n "$dir" ]] && _jmux_json "pane.resize" "{\"direction\":\"$dir\",\"amount\":$amount}"
+      ;;
+    last-window) _jmux_send "last" ;;
+    next-window) _jmux_send "next" ;;
+    previous-window) _jmux_send "prev" ;;
+    last-pane) _jmux_json "pane.last" "{}" ;;
+    swap-pane) _jmux_json "pane.swap" "{}" ;;
+    break-pane) _jmux_json "pane.break" "{}" ;;
+    join-pane) _jmux_json "pane.join" "{}" ;;
+    clear-history) _jmux_json "surface.clear_history" "{}" ;;
+    wait-for)
+      local signal=false name=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -S) signal=true; shift ;;
+          *) name="$1"; shift ;;
+        esac
+      done
+      if [[ -z "$name" ]]; then
+        echo "error: wait-for requires a channel name" >&2
+        return 1
+      fi
+      local sigfile="/tmp/jmux-wait-for-${name}.sig"
+      if $signal; then
+        touch "$sigfile"
+      else
+        local elapsed=0
+        while [[ ! -f "$sigfile" && $elapsed -lt 300 ]]; do
+          sleep 0.1
+          elapsed=$((elapsed + 1))
+        done
+        rm -f "$sigfile"
+        [[ $elapsed -ge 300 ]] && return 1
+      fi
+      ;;
+    display-message|display|displayp)
+      local msg=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -p|-F*|-t*) shift ;;
+          *) msg="${msg:+$msg }$1"; shift ;;
+        esac
+      done
+      [[ -n "$msg" ]] && _jmux_send "notify \"jmux\" \"$msg\""
+      ;;
+    respawn-pane)
+      local cmd="${*:-$SHELL}"
+      _jmux_send "send $cmd"
+      ;;
+    *)
+      echo "error: unsupported tmux command: $tcmd" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Install a private tmux + terminal-notifier shim into <dir> so agent tools
+# (Claude Code teams, oh-my-openagent) drive jmux panes/notifications instead
+# of a real tmux. The shims re-enter this CLI via $JMUX_TMUX_SHIM_BIN.
+_jmux_install_tmux_shim() {
+  local dir="$1"
+  mkdir -p "$dir"
+  # tmux → jmux __tmux-compat
+  cat > "$dir/tmux" <<'SHIMEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  -V|-v) echo "tmux 3.4"; exit 0 ;;
+esac
+exec "${JMUX_TMUX_SHIM_BIN:-jmux}" __tmux-compat "$@"
+SHIMEOF
+  chmod +x "$dir/tmux"
+  # terminal-notifier → jmux notify (so agent notifications surface in jmux)
+  cat > "$dir/terminal-notifier" <<'SHIMEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+title="" message="" subtitle=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -title)    shift; title="${1:-}";    shift ;;
+    -message)  shift; message="${1:-}";  shift ;;
+    -subtitle) shift; subtitle="${1:-}"; shift ;;
+    *) shift ;;
+  esac
+done
+[[ -n "$subtitle" ]] && title="${title:+$title — }$subtitle"
+exec "${JMUX_TMUX_SHIM_BIN:-jmux}" notify "$title" "$message"
+SHIMEOF
+  chmod +x "$dir/terminal-notifier"
+}
+
+# ── Main ──────────────────────────────────────────────────────────────
+# Global --json flag: print raw JSON-RPC responses (incl. for action commands).
+if [[ "${1:-}" == "--json" ]]; then
+  export JMUX_JSON=1
+  shift
+fi
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: jmux <command> [args...]"
+  echo "Run 'jmux help' for available commands."
+  exit 0
+fi
+
+command="$1"
+shift
+
+_jmux_print_help() {
+  cat <<'EOF'
+jmux — CLI for a running jmux instance (talks over its Unix socket)
+
+Usage: jmux [--json] <command> [args...]
+
+  Action commands are silent on success (errors go to stderr); query commands
+  print their data. Pass --json (or set JMUX_JSON=1) to print raw JSON-RPC.
+
+Meta
+  help                       Show this help
+  ping                       Check the instance is responsive
+  tree                       Dump the full state tree (JSON)
+  capabilities               List supported socket methods (JSON)
+  identify                   Show instance info (JSON)
+
+Workspaces
+  list, ls                   List workspaces
+  new [dir]                  Create a workspace (optional starting directory)
+  new-workspace [-n name] [dir]
+                             Create a named workspace
+  new-browser [url]          Create a browser workspace
+  open <path-or-url>...       Open files (viewer by type), dirs (new workspace), URLs (browser)
+  diff [--staged|--branch <ref>] [path]   Git diff viewer (working tree by default)
+  project [path]             Open a project-structure visualizer (default: $PWD)
+  notes [--tab|--down] [file]   Open an editable notes scratchpad (splits beside terminal)
+  select, sel <id|index>     Select a workspace
+  current                    Show the current workspace
+  rename <name>              Rename the current workspace
+  close [id]                 Close a workspace
+  reopen                     Reopen the most recently closed workspace
+  reopen-tab                 Reopen the most recently closed tab (this workspace)
+  history                    Open the History pane (closed/focused workspaces)
+  vault                      Open the Vault pane (search & resume agent sessions)
+  describe <text>            Set the selected workspace's description (empty clears)
+  ai-name [workspace-id]     AI-generate a workspace title from the terminal
+  ide [editor] [dir]         Open a directory in an external editor/IDE (default $PWD)
+  quick-terminal [toggle|show|hide]  Toggle the Quake-style drop-down terminal
+  config doctor              Diagnose install, daemon, and config health
+  next | prev | last         Switch workspace
+  back | forward             Navigate recently-focused workspaces
+  hibernate                  Pause the focused agent (SIGSTOP) / toggle
+  wake                       Resume the focused agent (SIGCONT)
+  top                        Open the Task Manager (CPU/RAM per agent)
+  ps                         List terminal process CPU/RAM usage (JSON)
+
+Groups
+  group create <name>        Create a sidebar group
+  group list                 List groups (JSON)
+  group assign <grp|null> [ws]   Add a workspace to a group (null = ungroup)
+  group rename <grp> <name>  Rename a group
+  group collapse <grp>       Toggle a group collapsed/expanded
+  group color <grp> <color>  Set a group color ("" clears)
+  group delete <grp>         Delete a group (members are ungrouped)
+
+Panes / terminals
+  surfaces                   List panes/surfaces (JSON)
+  send <text>                Send text to the focused terminal
+  send-key <key> [mods...]   Send a key chord (e.g. send-key Enter, send-key c ctrl)
+  split [-h|-v]              Split the focused pane
+  read [--scrollback] [--lines N]  Read terminal text (visible or full scrollback)
+
+Browser
+  browser <action> [args]    Browser automation (navigate, click, eval, …)
+  navigate, nav <url>        Navigate the focused browser panel
+
+SSH
+  ssh [-A] [--no-focus] <user@host> [opts]
+                             Open a remote SSH workspace (-A forwards the agent)
+
+Windows
+  windows                    List windows
+  new-window                 Open a new window
+  window displays            List connected monitors
+  window display <name|idx>  Move the window to a monitor (fullscreens it)
+
+Agent integrations
+  claude-teams [args...]     Launch Claude Code in agent-teams mode; teammates
+                             open as native jmux panes (tmux shim)
+  omo [args...]              Launch OpenCode / oh-my-openagent; subagents open
+                             as native jmux panes (tmux shim)
+
+Misc
+  status / progress / log    Update sidebar metadata for the current workspace
+  notify <title> [message]   Post a notification
+  notifications              List notifications (JSON)
+  markdown, md <file>        Open a markdown viewer
+  themes [filter]            List bundled Ghostty themes
+  settings                   Open the settings window
+  rc, remote-control <...>   Pass a raw V1 command through to the socket
+
+Environment
+  JMUX_SOCKET                Override the socket path (auto-detected otherwise)
+EOF
+}
+
+case "$command" in
+  # ── Meta ──
+  help|-h|--help)
+    _jmux_print_help
+    ;;
+  ping)
+    _jmux_send "ping"
+    ;;
+  tree)
+    _jmux_query "system.tree"
+    ;;
+  capabilities)
+    _jmux_query "system.capabilities"
+    ;;
+  config)
+    sub="${1:-doctor}"; shift || true
+    case "$sub" in
+      doctor)
+        ok=0; warn=0; fail=0
+        chk_ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; ok=$((ok+1)); }
+        chk_warn() { printf '  \033[33m!\033[0m %s\n' "$1"; warn=$((warn+1)); }
+        chk_fail() { printf '  \033[31m✗\033[0m %s\n' "$1"; fail=$((fail+1)); }
+        cfgdir="${XDG_CONFIG_HOME:-$HOME/.config}/jmux"
+        jsoncheck() { # path label
+          local f="$1" label="$2"
+          if [[ ! -e "$f" ]]; then chk_warn "$label: not present (using defaults)"; return; fi
+          if command -v python3 >/dev/null 2>&1; then
+            if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" 2>/dev/null; then
+              chk_ok "$label: valid JSON"
+            else
+              chk_fail "$label: INVALID JSON ($f)"
+            fi
+          else
+            chk_ok "$label: present"
+          fi
+        }
+        echo "jmux config doctor"; echo
+        echo "Binary & CLI:"
+        if command -v jmux-app >/dev/null 2>&1; then chk_ok "jmux-app on PATH ($(command -v jmux-app))"; else chk_warn "jmux-app not on PATH"; fi
+        if command -v jmux >/dev/null 2>&1; then chk_ok "jmux CLI on PATH ($(command -v jmux))"; else chk_warn "jmux CLI not on PATH"; fi
+        if command -v ncat >/dev/null 2>&1 || command -v socat >/dev/null 2>&1 || command -v nc >/dev/null 2>&1; then
+          chk_ok "socket client available (ncat/socat/nc)"
+        else
+          chk_fail "no socket client (install ncat, socat, or nc)"
+        fi
+        echo; echo "Daemon:"
+        sock=""
+        if [[ -n "${JMUX_SOCKET:-}" && -S "${JMUX_SOCKET}" ]]; then sock="$JMUX_SOCKET"
+        elif [[ -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/jmux.sock" ]]; then sock="${XDG_RUNTIME_DIR}/jmux.sock"
+        elif [[ -S "/tmp/jmux-$(id -u).sock" ]]; then sock="/tmp/jmux-$(id -u).sock"; fi
+        if [[ -n "$sock" ]]; then
+          chk_ok "socket present: $sock"
+          if [[ -n "$(_jmux_send "ping" 2>/dev/null)" ]]; then chk_ok "daemon responds to ping"; else chk_fail "socket present but no ping response"; fi
+        else
+          chk_warn "socket not found (is jmux-app running?)"
+        fi
+        echo; echo "Config files ($cfgdir):"
+        if [[ -e "$cfgdir/jmux.json" ]]; then jsoncheck "$cfgdir/jmux.json" "settings (jmux.json)"; else jsoncheck "$cfgdir/settings.json" "settings (settings.json)"; fi
+        jsoncheck "$cfgdir/shortcuts.json" "shortcuts.json"
+        jsoncheck "$cfgdir/dock.json" "dock.json"
+        echo; echo "Shell integration:"
+        si=""
+        for d in "$HOME/.local/share/jmux/shell-integration" "/usr/local/share/jmux/shell-integration" "/usr/share/jmux/shell-integration"; do
+          [[ -d "$d" ]] && { si="$d"; break; }
+        done
+        if [[ -n "$si" ]]; then chk_ok "shell integration: $si"; else chk_warn "shell integration dir not found"; fi
+        echo
+        printf 'Summary: \033[32m%d ok\033[0m, \033[33m%d warning(s)\033[0m, \033[31m%d failure(s)\033[0m\n' "$ok" "$warn" "$fail"
+        [[ "$fail" -gt 0 ]] && exit 1 || exit 0
+        ;;
+      *) echo "usage: jmux config doctor" >&2; exit 1 ;;
+    esac
+    ;;
+  identify)
+    _jmux_query "system.identify"
+    ;;
+
+  # ── Windows ──
+  windows)
+    _jmux_query_v1 "list_windows"
+    ;;
+  new-window)
+    _jmux_send "new_window"
+    ;;
+  window)
+    sub="${1:-}"; shift || true
+    case "$sub" in
+      displays) _jmux_query "window.displays" "{}" ;;
+      display)  _jmux_json "window.display" "{\"monitor\":\"${1:-}\"}" ;;
+      *) echo "usage: jmux window {displays|display <name|index>}" >&2 ;;
+    esac
+    ;;
+
+  # ── SSH ──
+  ssh)
+    no_focus=false
+    agent_forward=false
+    ssh_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --no-focus) no_focus=true; shift ;;
+        -A|--forward-agent) agent_forward=true; shift ;;
+        *) ssh_args+=("$1"); shift ;;
+      esac
+    done
+    if $no_focus && [[ ${#ssh_args[@]} -gt 0 ]]; then
+      dest="${ssh_args[0]}"
+      _jmux_json "workspace.create_ssh" "{\"destination\":\"$dest\",\"no_focus\":true,\"agent_forward\":$agent_forward}"
+    elif $agent_forward; then
+      _jmux_send "ssh -A ${ssh_args[*]}"
+    else
+      _jmux_send "ssh ${ssh_args[*]}"
+    fi
+    ;;
+
+  # ── Workspaces ──
+  list|ls)
+    _jmux_query_v1 "list"
+    ;;
+  new)
+    _jmux_act "new ${*}"
+    ;;
+  new-workspace)
+    ws_name=""
+    ws_dir=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --name|-n) shift; ws_name="${1:-}"; shift ;;
+        *) ws_dir="$1"; shift ;;
+      esac
+    done
+    params="{"
+    [[ -n "$ws_dir" ]] && params="${params}\"directory\":\"$ws_dir\","
+    [[ -n "$ws_name" ]] && params="${params}\"title\":\"$ws_name\","
+    params="${params%,}}"
+    _jmux_json "workspace.new" "$params"
+    ;;
+  new-browser|browser-workspace)
+    url=""
+    [[ $# -gt 0 ]] && url="$1"
+    if [[ -n "$url" ]]; then
+      _jmux_json "workspace.new_browser" "{\"url\":\"$url\"}"
+    else
+      _jmux_json "workspace.new_browser" "{}"
+    fi
+    ;;
+  diff)
+    # Open a git diff viewer. --staged / --branch <ref> select the source.
+    diff_source=""; diff_dir=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --staged|--cached) diff_source="staged"; shift ;;
+        --unstaged) diff_source=""; shift ;;
+        --branch) shift; diff_source="branch:${1:-HEAD}"; shift ;;
+        --branch=*) diff_source="branch:${1#--branch=}"; shift ;;
+        *) diff_dir="$1"; shift ;;
+      esac
+    done
+    [[ -z "$diff_dir" ]] && diff_dir="$PWD"
+    if [[ -n "$diff_source" ]]; then
+      _jmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\",\"source\":\"$diff_source\"}"
+    else
+      _jmux_json "workspace.new_diff" "{\"directory\":\"$diff_dir\"}"
+    fi
+    ;;
+  project)
+    # Open a project-structure visualizer workspace (defaults to $PWD).
+    proj_dir="${1:-$PWD}"
+    _jmux_json "workspace.new_project" "{\"directory\":\"$proj_dir\"}"
+    ;;
+  notes)
+    # Open an editable notes scratchpad in the current workspace.
+    # Splits beside the terminal by default; --tab / --down / --right to choose.
+    notes_dir="right"; notes_file=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --tab) notes_dir="tab"; shift ;;
+        --down|--vertical) notes_dir="down"; shift ;;
+        --right|--horizontal) notes_dir="right"; shift ;;
+        *) notes_file="$1"; shift ;;
+      esac
+    done
+    notes_params="{\"direction\":\"$notes_dir\""
+    if [[ -n "$notes_file" ]]; then
+      nf=$(realpath -m "$notes_file" 2>/dev/null || echo "$notes_file")
+      notes_params="${notes_params},\"file\":\"$nf\""
+    fi
+    notes_params="${notes_params}}"
+    _jmux_json "notes.open" "$notes_params"
+    ;;
+  open)
+    # Open paths/URLs: URL → browser split, directory → new workspace,
+    # file → file.open (markdown → markdown viewer, else → file preview).
+    if [[ $# -eq 0 ]]; then
+      echo "usage: jmux open <path-or-url>..." >&2; exit 1
+    fi
+    open_files=()
+    for t in "$@"; do
+      if [[ "$t" =~ ^https?:// ]]; then
+        _jmux_json "browser.open_split" "{\"url\":\"$t\"}"
+      elif [[ -d "$t" ]]; then
+        abs=$(realpath "$t" 2>/dev/null || echo "$t")
+        _jmux_json "workspace.new" "{\"directory\":\"$abs\"}"
+      elif [[ -e "$t" ]]; then
+        abs=$(realpath "$t" 2>/dev/null || echo "$t")
+        open_files+=("$abs")
+      else
+        echo "jmux open: not found: $t" >&2
+      fi
+    done
+    if [[ ${#open_files[@]} -gt 0 ]]; then
+      json_paths=$(printf '"%s",' "${open_files[@]}"); json_paths="[${json_paths%,}]"
+      _jmux_json "file.open" "{\"paths\":$json_paths}"
+    fi
+    ;;
+  ide) # ide [editor] [dir] — open a directory in an external editor/IDE
+       # (defaults: editor=$JMUX_IDE or $EDITOR or code; dir=$PWD).
+    ide_editor="${1:-${JMUX_IDE:-${EDITOR:-code}}}"
+    ide_dir="${2:-$PWD}"
+    case "$ide_editor" in
+      vscode|code)        ide_cmd=code ;;
+      codium|vscodium)    ide_cmd=codium ;;
+      idea|intellij)      ide_cmd=idea ;;
+      cursor)             ide_cmd=cursor ;;
+      zed)                ide_cmd=zed ;;
+      subl|sublime)       ide_cmd=subl ;;
+      *)                  ide_cmd="$ide_editor" ;;
+    esac
+    if command -v "$ide_cmd" >/dev/null 2>&1; then
+      "$ide_cmd" "$ide_dir" >/dev/null 2>&1 &
+    else
+      echo "jmux ide: '$ide_cmd' not found on PATH" >&2; exit 1
+    fi
+    ;;
+  group)
+    sub="${1:-list}"; shift || true
+    case "$sub" in
+      create) _jmux_json "workspace.group.create" "{\"name\":\"${1:-New Group}\"}" ;;
+      list)   _jmux_query "workspace.group.list" "{}" ;;
+      assign) # group assign <group-id|null> [workspace-id]
+        g="${1:-null}"; ws="${2:-}"
+        if [[ "$g" == "null" || -z "$g" ]]; then gjson="null"; else gjson="\"$g\""; fi
+        if [[ -n "$ws" ]]; then
+          _jmux_json "workspace.group.assign" "{\"group\":$gjson,\"workspace\":\"$ws\"}"
+        else
+          _jmux_json "workspace.group.assign" "{\"group\":$gjson}"
+        fi
+        ;;
+      rename)   _jmux_json "workspace.group.rename" "{\"group\":\"${1:-}\",\"name\":\"${2:-}\"}" ;;
+      collapse) _jmux_json "workspace.group.collapse" "{\"group\":\"${1:-}\"}" ;;
+      color)    _jmux_json "workspace.group.color" "{\"group\":\"${1:-}\",\"color\":\"${2:-}\"}" ;;
+      delete)   _jmux_json "workspace.group.delete" "{\"group\":\"${1:-}\"}" ;;
+      *) echo "usage: jmux group {create <name>|list|assign <group|null> [ws]|rename <group> <name>|collapse <group>|color <group> <color>|delete <group>}" >&2 ;;
+    esac
+    ;;
+  select|sel)
+    _jmux_act "select ${1:-}"
+    ;;
+  current)
+    _jmux_query_v1 "current"
+    ;;
+  close)
+    _jmux_act "close_workspace ${*}"
+    ;;
+  next)
+    _jmux_act "next"
+    ;;
+  prev)
+    _jmux_act "prev"
+    ;;
+  last)
+    _jmux_act "last"
+    ;;
+  reopen)
+    _jmux_act "reopen"
+    ;;
+  reopen-tab) _jmux_json "workspace.reopen_closed_tab" "{}" ;;
+  history) _jmux_json "workspace.open_history" "{}" ;;
+  vault) _jmux_json "workspace.open_vault" "{}" ;;
+  clear-closed) _jmux_json "workspace.clear_closed" "{}" ;;
+  ai-name) # ai-name [workspace-id] — AI-generate a title from the focused terminal
+    if [[ -n "${1:-}" ]]; then _jmux_json "workspace.ai_name" "{\"workspace\":\"$1\"}"; else _jmux_json "workspace.ai_name" "{}"; fi ;;
+  describe) # describe <text> — set the selected workspace's description (empty clears)
+    desc="${1:-}"
+    desc_json=$(printf '%s' "$desc" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"%s"' "$desc")
+    _jmux_json "workspace.set_description" "{\"description\":$desc_json}" ;;
+  top) _jmux_json "system.task_manager" "{}" ;;
+  ps) _jmux_query "system.processes" "{}" ;;
+  overview) _jmux_json "system.overview" "{}" ;;
+  palette) _jmux_json "system.command_palette" "{}" ;;
+  dock) _jmux_json "system.dock" "{}" ;;
+  quick-terminal|quick) # quick-terminal [toggle|show|hide] — drop-down terminal
+    # If jmux isn't running, launch it; quake mode drops the console down on
+    # start. Otherwise forward the action over the socket.
+    if [[ -z "$(_jmux_socket_path 2>/dev/null)" ]]; then
+      if command -v jmux-app >/dev/null 2>&1; then
+        setsid jmux-app >/dev/null 2>&1 &
+      else
+        echo "error: jmux-app not found on PATH" >&2; exit 1
+      fi
+    else
+      _jmux_json "system.quick_terminal" "{\"action\":\"${1:-toggle}\"}"
+    fi ;;
+  run) _jmux_json "system.run_command" "{\"name\":\"${1:-}\"}" ;;
+  back)
+    _jmux_act "focus_back"
+    ;;
+  forward)
+    _jmux_act "focus_forward"
+    ;;
+  hibernate)
+    _jmux_act "hibernate"
+    ;;
+  wake)
+    _jmux_act "wake"
+    ;;
+  rename)
+    _jmux_act "rename \"${*}\""
+    ;;
+
+  # ── Surfaces ──
+  surfaces)
+    _jmux_query_v1 "list_surfaces"
+    ;;
+  send)
+    _jmux_act "send ${*}"
+    ;;
+  send-key)
+    # Parse modifier+key syntax: ctrl+enter, shift+tab, ctrl+shift+c, arrow keys, etc.
+    raw_key="${1:-}"
+    key_mods='[]'
+    key_name="$raw_key"
+    # Split on '+' to extract modifiers (last token is the key)
+    IFS='+' read -ra key_parts <<< "$raw_key"
+    if [[ ${#key_parts[@]} -gt 1 ]]; then
+      key_name="${key_parts[-1]}"
+      mods_json=""
+      for (( i=0; i < ${#key_parts[@]}-1; i++ )); do
+        mod="${key_parts[$i]}"
+        case "${mod,,}" in
+          ctrl|control) mods_json="${mods_json}\"ctrl\"," ;;
+          shift)        mods_json="${mods_json}\"shift\"," ;;
+          alt|opt)      mods_json="${mods_json}\"alt\"," ;;
+          super|meta)   mods_json="${mods_json}\"super\"," ;;
+        esac
+      done
+      key_mods="[${mods_json%,}]"
+    fi
+    _jmux_json "surface.send_key" "{\"key\":\"${key_name}\",\"mods\":${key_mods}}"
+    ;;
+  split)
+    _jmux_send "split ${*}"
+    ;;
+  read|read-screen)
+    # Flags: --scrollback (full history), --lines N (last N lines), --panel ID.
+    rs=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --scrollback) rs="$rs --scrollback"; shift ;;
+        --lines) shift; rs="$rs --lines=${1:-}"; shift ;;
+        --lines=*) rs="$rs $1"; shift ;;
+        --panel) shift; rs="$rs --panel=${1:-}"; shift ;;
+        --panel=*|--surface=*) rs="$rs $1"; shift ;;
+        *) shift ;;
+      esac
+    done
+    _jmux_query_v1 "read_screen${rs}"
+    ;;
+
+  # ── Status ──
+  status)
+    if [[ $# -ge 2 ]]; then
+      _jmux_send "set_status ${*}"
+    else
+      _jmux_query_v1 "list_status"
+    fi
+    ;;
+  progress)
+    if [[ $# -ge 1 ]]; then
+      _jmux_send "set_progress ${*}"
+    else
+      _jmux_send "clear_progress"
+    fi
+    ;;
+  log)
+    _jmux_send "log \"${*}\""
+    ;;
+
+  # ── Notifications ──
+  notify)
+    _jmux_send "notify \"${1:-}\" \"${2:-}\""
+    ;;
+  notifications)
+    _jmux_query_v1 "list_notifications"
+    ;;
+
+  # ── Browser ──
+  browser)
+    _jmux_send "open_browser ${*}"
+    ;;
+  navigate|nav)
+    _jmux_send "navigate ${1:-}"
+    ;;
+
+  # ── Settings ──
+  settings)
+    _jmux_send "settings"
+    ;;
+  markdown|md)
+    md_direction=""
+    md_file=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --direction|-d) shift; md_direction="${1:-}"; shift ;;
+        *) md_file="$1"; shift ;;
+      esac
+    done
+    params="{\"file\":\"$md_file\""
+    [[ -n "$md_direction" ]] && params="${params},\"direction\":\"$md_direction\""
+    params="${params}}"
+    _jmux_json "markdown.open" "$params"
+    ;;
+
+  # ── Themes ──
+  themes)
+    _jmux_list_themes "$@"
+    ;;
+
+  # ── Claude Code hooks ──
+  claude-hook)
+    hook_event="${1:-}"
+    shift || true
+    case "$hook_event" in
+      session-start)
+        _jmux_send "set_status claude running \"Claude running\""
+        ;;
+      stop)
+        _jmux_send "set_status claude idle \"Done\""
+        ;;
+      session-end)
+        _jmux_send "clear_status claude"
+        ;;
+      notification)
+        # Hook receives JSON on stdin; extract title and body.
+        if hook_json="$(cat)"; then
+          title="$(printf '%s' "$hook_json" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          body="$(printf '%s' "$hook_json" | sed -n 's/.*"body"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          _jmux_send "notify \"${title:-Claude}\" \"${body:-}\""
+        fi
+        ;;
+      prompt-submit)
+        _jmux_send "clear_status needs-input"
+        _jmux_send "set_status claude running \"Running\""
+        ;;
+      pre-tool-use)
+        _jmux_send "clear_status needs-input"
+        ;;
+      *)
+        echo "Unknown claude-hook event: $hook_event" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  # ── Codex CLI hooks ──
+  codex-hook)
+    hook_event="${1:-}"
+    shift || true
+    case "$hook_event" in
+      session-start)
+        _jmux_send "set_status codex running \"Codex running\""
+        ;;
+      stop|session-end)
+        _jmux_send "clear_status codex"
+        ;;
+      notification)
+        if hook_json="$(cat)"; then
+          title="$(printf '%s' "$hook_json" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          body="$(printf '%s' "$hook_json" | sed -n 's/.*"body"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          _jmux_send "notify \"${title:-Codex}\" \"${body:-}\""
+        fi
+        ;;
+      *)
+        echo "Unknown codex-hook event: $hook_event" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  # ── Kiro / Cursor / Gemini CLI hooks (turnkey wrappers over the agent hook) ──
+  kiro-hook|cursor-hook|gemini-hook)
+    agent_name="${command%-hook}"   # kiro / cursor / gemini
+    hook_event="${1:-}"
+    shift || true
+    case "$hook_event" in
+      session-start)
+        _jmux_send "set_status ${agent_name} running \"${agent_name} running\""
+        ;;
+      stop|session-end)
+        _jmux_send "clear_status ${agent_name}"
+        ;;
+      notification)
+        if hook_json="$(cat)"; then
+          title="$(printf '%s' "$hook_json" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          body="$(printf '%s' "$hook_json" | sed -n 's/.*"body"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          _jmux_send "notify \"${title:-${agent_name}}\" \"${body:-}\""
+        fi
+        ;;
+      *)
+        echo "Unknown ${command} event: $hook_event" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  # ── Generic agent hook (namespaced by --cli) ──
+  agent)
+    agent_sub="${1:-}"
+    shift || true
+    case "$agent_sub" in
+      hook)
+        hook_event="${1:-}"
+        shift || true
+        agent_cli="agent"
+        # Parse --cli <name> option
+        remaining_args=()
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --cli) shift; agent_cli="${1:-agent}"; shift ;;
+            --cli=*) agent_cli="${1#--cli=}"; shift ;;
+            *) remaining_args+=("$1"); shift ;;
+          esac
+        done
+        set -- "${remaining_args[@]+"${remaining_args[@]}"}"
+        case "$hook_event" in
+          session-start)
+            _jmux_send "set_status ${agent_cli} running \"${agent_cli} running\""
+            ;;
+          session-stop|session-end)
+            _jmux_send "clear_status ${agent_cli}"
+            ;;
+          notification)
+            # Parse --message option or read JSON from stdin
+            notif_message=""
+            while [[ $# -gt 0 ]]; do
+              case "$1" in
+                --message) shift; notif_message="${1:-}"; shift ;;
+                --message=*) notif_message="${1#--message=}"; shift ;;
+                *) shift ;;
+              esac
+            done
+            if [[ -n "$notif_message" ]]; then
+              _jmux_send "notify \"${agent_cli}\" \"${notif_message}\""
+            elif hook_json="$(cat)"; then
+              title="$(printf '%s' "$hook_json" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+              body="$(printf '%s' "$hook_json" | sed -n 's/.*"body"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+              _jmux_send "notify \"${title:-${agent_cli}}\" \"${body:-}\""
+            fi
+            ;;
+          fork)
+            # Fork the current agent conversation into a new workspace
+            fork_message=""
+            fork_name=""
+            while [[ $# -gt 0 ]]; do
+              case "$1" in
+                --message) shift; fork_message="${1:-}"; shift ;;
+                --message=*) fork_message="${1#--message=}"; shift ;;
+                --name) shift; fork_name="${1:-}"; shift ;;
+                --name=*) fork_name="${1#--name=}"; shift ;;
+                *) shift ;;
+              esac
+            done
+            params="{"
+            [[ -n "$fork_message" ]] && params="${params}\"message\":\"${fork_message}\","
+            [[ -n "$fork_name" ]] && params="${params}\"workspace_name\":\"${fork_name}\","
+            params="${params%,}}"
+            _jmux_json "agent.fork_conversation" "$params"
+            ;;
+          *)
+            echo "Unknown agent hook event: $hook_event" >&2
+            echo "Usage: jmux agent hook <session-start|session-stop|session-end|notification|fork> [--cli <name>] [--message <msg>]" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      fork)
+        # Shorthand: jmux agent fork [--message "text"] [--name "workspace name"]
+        fork_message=""
+        fork_name=""
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --message) shift; fork_message="${1:-}"; shift ;;
+            --message=*) fork_message="${1#--message=}"; shift ;;
+            --name) shift; fork_name="${1:-}"; shift ;;
+            --name=*) fork_name="${1#--name=}"; shift ;;
+            *) shift ;;
+          esac
+        done
+        params="{"
+        [[ -n "$fork_message" ]] && params="${params}\"message\":\"${fork_message}\","
+        [[ -n "$fork_name" ]] && params="${params}\"workspace_name\":\"${fork_name}\","
+        params="${params%,}}"
+        _jmux_json "agent.fork_conversation" "$params"
+        ;;
+      resume)
+        # Send AgentResume event via socket — trigger agent.resume shortcut programmatically
+        _jmux_json "agent.fork_conversation" "{}"
+        ;;
+      *)
+        echo "Usage: jmux agent <hook|fork|resume> [args...]" >&2
+        echo "  jmux agent hook session-start --cli <name>" >&2
+        echo "  jmux agent hook session-stop --cli <name>" >&2
+        echo "  jmux agent hook notification --cli <name> --message <msg>" >&2
+        echo "  jmux agent fork [--message \"text\"] [--name \"workspace name\"]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  # ── Claude Code agent-teams integration ──
+  claude-teams)
+    if ! command -v claude >/dev/null 2>&1; then
+      echo "error: claude (Claude Code) not found in PATH" >&2
+      echo "Install it first:  npm install -g @anthropic-ai/claude-code" >&2
+      exit 1
+    fi
+    # Intercept tmux + terminal-notifier so teammates open as jmux panes.
+    ct_shim_dir="${HOME}/.jmuxterm/claude-teams-bin"
+    _jmux_install_tmux_shim "$ct_shim_dir"
+    export JMUX_TMUX_SHIM_BIN="${0}"
+    export PATH="${ct_shim_dir}:${PATH}"
+    # Enable Claude Code's experimental agent-teams mode and fake a tmux session
+    # so it drives teammates through the shim.
+    export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+    export TMUX="${ct_shim_dir}/jmux-claude-teams,$$,0"
+    export TMUX_PANE="%0"
+    export TERM="${JMUX_CLAUDE_TEAMS_TERM:-screen-256color}"
+    unset TERM_PROGRAM 2>/dev/null || true
+    # Default --teammate-mode to auto unless the user passed one.
+    ct_has_mode=false
+    for _arg in "$@"; do
+      [[ "$_arg" == "--teammate-mode" || "$_arg" == --teammate-mode=* ]] && ct_has_mode=true && break
+    done
+    if $ct_has_mode; then
+      exec claude "$@"
+    else
+      exec claude --teammate-mode auto "$@"
+    fi
+    ;;
+
+  # ── OpenCode / oh-my-opencode integration ──
+  omo)
+    if ! command -v opencode >/dev/null 2>&1; then
+      echo "error: opencode not found in PATH" >&2
+      echo "Install it first:  npm install -g opencode-ai  # or: bun install -g opencode-ai" >&2
+      exit 1
+    fi
+    # Intercept tmux + terminal-notifier; route them through this CLI.
+    omo_shim_dir="${HOME}/.jmuxterm/jmux-omo-bin"
+    _jmux_install_tmux_shim "$omo_shim_dir"
+    export JMUX_TMUX_SHIM_BIN="${0}"
+    export PATH="${omo_shim_dir}:${PATH}"
+    [[ -z "${OPENCODE_PORT:-}" ]] && export OPENCODE_PORT="4096"
+    # Check if --port already in args
+    has_port=false
+    for _arg in "$@"; do
+      [[ "$_arg" == "--port" || "$_arg" == --port=* ]] && has_port=true && break
+    done
+    if $has_port; then
+      exec opencode "$@"
+    else
+      exec opencode --port "${OPENCODE_PORT}" "$@"
+    fi
+    ;;
+
+  # ── Tmux compatibility layer ──────────────────────────────────────
+  __tmux-compat)
+    if [[ $# -eq 0 ]]; then
+      echo "Usage: jmux __tmux-compat <tmux-command> [args...]" >&2
+      exit 1
+    fi
+    _jmux_tmux_compat "$@"
+    ;;
+
+  new-session|new-window|neww|split-window|splitw|\
+  select-window|selectw|select-pane|selectp|\
+  kill-window|killw|kill-pane|killp|\
+  send-keys|\
+  capture-pane|capturep|\
+  list-windows|lsw|list-panes|lsp|\
+  rename-window|renamew|\
+  resize-pane|resizep|\
+  last-window|next-window|previous-window|last-pane|\
+  swap-pane|break-pane|join-pane|\
+  clear-history|wait-for|\
+  display-message|display|displayp|respawn-pane)
+    _jmux_tmux_compat "$command" "$@"
+    ;;
+
+  # Tmux no-op stubs (silently ignored for compatibility)
+  select-layout|set-option|set-window-option|setw|\
+  source-file|refresh-client|attach-session|detach-client)
+    ;;
+
+  # Tmux unsupported (explicit error)
+  popup|bind-key|unbind-key|copy-mode|set-buffer|paste-buffer|list-buffers)
+    echo "error: $command is not supported in jmux tmux compatibility mode" >&2
+    exit 1
+    ;;
+
+  # ── Remote control aliases ──
+  rc|remote-control)
+    _jmux_send "remote_control ${*}"
+    ;;
+
+  # ── Pass-through: any unrecognized command is sent as V1 text ──
+  *)
+    _jmux_send "$command ${*}"
+    ;;
+esac

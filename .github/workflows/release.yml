@@ -57,10 +57,10 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cmux-gtk-linux-amd64
+          name: jmux-linux-amd64
           path: |
-            target/release/cmux-app
-            target/release/cmux
+            target/release/jmux-app
+            target/release/jmux
 
   build-daemon:
     needs: test
@@ -73,7 +73,7 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: daemon/remote/go.mod
 
-      - name: Cross-compile cmuxd-remote for all platforms
+      - name: Cross-compile jmuxd-remote for all platforms
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -82,15 +82,15 @@ jobs:
           cd daemon/remote
           for TARGET in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
             GOOS="${TARGET%-*}" GOARCH="${TARGET#*-}" CGO_ENABLED=0 \
-              go build -ldflags "${LDFLAGS}" -o "../../artifacts/cmuxd-remote-${TARGET}" \
-              ./cmd/cmuxd-remote
+              go build -ldflags "${LDFLAGS}" -o "../../artifacts/jmuxd-remote-${TARGET}" \
+              ./cmd/jmuxd-remote
           done
           cd ../../artifacts
-          sha256sum cmuxd-remote-* > checksums-sha256.txt
+          sha256sum jmuxd-remote-* > checksums-sha256.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cmuxd-remote-binaries
+          name: jmuxd-remote-binaries
           path: artifacts/
 
   release:
@@ -101,12 +101,12 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: cmux-gtk-linux-amd64
+          name: jmux-linux-amd64
           path: artifacts
 
       - uses: actions/download-artifact@v4
         with:
-          name: cmuxd-remote-binaries
+          name: jmuxd-remote-binaries
           path: artifacts
 
       - name: Create GitHub release
@@ -115,18 +115,18 @@ jobs:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
-          chmod +x artifacts/cmux-app artifacts/cmux artifacts/cmuxd-remote-*
+          chmod +x artifacts/jmux-app artifacts/jmux artifacts/jmuxd-remote-*
           # Upload to existing release if it was created manually, otherwise create new
           if gh release view "$TAG" &>/dev/null; then
-            gh release upload "$TAG" artifacts/cmux-app artifacts/cmux \
-              artifacts/cmuxd-remote-* artifacts/checksums-sha256.txt --clobber
+            gh release upload "$TAG" artifacts/jmux-app artifacts/jmux \
+              artifacts/jmuxd-remote-* artifacts/checksums-sha256.txt --clobber
           else
             gh release create "$TAG" \
               --title "$TAG" \
               --notes "See [CHANGELOG.md](https://github.com/${REPO}/blob/main/CHANGELOG.md) for details." \
-              artifacts/cmux-app \
-              artifacts/cmux \
-              artifacts/cmuxd-remote-* \
+              artifacts/jmux-app \
+              artifacts/jmux \
+              artifacts/jmuxd-remote-* \
               artifacts/checksums-sha256.txt
           fi
 
@@ -169,7 +169,7 @@ jobs:
           printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
 
       - name: Clone AUR repo
-        run: git clone ssh://aur@aur.archlinux.org/cmux-gtk.git aur-cmux-gtk
+        run: git clone ssh://aur@aur.archlinux.org/jmux.git aur-jmux
 
       - name: Update PKGBUILD and .SRCINFO
         env:
@@ -178,7 +178,7 @@ jobs:
           SHA256: ${{ steps.sha256.outputs.sha256 }}
           GHOSTTY_COMMIT: ${{ steps.version.outputs.ghostty_commit }}
         run: |
-          cd aur-cmux-gtk
+          cd aur-jmux
           sed -i "s/^pkgver=.*/pkgver=${AUR_VERSION}/" PKGBUILD
           sed -i "s/^sha256sums=.*/sha256sums=('${SHA256}')/" PKGBUILD
           sed -i "s/^_ghostty_commit=.*/_ghostty_commit=${GHOSTTY_COMMIT}/" PKGBUILD
@@ -210,7 +210,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          cd aur-cmux-gtk
+          cd aur-jmux
           git config user.name "Douglas Soares de Andrade"
           git config user.email "contato@douglasandrade.com"
           git add PKGBUILD .SRCINFO

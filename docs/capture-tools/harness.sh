@@ -1,11 +1,11 @@
 #!/bin/bash
-# Headless harness: starts sway + cmux, exposes R (cmux cli), G (grim), VP (virtual pointer).
+# Headless harness: starts sway + jmux, exposes R (jmux cli), G (grim), VP (virtual pointer).
 # Usage: source this, then call stage_tabsdemo / stage_demo, then drive drags.
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SB=/tmp/cmux-demo; RT=/tmp/cmux-demo-rt; SOCK="$RT/cmux.sock"
+SB=/tmp/jmux-demo; RT=/tmp/jmux-demo-rt; SOCK="$RT/jmux.sock"
 
 start_sway() {
-  pkill -9 -x cmux-app 2>/dev/null; pkill -9 -x sway 2>/dev/null; sleep 1.2
+  pkill -9 -x jmux-app 2>/dev/null; pkill -9 -x sway 2>/dev/null; sleep 1.2
   printf 'output HEADLESS-1 resolution 1600x1000\ndefault_border none\n' > "$SB/sway.conf"
   HOME="$SB" XDG_RUNTIME_DIR="$RT" WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 \
     sway -c "$SB/sway.conf" >/tmp/sway.log 2>&1 &
@@ -13,14 +13,14 @@ start_sway() {
   for i in $(seq 1 40); do WD=$(ls "$RT"/wayland-* 2>/dev/null|grep -v lock|head -1); [ -n "$WD" ]&&break; sleep 0.25; done
   WD=$(basename "$WD"); export WD
 }
-start_cmux() {
+start_jmux() {
   env -i HOME="$SB" XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$WD" PATH=/usr/bin SHELL=/bin/bash \
-    TERM=xterm-256color XDG_DATA_DIRS=/usr/share LANG=C.UTF-8 CMUX_DISABLE_SESSION_RESTORE=1 \
-    "$REPO/target/release/cmux-app" >/tmp/cmux.log 2>&1 &
+    TERM=xterm-256color XDG_DATA_DIRS=/usr/share LANG=C.UTF-8 JMUX_DISABLE_SESSION_RESTORE=1 \
+    "$REPO/target/release/jmux-app" >/tmp/jmux.log 2>&1 &
   CP=$!
   for i in $(seq 1 60); do [ -S "$SOCK" ]&&break; sleep 0.25; done; sleep 3
 }
-R(){ env CMUX_SOCKET="$SOCK" HOME="$SB" bash "$REPO/cmux/bin/cmux" "$@"; }
+R(){ env JMUX_SOCKET="$SOCK" HOME="$SB" bash "$REPO/jmux/bin/jmux" "$@"; }
 G(){ env XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$WD" grim -o HEADLESS-1 "$1"; }
 VP(){ env XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$WD" /tmp/vptr/vptr; }
 ids_all(){ R list 2>/dev/null | python3 -c "import sys,json;[print(w['id']) for w in json.load(sys.stdin)['result']['workspaces']]"; }

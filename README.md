@@ -1,10 +1,10 @@
-# cmux-gtk
+# jmux
 
-**A GTK4/libadwaita terminal multiplexer built for running many AI coding agents at once.** Rust + [Ghostty](https://ghostty.org). A Linux port of [cmux](https://cmux.com), tracking its feature set.
+**A Linux-first Claude Agent manager** — similar to cmux, cmux-gtk, and orca — supporting **remote and local claude/agent sessions**. A GTK4/libadwaita terminal multiplexer built for running many AI coding agents at once, in Rust + [Ghostty](https://ghostty.org).
 
-![cmux-gtk](docs/screenshots/hero.png)
+![jmux](docs/screenshots/hero.png)
 
-> **Note:** the screenshots and GIFs below are real captures, generated privacy-safely (synthetic demo data, no real paths) by [`docs/autocapture.sh`](docs/autocapture.sh) and [`docs/capture-tools/make-gifs.sh`](docs/capture-tools/make-gifs.sh) running cmux in a headless compositor. The GIFs drive real GTK interactions through a tiny `wlr-virtual-pointer`/`virtual-keyboard` client — see [`docs/SCREENSHOTS.md`](docs/SCREENSHOTS.md).
+> **Note:** the screenshots and GIFs below are real captures, generated privacy-safely (synthetic demo data, no real paths) by [`docs/autocapture.sh`](docs/autocapture.sh) and [`docs/capture-tools/make-gifs.sh`](docs/capture-tools/make-gifs.sh) running jmux in a headless compositor. The GIFs drive real GTK interactions through a tiny `wlr-virtual-pointer`/`virtual-keyboard` client — see [`docs/SCREENSHOTS.md`](docs/SCREENSHOTS.md).
 
 ---
 
@@ -12,24 +12,24 @@
 
 ```bash
 git submodule update --init
-cargo build --release --features cmux/link-ghostty
-sudo bash scripts/install.sh          # installs cmux-app + cmux CLI to /usr/local
+cargo build --release --features jmux/link-ghostty
+sudo bash scripts/install.sh          # installs jmux-app + jmux CLI to /usr/local
 ```
 
-Browser support (WebKit6) is on by default; build without it via `--no-default-features --features cmux/link-ghostty`.
+Browser support (WebKit6) is on by default; build without it via `--no-default-features --features jmux/link-ghostty`.
 
 The **quick terminal** (Quake-style drop-down) is an opt-in build that needs `gtk4-layer-shell` and a layer-shell compositor (KDE/wlroots):
 
 ```bash
 # install libgtk4-layer-shell (e.g. `sudo pacman -S gtk4-layer-shell`), then:
-cargo build --release --features cmux/link-ghostty,cmux/quick-terminal
+cargo build --release --features jmux/link-ghostty,jmux/quick-terminal
 ```
 
 ### Browser location services
 
 The integrated browser prompts for location/camera/mic permissions, but the
 actual position comes from the system **GeoClue2** service — install it for
-geolocation to resolve (`sudo pacman -S geoclue` on Arch). cmux warns in the
+geolocation to resolve (`sudo pacman -S geoclue` on Arch). jmux warns in the
 prompt when it's missing.
 
 GeoClue 2.7+ removed the Mozilla Location Service, so WiFi-based lookups now
@@ -44,7 +44,7 @@ url=https://api.beacondb.net/v1/geolocate
 
 then restart it so the new config is read: `sudo pkill -x geoclue` (it
 re-activates on the next request). WiFi geolocation requires a WiFi adapter with
-access points in range — without GeoClue or a backend, cmux still shows the
+access points in range — without GeoClue or a backend, jmux still shows the
 prompt but the lookup times out.
 
 ---
@@ -61,7 +61,7 @@ prompt but the lookup times out.
 
 Every sidebar workspace row grows a tiny animated octopus when a Claude agent in it is active — the state is classified live from the pane's title and terminal text (spinner, `esc to interrupt` footer, selection menus, trailing questions), and the workspace shows its **most urgent** pane:
 
-| ![working](cmux/assets/working.gif) | ![needs input](cmux/assets/needs_input.gif) | ![waiting](cmux/assets/waiting.gif) |
+| ![working](jmux/assets/working.gif) | ![needs input](jmux/assets/needs_input.gif) | ![waiting](jmux/assets/waiting.gif) |
 |:---:|:---:|:---:|
 | **working** — hammering an anvil: the main turn is running | **needs input** — holding a sparkler: a question or menu is waiting on you | **waiting** — typing at a laptop: a background shell/agent is still running |
 
@@ -73,7 +73,7 @@ One shared wall-clock frame iterator per state keeps every octopus in phase acro
 
 ### Stream Deck Plus companion — your fleet on physical keys
 
-[deck](https://home.jacobbriggs.com/git/jbriggs/deck) mirrors the same octopus state model onto a **Stream Deck Plus**: each key is a cmux workspace (amber = needs input, blue = working, teal = waiting), press a key to focus it, and use the dials/touchscreen to switch Claude tabs and **answer questions without touching the keyboard**.
+[deck](https://home.jacobbriggs.com/git/jbriggs/deck) mirrors the same octopus state model onto a **Stream Deck Plus**: each key is a jmux workspace (amber = needs input, blue = working, teal = waiting), press a key to focus it, and use the dials/touchscreen to switch Claude tabs and **answer questions without touching the keyboard**.
 
 ![Stream Deck Plus companion](docs/demos/streamdeck.gif)
 
@@ -81,7 +81,7 @@ One shared wall-clock frame iterator per state keeps every octopus in phase acro
 
 ### Agent integrations — teammates as native panes
 
-`cmux claude-teams` (Claude Code agent-teams) and `cmux omo` (OpenCode / oh-my-openagent) launch agents whose teammates and subagents open as **native cmux panes**. A private tmux shim translates `split-window` / `send-keys` / `capture-pane` → cmux's `surface.split` / `send_text` / `read_text`, and `terminal-notifier` → `cmux notify` — no real tmux required.
+`jmux claude-teams` (Claude Code agent-teams) and `jmux omo` (OpenCode / oh-my-openagent) launch agents whose teammates and subagents open as **native jmux panes**. A private tmux shim translates `split-window` / `send-keys` / `capture-pane` → jmux's `surface.split` / `send_text` / `read_text`, and `terminal-notifier` → `jmux notify` — no real tmux required.
 
 ![Agent integrations](docs/screenshots/agent-integrations.png)
 
@@ -97,12 +97,12 @@ Drag a tab to **reorder** it, drop it on a pane edge to **split**, or drop it on
 
 | | |
 |---|---|
-| **History** — `cmux history` opens a searchable, day-grouped list of recently closed & focused workspaces; click to reopen. Closed history persists across restarts. | **Vault** — `cmux vault` indexes past Claude Code / Codex sessions with title/dir/preview search; click a session to resume it in a terminal. |
+| **History** — `jmux history` opens a searchable, day-grouped list of recently closed & focused workspaces; click to reopen. Closed history persists across restarts. | **Vault** — `jmux vault` indexes past Claude Code / Codex sessions with title/dir/preview search; click a session to resume it in a terminal. |
 | ![History pane](docs/demos/history.gif) | ![Vault pane](docs/screenshots/vault-pane.png) |
 
 ### Dock — always-on terminal controls
 
-A right-side column of small terminal "controls" (lazygit, log tails, build watchers) defined in `.cmux/dock.json` or `~/.config/cmux/dock.json`. Edit them from a GUI (**Settings → Dock → Edit Dock Controls**). Hidden by default; toggle from the header.
+A right-side column of small terminal "controls" (lazygit, log tails, build watchers) defined in `.jmux/dock.json` or `~/.config/jmux/dock.json`. Edit them from a GUI (**Settings → Dock → Edit Dock Controls**). Hidden by default; toggle from the header.
 
 ![Dock](docs/demos/dock.gif)
 
@@ -120,7 +120,7 @@ An opt-in multi-line input below a terminal for composing multi-line agent promp
 
 | Finder previews | Task Manager |
 |---|---|
-| Inline **image, video, and PDF** previews (PDF rendered page-by-page via poppler) — ideal for reviewing screenshots and demo recordings agents produce. | `cmux top` opens a CPU/RAM monitor for the agent & terminal processes in your workspaces. |
+| Inline **image, video, and PDF** previews (PDF rendered page-by-page via poppler) — ideal for reviewing screenshots and demo recordings agents produce. | `jmux top` opens a CPU/RAM monitor for the agent & terminal processes in your workspaces. |
 | ![Finder previews](docs/screenshots/pdf-preview.png) | ![Task Manager](docs/screenshots/task-manager.png) |
 
 ### Panels — more than terminals
@@ -135,19 +135,19 @@ Any pane can hold a non-terminal view: a **rendered Markdown** file, a **git dif
 
 ### Notes — scope-grouped scratchpads
 
-`cmux notes` opens an editable, auto-saved notes panel that knows **where you are**. Notes are organised into colour-coded **scope groups**, each holding any number of tabs (one per file, labelled by filename):
+`jmux notes` opens an editable, auto-saved notes panel that knows **where you are**. Notes are organised into colour-coded **scope groups**, each holding any number of tabs (one per file, labelled by filename):
 
 - 🔵 **Global** — notes shared everywhere, not tied to a folder.
 - 🟢 **Folder** — notes for the current **git repo root** (or the working directory when it isn't a repo).
-- 🟣 **Host** — for `cmux ssh` sessions, notes scoped to the whole remote host (plus a Folder group for the remote project).
+- 🟣 **Host** — for `jmux ssh` sessions, notes scoped to the whole remote host (plus a Folder group for the remote project).
 
-Hit **+** to add a note (auto-named, double-click its tab to rename), and a note is **deleted from disk the moment it's empty** — they only persist once they have content. Everything is stored client-side under `~/.local/share/cmux/notes/`, so remote notes never touch the SSH bridge.
+Hit **+** to add a note (auto-named, double-click its tab to rename), and a note is **deleted from disk the moment it's empty** — they only persist once they have content. Everything is stored client-side under `~/.local/share/jmux/notes/`, so remote notes never touch the SSH bridge.
 
 ![Scope-grouped notes](docs/screenshots/notes.png)
 
 ### Command palette & custom commands
 
-Fuzzy command palette and workspace switcher. Define your own entries in `cmux.json` (project `.cmux/cmux.json`, project root, or global) that run a shell command **or** open a whole multi-pane `workspace` layout.
+Fuzzy command palette and workspace switcher. Define your own entries in `jmux.json` (project `.jmux/jmux.json`, project root, or global) that run a shell command **or** open a whole multi-pane `workspace` layout.
 
 ![Command palette](docs/demos/command-palette.gif)
 
@@ -159,41 +159,41 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 - **Terminal multiplexer** — workspaces, split panes, tab management, directional focus
 - **Move tabs & panes** — drag a tab to reorder, split a pane (drop on an edge), or move it to another workspace; break/join panes across workspaces
 - **New tab** — `Ctrl+Shift+T` opens a new terminal in the current pane, inheriting the focused terminal's working directory
-- **Per-workspace environment** — `workspace.env` in a `cmux.json` layout injects variables into every shell spawned in that workspace
+- **Per-workspace environment** — `workspace.env` in a `jmux.json` layout injects variables into every shell spawned in that workspace
 - **Pane overview** — status grid of every pane (busy/idle/attention) with click-to-jump (header button / palette / `overview.open`)
 - **Multi-window** — single-instance app; launching again opens a new window, workspaces assignable across windows
-- **Quick terminal** — Quake-style drop-down that slides in from the top edge (top-anchored layer-shell overlay with the full cmux UI minus the OS maximize/close), toggled by a configurable global hotkey or `cmux quick-terminal toggle`. Opt-in build (`--features cmux/quick-terminal`); enable + set the hotkey/height in **Settings → Quick Terminal**. The hotkey registers via the GlobalShortcuts portal — on KDE it appears in **System Settings → Shortcuts** to assign; for a guaranteed system-wide key, bind `cmux quick-terminal toggle` to a custom shortcut there
-- **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, persistence (`cmux group`)
+- **Quick terminal** — Quake-style drop-down that slides in from the top edge (top-anchored layer-shell overlay with the full jmux UI minus the OS maximize/close), toggled by a configurable global hotkey or `jmux quick-terminal toggle`. Opt-in build (`--features jmux/quick-terminal`); enable + set the hotkey/height in **Settings → Quick Terminal**. The hotkey registers via the GlobalShortcuts portal — on KDE it appears in **System Settings → Shortcuts** to assign; for a guaranteed system-wide key, bind `jmux quick-terminal toggle` to a custom shortcut there
+- **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-anchored membership, persistence (`jmux group`)
 - **Workspace management** — pinning, custom colors, reorder, close-others/above/below
-- **Workspace descriptions** — free-text per-workspace notes (`cmux describe`), shown in the sidebar tooltip
-- **Focus history** — back/forward through recently-focused workspaces (`cmux back`/`forward`)
-- **Reopen closed workspace** — `cmux reopen` restores the most recently closed workspace (layout + cwd, fresh shells)
-- **Reopen closed tab** — `cmux reopen-tab` restores the most recently closed panel in the current workspace (type/dir/command preserved)
-- **Agent hibernation** — pause (SIGSTOP) an idle agent to free CPU and resume (SIGCONT) on demand (`cmux hibernate`/`wake`)
-- **Display placement** — `cmux window displays` / `cmux window display <name|index>` moves the window to a monitor
+- **Workspace descriptions** — free-text per-workspace notes (`jmux describe`), shown in the sidebar tooltip
+- **Focus history** — back/forward through recently-focused workspaces (`jmux back`/`forward`)
+- **Reopen closed workspace** — `jmux reopen` restores the most recently closed workspace (layout + cwd, fresh shells)
+- **Reopen closed tab** — `jmux reopen-tab` restores the most recently closed panel in the current workspace (type/dir/command preserved)
+- **Agent hibernation** — pause (SIGSTOP) an idle agent to free CPU and resume (SIGCONT) on demand (`jmux hibernate`/`wake`)
+- **Display placement** — `jmux window displays` / `jmux window display <name|index>` moves the window to a monitor
 
 ### Panels
 - **Terminal** — Ghostty-backed GL surfaces with vi-style copy mode and a vim badge indicator
 - **Integrated browser** — WebKit6 panels with 120+ automation commands (Playwright-style API), profiles, history, focus mode
-- **Markdown viewer** — `cmux open file.md` / drag from the sidebar; renders **Mermaid diagrams**
-- **Diff viewer** — `cmux diff [path]` git diff CodeView (`--staged` / `--branch <ref>`); plain-GTK, no WebKit; **syntax-highlighted** lines and right-click **review comments** (persisted to `.cmux/diff-comments.json`)
-- **Project visualizer** — `cmux project [path]` directory tree + file-type/size summary
+- **Markdown viewer** — `jmux open file.md` / drag from the sidebar; renders **Mermaid diagrams**
+- **Diff viewer** — `jmux diff [path]` git diff CodeView (`--staged` / `--branch <ref>`); plain-GTK, no WebKit; **syntax-highlighted** lines and right-click **review comments** (persisted to `.jmux/diff-comments.json`)
+- **Project visualizer** — `jmux project [path]` directory tree + file-type/size summary
 - **Finder previews** — inline image / video / **PDF** (poppler) previews in the file-preview panel
 - **File explorer** — sidebar tree with configurable double-click action (preview / default app / preferred editor) and **Insert Path / Insert Relative Path** into the focused terminal
-- **Notes** — `cmux notes` scope-grouped scratchpads (colour-coded **Global / Host / Folder** tab groups, keyed to the git repo root), multiple notes per scope with a **+** to add and double-click-to-rename tabs; empty notes auto-delete, stored client-side under `~/.local/share/cmux/notes/`. `cmux notes <file>` still opens a single file
+- **Notes** — `jmux notes` scope-grouped scratchpads (colour-coded **Global / Host / Folder** tab groups, keyed to the git repo root), multiple notes per scope with a **+** to add and double-click-to-rename tabs; empty notes auto-delete, stored client-side under `~/.local/share/jmux/notes/`. `jmux notes <file>` still opens a single file
 - **Word wrap** — toggle line wrapping for the file preview/editor and notes panels (Settings → Editor & Files)
-- **History pane** — `cmux history` searchable day-grouped closed/focused workspaces
-- **Vault pane** — `cmux vault` searchable index of past Claude Code / Codex sessions, click to resume
+- **History pane** — `jmux history` searchable day-grouped closed/focused workspaces
+- **Vault pane** — `jmux vault` searchable index of past Claude Code / Codex sessions, click to resume
 
 ### AI agent workflow
 - **Sidebar Claude-state octopus** — animated sprite on each workspace row (hammering = working, sparkler = needs input, laptop = background task); classified from pane title + terminal text, most-urgent pane wins, hibernated agents excluded
 - **Stream Deck Plus companion** — [deck](https://home.jacobbriggs.com/git/jbriggs/deck) shows workspaces as keys with the live octopus state; press to focus, dials + touchscreen to pick Claude tabs and answer questions
-- **Agent integrations** — `cmux claude-teams` & `cmux omo` open teammates/subagents as native panes via a tmux shim; `terminal-notifier` → `cmux notify`. Turnkey status/notification hooks: `cmux claude-hook` / `codex-hook` / `kiro-hook` / `cursor-hook` / `gemini-hook` (or generic `cmux agent hook … --cli <name>`)
-- **AI workspace auto-naming** — opt-in: name an untitled workspace from its agent transcript when the agent finishes (`cmux ai-name`, or auto via Settings; uses `ANTHROPIC_API_KEY`)
-- **Task Manager** — `cmux top` CPU/RAM monitor (also `cmux ps` for JSON)
+- **Agent integrations** — `jmux claude-teams` & `jmux omo` open teammates/subagents as native panes via a tmux shim; `terminal-notifier` → `jmux notify`. Turnkey status/notification hooks: `jmux claude-hook` / `codex-hook` / `kiro-hook` / `cursor-hook` / `gemini-hook` (or generic `jmux agent hook … --cli <name>`)
+- **AI workspace auto-naming** — opt-in: name an untitled workspace from its agent transcript when the agent finishes (`jmux ai-name`, or auto via Settings; uses `ANTHROPIC_API_KEY`)
+- **Task Manager** — `jmux top` CPU/RAM monitor (also `jmux ps` for JSON)
 - **TextBox** — multi-line prompt composer below terminals (opt-in)
 - **Dock** — right-side terminal controls from `dock.json`, with a GUI editor
-- **Custom commands** — `cmux.json` palette entries: shell commands or multi-pane `workspace` layouts (recursive `split`/`pane`/`surfaces` with per-surface `command`/`cwd`/`url`/`focus`)
+- **Custom commands** — `jmux.json` palette entries: shell commands or multi-pane `workspace` layouts (recursive `split`/`pane`/`surfaces` with per-surface `command`/`cwd`/`url`/`focus`)
 - **Sidebar metadata** — status pills, metadata blocks, progress bars, log entries, PR check icons, hide-all-details toggle
 - **Notifications** — OSC 9/777 desktop notifications with pane attention ring; freedesktop sound presets
 
@@ -208,26 +208,26 @@ Fuzzy command palette and workspace switcher. Define your own entries in `cmux.j
 
 ### CLI & automation
 - **Socket API** — V1 text (60 commands) + V2 JSON-RPC (210+ methods)
-- **CLI wrapper** — `cmux/bin/cmux <command>` (socket auto-discovery)
-- **Diagnostics** — `cmux config doctor` checks install, daemon reachability, and config-file health
-- **Open in IDE** — `cmux ide [editor] [dir]` opens a directory in VS Code / IntelliJ / Cursor / Zed / Sublime / …
+- **CLI wrapper** — `jmux/bin/jmux <command>` (socket auto-discovery)
+- **Diagnostics** — `jmux config doctor` checks install, daemon reachability, and config-file health
+- **Open in IDE** — `jmux ide [editor] [dir]` opens a directory in VS Code / IntelliJ / Cursor / Zed / Sublime / …
 - **tmux compatibility** — CLI shim maps tmux commands to the socket API
-- **Claude Code wrapper** — `cmux/bin/claude` injects status/notification hooks
-- **URL routing** — `cmux/bin/xdg-open` routes HTTP(S) to the in-app browser
+- **Claude Code wrapper** — `jmux/bin/claude` injects status/notification hooks
+- **URL routing** — `jmux/bin/xdg-open` routes HTTP(S) to the in-app browser
 
 ### Integration & platform
 - **Shell integration** — auto-injected (zsh/bash/fish): CWD, git branch, PR polling, semantic prompts
-- **Remote SSH workspaces** — `cmux ssh user@host` with auto-bootstrap daemon, SOCKS5 proxy tunnel for browser traffic, CLI relay
+- **Remote SSH workspaces** — `jmux ssh user@host` with auto-bootstrap daemon, SOCKS5 proxy tunnel for browser traffic, CLI relay
 - **Session persistence** — scrollback, geometry, zoom, URLs, browser history, closed-tab history restored on restart
 - **Ghostty config** — reads `~/.config/ghostty/config` (themes, fonts, colors, opacity); live reload via `Ctrl+Shift+,`
-- **Themes** — `cmux themes [filter]`; Omarchy `colors.toml` with SIGUSR2 live reload
+- **Themes** — `jmux themes [filter]`; Omarchy `colors.toml` with SIGUSR2 live reload
 - **App icon** — installed into the hicolor theme (SVG + 32–256px PNG) with a pixmaps fallback
 
 ---
 
 ## Keyboard shortcuts
 
-All shortcuts are configurable via `~/.config/cmux/shortcuts.json` (or **Settings → Keyboard**). A per-action `when` clause (VS Code-style: `terminalFocused`, `browserFocused`, `editorFocused`, `panelFocused`, `paneZoomed`, combined with `&&`/`||`/`!`) can gate a binding by context.
+All shortcuts are configurable via `~/.config/jmux/shortcuts.json` (or **Settings → Keyboard**). A per-action `when` clause (VS Code-style: `terminalFocused`, `browserFocused`, `editorFocused`, `panelFocused`, `paneZoomed`, combined with `&&`/`||`/`!`) can gate a binding by context.
 
 | Shortcut | Action |
 |----------|--------|
@@ -248,7 +248,7 @@ All shortcuts are configurable via `~/.config/cmux/shortcuts.json` (or **Setting
 | Alt+Arrow | Focus pane in direction |
 | Ctrl+, | Settings |
 
-**Configurable, unbound by default** (bind in Settings → Keyboard): `tab.reopen` (reopen closed tab), `textbox.focus`, `dock.toggle`, `overview.open`. These are unbound because, with a terminal focused, ghostty's Kitty keyboard protocol encodes `Ctrl+Shift+<key>` to the shell before cmux sees it — so the **header buttons and command palette are the reliable triggers** for the Dock and Overview.
+**Configurable, unbound by default** (bind in Settings → Keyboard): `tab.reopen` (reopen closed tab), `textbox.focus`, `dock.toggle`, `overview.open`. These are unbound because, with a terminal focused, ghostty's Kitty keyboard protocol encodes `Ctrl+Shift+<key>` to the shell before jmux sees it — so the **header buttons and command palette are the reliable triggers** for the Dock and Overview.
 
 ---
 
@@ -256,10 +256,10 @@ All shortcuts are configurable via `~/.config/cmux/shortcuts.json` (or **Setting
 
 | File | Purpose |
 |------|---------|
-| `~/.config/cmux/settings.json` (or `cmux.json`) | App settings |
-| `~/.config/cmux/shortcuts.json` | Keybindings |
-| `.cmux/cmux.json` / `cmux.json` / `~/.config/cmux/cmux.json` | Custom commands (`commands[]`, optional `workspace` layouts) |
-| `.cmux/dock.json` / `~/.config/cmux/dock.json` | Dock controls (`id`/`title`/`command`/`cwd`/`height`) |
+| `~/.config/jmux/settings.json` (or `jmux.json`) | App settings |
+| `~/.config/jmux/shortcuts.json` | Keybindings |
+| `.jmux/jmux.json` / `jmux.json` / `~/.config/jmux/jmux.json` | Custom commands (`commands[]`, optional `workspace` layouts) |
+| `.jmux/dock.json` / `~/.config/jmux/dock.json` | Dock controls (`id`/`title`/`command`/`cwd`/`height`) |
 
 ---
 
@@ -267,16 +267,16 @@ All shortcuts are configurable via `~/.config/cmux/shortcuts.json` (or **Setting
 
 - `ghostty-sys/` — Raw FFI bindings to libghostty (`ghostty.h`)
 - `ghostty-gtk/` — Safe Rust wrapper: GhosttyApp, GhosttyGlSurface, key mapping
-- `cmux/` — Main application (GTK4/libadwaita)
+- `jmux/` — Main application (GTK4/libadwaita)
   - `app.rs` — AppState, SharedState, terminal surface lifecycle, window management
   - `model/` — TabManager, Workspace, Panel, LayoutNode
   - `ui/` — window, sidebar, split view, terminal/browser/markdown/diff/project/file-preview/notes/history/vault panels, dock, textbox, pane overview, command palette, settings
   - `socket/` — Unix socket server, V1 text + V2 JSON protocols, browser automation, auth
-  - `session/` — session persistence (XDG, JSON compatible with macOS cmux)
+  - `session/` — session persistence (XDG, upstream-compatible JSON format)
   - `settings/` — AppSettings, ShortcutConfig, custom commands
   - `remote/` — remote SSH workspaces (bootstrap, proxy tunnel, RPC, CLI relay)
-- `cmux/bin/` — `cmux` (CLI), `claude` (hook wrapper), `xdg-open` (URL routing)
-- `cmux/shell-integration/` — auto-injected zsh/bash/fish integration scripts
+- `jmux/bin/` — `jmux` (CLI), `claude` (hook wrapper), `xdg-open` (URL routing)
+- `jmux/shell-integration/` — auto-injected zsh/bash/fish integration scripts
 
 **Read `docs/architecture-review.md` before making structural changes** — it documents the Ghostty integration constraints.
 
@@ -284,15 +284,15 @@ All shortcuts are configurable via `~/.config/cmux/shortcuts.json` (or **Setting
 
 ## Socket protocol
 
-Unix socket at `$XDG_RUNTIME_DIR/cmux.sock` (falls back to `/tmp/cmux-$UID.sock`). V1 text (60 commands) + V2 JSON-RPC (210+ methods) + 120+ `browser.*` automation commands. Use `cmux/bin/cmux <command> [args...]`.
+Unix socket at `$XDG_RUNTIME_DIR/jmux.sock` (falls back to `/tmp/jmux-$UID.sock`). V1 text (60 commands) + V2 JSON-RPC (210+ methods) + 120+ `browser.*` automation commands. Use `jmux/bin/jmux <command> [args...]`.
 
 ## Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `CMUX_SOCKET` | Override socket path |
-| `CMUX_DISABLE_SESSION_RESTORE` | Set to `1` to skip session restore |
-| `CMUXD_PROXY_ALLOW_PRIVATE` | Set to `1` on the **remote host** to allow the SOCKS5 proxy to reach private/loopback IPs |
+| `JMUX_SOCKET` | Override socket path |
+| `JMUX_DISABLE_SESSION_RESTORE` | Set to `1` to skip session restore |
+| `JMUXD_PROXY_ALLOW_PRIVATE` | Set to `1` on the **remote host** to allow the SOCKS5 proxy to reach private/loopback IPs |
 
 ## Security
 
@@ -302,3 +302,9 @@ See [docs/security.md](docs/security.md). Socket auth via `SO_PEERCRED`, HMAC-SH
 
 - ghostty C API: `ghostty.h` in the ghostty submodule
 - Ghostty GTK runtime: `ghostty/src/apprt/gtk/`
+
+---
+
+## Attribution
+
+jmux is a port based on [cmux](https://cmux.com) and cmux-gtk.

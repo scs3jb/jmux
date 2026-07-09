@@ -6,7 +6,7 @@
 set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-SB=/tmp/cmux-demo; W="$SB/web"
+SB=/tmp/jmux-demo; W="$SB/web"
 
 # ---- synthetic content ----------------------------------------------------------
 mkdir -p "$W/src/api" "$W/tests"
@@ -42,7 +42,7 @@ printf '#[test]\nfn validates_jwt() { assert!(true); }\n' > "$W/tests/auth_test.
 # ---- notes: scope-grouped scratchpads (Global = blue, Folder = green) ----------
 # The notes panel reads HOME=$SB; populate the mirror tree it scans. The Folder
 # scope is keyed to the git repo root of the workspace cwd ($W).
-ND="$SB/.local/share/cmux/notes"
+ND="$SB/.local/share/jmux/notes"
 mkdir -p "$ND/global" "$ND/local${W}"
 cat > "$ND/global/architecture.md" <<'NOTES'
 # Architecture
@@ -95,7 +95,7 @@ for w in json.load(sys.stdin)['result']['workspaces']:
 ( cd "$W" && env -i PATH=/usr/bin python3 -m http.server 8137 --bind 127.0.0.1 ) >/tmp/httpd.log 2>&1 &
 HTTPD=$!; sleep 1
 start_sway
-shot(){ local p="$1"; start_cmux
+shot(){ local p="$1"; start_jmux
   case "$p" in
     markdown) stage_only docs-ws; R open "$W/README.md" >/dev/null 2>&1 ;;
     notes)    stage_only demo; R notes >/dev/null 2>&1 ;;

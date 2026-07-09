@@ -10,9 +10,9 @@
       "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
       "seed": 2000, "version": 1, "versionNonce": 2000, "isDeleted": false,
       "boundElements": null, "updated": 1, "link": null, "locked": false,
-      "text": "cmux-gtk UI Component Tree",
+      "text": "jmux UI Component Tree",
       "fontSize": 28, "fontFamily": 1, "textAlign": "center", "verticalAlign": "top",
-      "containerId": null, "originalText": "cmux-gtk UI Component Tree",
+      "containerId": null, "originalText": "jmux UI Component Tree",
       "autoResize": true, "lineHeight": 1.25
     },
 

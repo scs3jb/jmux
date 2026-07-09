@@ -1,17 +1,17 @@
-# Contributing to cmux-gtk
+# Contributing to jmux
 
 ## Getting Started
 
 ```bash
-git clone --recursive https://github.com/douglas/cmux-gtk.git
-cd cmux-gtk
+git clone --recursive https://github.com/douglas/jmux.git
+cd jmux
 cargo build          # Stub mode (no ghostty)
 cargo test --workspace
 ```
 
 To build with the terminal (requires Zig):
 ```bash
-cargo build --features cmux/link-ghostty
+cargo build --features jmux/link-ghostty
 ```
 
 ## Code Style

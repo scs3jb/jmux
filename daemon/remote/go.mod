@@ -1,3 +1,3 @@
-module github.com/manaflow-ai/cmux/daemon/remote
+module github.com/scs3jb/jmux/daemon/remote
 
 go 1.22

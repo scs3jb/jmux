@@ -10,12 +10,12 @@
 #
 # Prereqs: sway, grim, ffmpeg, gcc, wayland-scanner, pkg-config (wayland-client,
 #          xkbcommon), a release build, and the demo sandbox that docs/autocapture.sh
-#          creates (/tmp/cmux-demo with .cmux/cmux.json + bin/*.sh demo scripts).
+#          creates (/tmp/jmux-demo with .jmux/jmux.json + bin/*.sh demo scripts).
 # Run docs/autocapture.sh first (sandbox + theme), then this.
 set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-SB=/tmp/cmux-demo
+SB=/tmp/jmux-demo
 BIN=/tmp/vptr; mkdir -p "$BIN"
 
 # ---- 1. build the virtual-pointer and virtual-keyboard drivers -----------------
@@ -51,27 +51,27 @@ mk_script q-logs   "Server log"   "GET /api/users 200 12ms"    "POST /api/login 
 mk_script q-deploy "Deploy"       "\$ fly deploy --remote"     "==> building image …"     "release v128 succeeded"
 python3 - <<'PY'
 import json, glob
-tabs = {"name":"tabsdemo","workspace":{"name":"work","cwd":"/tmp/cmux-demo/web","color":"#926EE4",
+tabs = {"name":"tabsdemo","workspace":{"name":"work","cwd":"/tmp/jmux-demo/web","color":"#926EE4",
   "layout":{"pane":{"surfaces":[
-    {"command":"bash /tmp/cmux-demo/bin/tab-claude.sh","focus":True},
-    {"command":"bash /tmp/cmux-demo/bin/tab-server.sh"},
-    {"command":"bash /tmp/cmux-demo/bin/tab-tests.sh"}]}}}}
-quad = {"name":"quad","workspace":{"name":"fleet","cwd":"/tmp/cmux-demo/web","color":"#3b82f6",
+    {"command":"bash /tmp/jmux-demo/bin/tab-claude.sh","focus":True},
+    {"command":"bash /tmp/jmux-demo/bin/tab-server.sh"},
+    {"command":"bash /tmp/jmux-demo/bin/tab-tests.sh"}]}}}}
+quad = {"name":"quad","workspace":{"name":"fleet","cwd":"/tmp/jmux-demo/web","color":"#3b82f6",
   "layout":{"direction":"horizontal","split":0.5,"children":[
     {"direction":"vertical","split":0.5,"children":[
-      {"pane":{"surfaces":[{"command":"bash /tmp/cmux-demo/bin/q-agent.sh","focus":True}]}},
-      {"pane":{"surfaces":[{"command":"bash /tmp/cmux-demo/bin/q-build.sh"}]}}]},
+      {"pane":{"surfaces":[{"command":"bash /tmp/jmux-demo/bin/q-agent.sh","focus":True}]}},
+      {"pane":{"surfaces":[{"command":"bash /tmp/jmux-demo/bin/q-build.sh"}]}}]},
     {"direction":"vertical","split":0.5,"children":[
-      {"pane":{"surfaces":[{"command":"bash /tmp/cmux-demo/bin/q-logs.sh"}]}},
-      {"pane":{"surfaces":[{"command":"bash /tmp/cmux-demo/bin/q-deploy.sh"}]}}]}]}}}
-for p in glob.glob('/tmp/cmux-demo/**/.cmux/cmux.json', recursive=True):
+      {"pane":{"surfaces":[{"command":"bash /tmp/jmux-demo/bin/q-logs.sh"}]}},
+      {"pane":{"surfaces":[{"command":"bash /tmp/jmux-demo/bin/q-deploy.sh"}]}}]}]}}}
+for p in glob.glob('/tmp/jmux-demo/**/.jmux/jmux.json', recursive=True):
     d = json.load(open(p)); names = {'tabsdemo','quad'}
     d['commands'] = [c for c in d.get('commands',[]) if c.get('name') not in names] + [tabs, quad]
     json.dump(d, open(p,'w'), indent=2)
 PY
 
 # ---- 3. harness + capture helpers ----------------------------------------------
-source "$HERE/harness.sh"            # start_sway/start_cmux, R, G, VP, stage_only, stage_several
+source "$HERE/harness.sh"            # start_sway/start_jmux, R, G, VP, stage_only, stage_several
 VKBD(){ env XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$WD" "$BIN/vkbd"; }
 
 gen_drag(){ local x1=$1 y1=$2 x2=$3 y2=$4 tail=${5:-400} steps=22 i
@@ -90,7 +90,7 @@ mkgif(){ local dir=$1 out=$2 crop=$3 scale=$4 sd=${5:-0.5}
     -vf "crop=$crop,scale=$scale:-1:flags=lanczos,tpad=start_duration=$sd:start_mode=clone:stop_duration=1.4:stop_mode=clone,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" \
     "$out"; }
 
-start_sway; start_cmux
+start_sway; start_jmux
 vp(){ capture "$1" "$BIN/vptr" "$2"; }   # pointer-driven scene
 kb(){ capture "$1" "$BIN/vkbd" "$2"; }   # keyboard-driven scene
 

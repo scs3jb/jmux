@@ -9,7 +9,7 @@ how it works, the hard-won gotchas, and how to regenerate or extend it.
 ```bash
 # needs: sway, grim, imagemagick (magick), poppler (pdftocairo), a release build
 sudo pacman -S --needed sway grim
-cargo build --release --features cmux/link-ghostty
+cargo build --release --features jmux/link-ghostty
 bash docs/autocapture.sh        # writes docs/screenshots/*.png
 ```
 
@@ -18,7 +18,7 @@ is the whole point.
 
 ## The approach
 
-cmux is GPU-accelerated GTK4 + ghostty (GLArea). On Wayland (esp. KDE) you can't
+jmux is GPU-accelerated GTK4 + ghostty (GLArea). On Wayland (esp. KDE) you can't
 screenshot or control another app's window, and you don't want demo windows
 flashing on the user's screen. So:
 
@@ -26,15 +26,15 @@ flashing on the user's screen. So:
    WLR_LIBINPUT_NO_DEVICES=1 sway` on a virtual 1600×1000 output. wlroots uses
    the real render node, so ghostty's GL renders correctly. Nothing appears on
    the user's screen.
-2. Launch `target/release/cmux-app` as a Wayland client of that sway, in a
+2. Launch `target/release/jmux-app` as a Wayland client of that sway, in a
    **clean `env -i`** (no inherited secrets) with a **sandboxed `$HOME`**.
-3. Drive every scene through the **cmux socket** (`cmux/bin/cmux` with
-   `CMUX_SOCKET=$RT/cmux.sock`).
+3. Drive every scene through the **jmux socket** (`jmux/bin/jmux` with
+   `JMUX_SOCKET=$RT/jmux.sock`).
 4. Capture each scene with **`grim`** (works with sway's wlr-screencopy).
 
-Modals (overview, palette, task-manager) can't be dismissed via `cmux send`
-(that goes to the terminal, not the dialog), so **relaunch cmux fresh per
-scene** — sway stays up, cmux is killed and restarted for each capture. This
+Modals (overview, palette, task-manager) can't be dismissed via `jmux send`
+(that goes to the terminal, not the dialog), so **relaunch jmux fresh per
+scene** — sway stays up, jmux is killed and restarted for each capture. This
 also guarantees no state bleeds between scenes.
 
 ## Privacy — the non-negotiable part
@@ -46,34 +46,34 @@ Everything must be synthetic. Real leaks that bit us and how they're avoided:
   and a title `@radd-surfer:/home/jbriggs`. **Fix:** never show a plain shell.
   Every demo pane runs an **authored script** (`bash $SB/bin/<x>.sh`) that
   `clear`s, prints fake agent output, sets a clean title with
-  `printf '\033]0;cmux\007'`, then `sleep`s. No prompt, no env, ever visible.
-- **cmux launches TWO default workspaces** — a clean `Terminal` and a leaky
+  `printf '\033]0;jmux\007'`, then `sleep`s. No prompt, no env, ever visible.
+- **jmux launches TWO default workspaces** — a clean `Terminal` and a leaky
   `@radd-surfer:/home/jbriggs` (the shell's OSC title). After staging the demo
   workspaces, **close every workspace whose title isn't a demo name**
-  (`web`/`api`/`docs`) via `cmux close <id>` (close-by-id is reliable;
+  (`web`/`api`/`docs`) via `jmux close <id>` (close-by-id is reliable;
   select-then-close is not).
 - **Closing those leaky workspaces pollutes the History pane** (they land in the
-  closed-stack). Before the history scene, run `cmux clear-closed`, then close a
+  closed-stack). Before the history scene, run `jmux clear-closed`, then close a
   benign workspace so only that shows.
 - **Vault** scans `~/.claude/projects` / `~/.codex/sessions`. The sandbox has
   **fake** sessions with `/home/demo` cwds and benign titles — never the real
   `~/.claude`.
-- Paths shown are under `/tmp/cmux-demo` (no username). Acceptable.
+- Paths shown are under `/tmp/jmux-demo` (no username). Acceptable.
 
 ## Look & feel (match the user's theme)
 
 Read the user's theme prefs (theme prefs only — never their session/config with
 real data) and replicate in the sandbox:
 
-- `~/.config/cmux/settings.json` → `theme` (e.g. `dark`). Write a **minimal**
-  `{"theme":"dark"}` to `$SB/.config/cmux/settings.json`. (A partial `sidebar:{…}`
+- `~/.config/jmux/settings.json` → `theme` (e.g. `dark`). Write a **minimal**
+  `{"theme":"dark"}` to `$SB/.config/jmux/settings.json`. (A partial `sidebar:{…}`
   silently fails the parse and reverts to light — keep it minimal.)
 - `~/.config/ghostty/config` → `theme = <name>` (e.g. `Adventure Time`). Write it
   to `$SB/.config/ghostty/config` **and copy the theme file** into
   `$SB/.config/ghostty/themes/` (the sandbox doesn't search `/usr/share/ghostty`).
 - GTK font/dark → `$SB/.config/gtk-4.0/settings.ini`
   (`gtk-font-name`, `gtk-application-prefer-dark-theme`). libadwaita ignores the
-  dark hint (use cmux `theme=dark`); the font does apply.
+  dark hint (use jmux `theme=dark`); the font does apply.
 
 **Known gap:** libadwaita reads its **accent color** from the desktop settings
 portal, which isn't running in headless sway — so the accent falls back to blue
@@ -82,27 +82,27 @@ instead of the user's. Matching it would require standing up a fake
 
 ## The settings-vs-commands file trap
 
-`~/.config/cmux/cmux.json` is **both** the settings file (strict,
+`~/.config/jmux/jmux.json` is **both** the settings file (strict,
 `deny_unknown_fields`) **and** read for custom `commands`. You can't put both in
 it. So:
 
-- **Settings** → `$SB/.config/cmux/settings.json` (and do NOT create
-  `$SB/.config/cmux/cmux.json`, or it wins and the `commands` key breaks the
+- **Settings** → `$SB/.config/jmux/settings.json` (and do NOT create
+  `$SB/.config/jmux/jmux.json`, or it wins and the `commands` key breaks the
   settings parse → defaults).
-- **Commands** → `cmux.json` copied into **every** workspace dir's `.cmux/`
-  (`$SB/.cmux/`, `$SB/web/.cmux/`, …). `custom_commands::load` searches the
+- **Commands** → `jmux.json` copied into **every** workspace dir's `.jmux/`
+  (`$SB/.jmux/`, `$SB/web/.jmux/`, …). `custom_commands::load` searches the
   *selected* workspace's dir, which changes as you create workspaces, so the
   file must exist in all of them.
 
 Multi-pane demo workspaces are built with a `commands[].workspace` layout
-(recursive `split`/`pane`/`surfaces`) and launched via `cmux run <name>`.
+(recursive `split`/`pane`/`surfaces`) and launched via `jmux run <name>`.
 
 ## Scene list
 
 `hero`, `pane-overview`, `command-palette`, `dock`, `vault-pane`,
-`task-manager`, `pdf-preview`, `history-pane`. Triggers: `cmux overview` /
-`palette` / `dock` / `top` / `vault` / `history`, `cmux open <pdf>`, and the
-multi-pane `cmux run demo`. The dock needs a `dock.json`; the PDF a sample
+`task-manager`, `pdf-preview`, `history-pane`. Triggers: `jmux overview` /
+`palette` / `dock` / `top` / `vault` / `history`, `jmux open <pdf>`, and the
+multi-pane `jmux run demo`. The dock needs a `dock.json`; the PDF a sample
 generated with `magick … sample.pdf`.
 
 ## GIFs (also headless)
@@ -131,7 +131,7 @@ across motion.
 For the **command palette** the same trick extends to typing: a
 `zwp_virtual_keyboard_v1` client (`vkbd.c`) uploads a US xkb keymap (built with
 libxkbcommon) and sends key events that reach the palette's GTK search entry.
-The palette is opened via the socket (`cmux palette`) and `vkbd` types the query
+The palette is opened via the socket (`jmux palette`) and `vkbd` types the query
 so the list fuzzy-filters live, then Enter switches. The **first keystroke after
 the entry grabs focus is dropped**, so the script warms up with a no-op Backspace
 (`k 14`) before typing the real text.
@@ -142,7 +142,7 @@ Gotchas baked into the script:
 - Each tab needs a **distinct title** (its own OSC-titled script) or a reorder is
   invisible — background ghostty tabs render their script lazily, so they show
   "Terminal" until focused; dragging the one distinctly-titled tab still reads.
-- There's a **release→reflow lag**: cmux finishes re-laying-out ~0.5s after the
+- There's a **release→reflow lag**: jmux finishes re-laying-out ~0.5s after the
   drop, so keep capturing frames well past the `u` (the move-panes script holds
   1.6s) or the GIF ends before the panes merge.
 - GIF frames are deltas — extract single frames with `magick gif -coalesce`, not
@@ -159,7 +159,7 @@ Gotchas baked into the script:
   the leaky `@host:/home/...` window title). The drag GIFs also drop the sidebar
   (x=285); the overview/palette GIFs keep it (x=0) for context — safe because the
   staged workspace titles are synthetic (`web`/`api`/`docs`/`fleet`). Only fake
-  pane content and synthetic `/tmp/cmux-demo` paths ever appear.
+  pane content and synthetic `/tmp/jmux-demo` paths ever appear.
 
 ## Always do last
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render docs/demos/streamdeck.gif — a privacy-safe animated mock of the
-Stream Deck Plus companion (~/src/deck) showing cmux workspaces as keys.
+Stream Deck Plus companion (~/src/deck) showing jmux workspaces as keys.
 
 Uses deck's OWN key/touchscreen renderer (deck.render) with synthetic session
 data, so the mock is pixel-identical to what the real device shows — no

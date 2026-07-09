@@ -1,10 +1,10 @@
 # Security
 
-cmux-gtk takes security seriously. This document describes the security architecture, hardening measures, and audit history.
+jmux takes security seriously. This document describes the security architecture, hardening measures, and audit history.
 
 ## Threat Model
 
-cmux-gtk is a desktop terminal multiplexer with an embedded browser. The primary attack surfaces are:
+jmux is a desktop terminal multiplexer with an embedded browser. The primary attack surfaces are:
 
 1. **Unix socket API** — Local IPC with 210+ commands including terminal keystroke injection and browser automation
 2. **Embedded WebKit browser** — Full web engine with JavaScript execution
@@ -20,7 +20,7 @@ The socket server uses kernel-level `SO_PEERCRED` authentication on every connec
 | Mode | Authentication | Use case |
 |------|---------------|----------|
 | `LocalUser` (default) | Same UID via SO_PEERCRED | Normal desktop use |
-| `CmuxOnly` | Same UID + PID descendant check (walks /proc) | Locked-down environments |
+| `JmuxOnly` | Same UID + PID descendant check (walks /proc) | Locked-down environments |
 | `Automation` | Same UID | CI/scripting |
 | `AllowAll` | None (logs warning at startup) | Development only |
 | `Off` | Socket disabled | Maximum isolation |
@@ -44,10 +44,10 @@ All sensitive files are written with restrictive permissions:
 | `shortcuts.json` | 0o600, dir 0o700 | Keyboard shortcut config |
 | `browser-history.json` | 0o600, dir 0o700 | Browsing history |
 | `browser-profiles.json` | 0o600 | Profile configuration |
-| `cmux.sock` | 0o600 (via umask 0o177) | Unix socket |
+| `jmux.sock` | 0o600 (via umask 0o177) | Unix socket |
 | Scrollback temp files | 0o600, dir 0o700, O_EXCL | Terminal scrollback capture |
 | WebKit profile dirs | 0o700 | Cookie/cache storage |
-| PID lockfile | O_EXCL create | cmuxd-remote daemon coordination |
+| PID lockfile | O_EXCL create | jmuxd-remote daemon coordination |
 
 All writes use atomic temp-file + rename with `create_new` (O_EXCL) to prevent symlink attacks. Config directories are created with explicit `set_permissions(0o700)` after `create_dir_all` to prevent world-readable directory creation.
 
@@ -80,8 +80,8 @@ All socket inputs are truncated to prevent resource exhaustion:
 ## Terminal Security
 
 - **Title/PWD sanitization**: Strings from terminal escape sequences (OSC 0/2, OSC 7) have C0/C1 control characters stripped before display in GTK widgets.
-- **Environment hygiene**: `CMUX_SOCKET_PASSWORD` is removed from the environment at startup so child terminal processes cannot read it.
-- **Scrollback privacy**: The `persist_scrollback` setting (default: `true`) controls whether terminal scrollback is included in session snapshots. When `false`, the `scrollback` field is omitted entirely — no sensitive terminal history is written to `session.json`. Temporary scrollback files under `~/.cache/cmux/scrollback/` are automatically deleted at the start of the next session restore.
+- **Environment hygiene**: `JMUX_SOCKET_PASSWORD` is removed from the environment at startup so child terminal processes cannot read it.
+- **Scrollback privacy**: The `persist_scrollback` setting (default: `true`) controls whether terminal scrollback is included in session snapshots. When `false`, the `scrollback` field is omitted entirely — no sensitive terminal history is written to `session.json`. Temporary scrollback files under `~/.cache/jmux/scrollback/` are automatically deleted at the start of the next session restore.
 - **Scrollback sensitivity**: When `persist_scrollback` is enabled, session files may contain terminal scrollback (up to 4,000 lines per terminal). File permissions (0o600) protect at rest.
 
 ## SSH / Remote Workspace Security
@@ -94,8 +94,8 @@ All socket inputs are truncated to prevent resource exhaustion:
 - **Relay authentication**: HMAC-SHA256 challenge-response with per-session tokens (UUIDv4 from CSPRNG).
 - **Proxy tunnel**: Binds to `127.0.0.1` only, 32-connection limit, panic-guarded handler.
 - **SSH stderr logging**: Captured and logged (not discarded) so host key warnings are visible.
-- **Daemon bootstrap**: Remote daemon binary uploaded via SCP with verified path. Versioned at `~/.cmux/bin/cmuxd-remote/{version}/`. Download temp files use O_EXCL creation and embed the UID in the build path to prevent `/tmp` races.
-- **SSRF denylist**: The proxy tunnel's `proxy.open` handler resolves hostnames via `net.LookupHost` and checks every resolved IP against a CIDR denylist before connecting. Blocked ranges: `127.0.0.0/8` (loopback), `::1/128` (IPv6 loopback), `169.254.0.0/16` (link-local / cloud metadata), `fe80::/10` (IPv6 link-local), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (RFC-1918 private), `fc00::/7` (IPv6 unique-local). Set `CMUXD_PROXY_ALLOW_PRIVATE=1` on the remote host to bypass the denylist when proxying to a local dev server.
+- **Daemon bootstrap**: Remote daemon binary uploaded via SCP with verified path. Versioned at `~/.jmux/bin/jmuxd-remote/{version}/`. Download temp files use O_EXCL creation and embed the UID in the build path to prevent `/tmp` races.
+- **SSRF denylist**: The proxy tunnel's `proxy.open` handler resolves hostnames via `net.LookupHost` and checks every resolved IP against a CIDR denylist before connecting. Blocked ranges: `127.0.0.0/8` (loopback), `::1/128` (IPv6 loopback), `169.254.0.0/16` (link-local / cloud metadata), `fe80::/10` (IPv6 link-local), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (RFC-1918 private), `fc00::/7` (IPv6 unique-local). Set `JMUXD_PROXY_ALLOW_PRIVATE=1` on the remote host to bypass the denylist when proxying to a local dev server.
 - **RPC mutex hardening**: The JSON-RPC client's `pending` and `stream_subs` bookkeeping mutexes use lock-or-recover semantics — a poisoned lock is recovered automatically, at worst dropping one pending response. The `stdin` write mutex is treated as fatal: poison means a partial JSON line was written and the protocol is corrupt, so the connection is immediately marked dead and the caller receives an error.
 
 ## FFI Safety
@@ -126,4 +126,4 @@ All socket inputs are truncated to prevent resource exhaustion:
 
 ## Reporting Security Issues
 
-If you find a security vulnerability, please report it privately via GitHub's security advisory feature at https://github.com/douglas/cmux-gtk/security/advisories rather than opening a public issue.
+If you find a security vulnerability, please report it privately via GitHub's security advisory feature at https://github.com/douglas/jmux/security/advisories rather than opening a public issue.

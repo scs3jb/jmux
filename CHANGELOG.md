@@ -2,26 +2,26 @@
 
 ## [0.62.0-alpha.15] - 2026-06-14
 
-Large parity push porting the remaining portable features from upstream cmux
+Large parity push porting the remaining portable features from upstream jmux
 (through v0.64.15), plus several UX additions and fixes.
 
 ### Added
 
-- **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-to-reorder (drag a group header to relocate the whole block; drop a workspace onto a group to join it), session persistence, and `cmux group …` CLI / `workspace.group.*` socket commands
-- **Diff viewer** — `cmux diff [path]` opens a git diff CodeView panel (colored add/remove/hunk lines, working-tree/staged toggle); plain-GTK, works without WebKit
-- **Project visualizer** — `cmux project [path]` opens a structure pane (bounded directory tree + file-type summary)
-- **Agent hibernation** — pause an idle agent (SIGSTOP its TTY's process group) to free CPU and resume on demand (SIGCONT); sidebar pause indicator, context menu, `cmux hibernate`/`wake`
+- **Workspace groups** — collapsible sidebar sections with per-group color, unread badges, drag-to-reorder (drag a group header to relocate the whole block; drop a workspace onto a group to join it), session persistence, and `jmux group …` CLI / `workspace.group.*` socket commands
+- **Diff viewer** — `jmux diff [path]` opens a git diff CodeView panel (colored add/remove/hunk lines, working-tree/staged toggle); plain-GTK, works without WebKit
+- **Project visualizer** — `jmux project [path]` opens a structure pane (bounded directory tree + file-type summary)
+- **Agent hibernation** — pause an idle agent (SIGSTOP its TTY's process group) to free CPU and resume on demand (SIGCONT); sidebar pause indicator, context menu, `jmux hibernate`/`wake`
 - **Move tabs** — drag a tab onto another pane to move it; drag onto a pane edge to split (right/left → horizontal, bottom/top → vertical); or onto a sidebar workspace row to move it to another workspace
-- **Reopen closed workspace** — `cmux reopen` / command palette restores the most recently closed workspace (layout + cwd, fresh shells)
-- **Workspace focus history** — back/forward through recently-focused workspaces (`cmux back`/`cmux forward`, palette, `workspace.focus_back`/`forward`)
+- **Reopen closed workspace** — `jmux reopen` / command palette restores the most recently closed workspace (layout + cwd, fresh shells)
+- **Workspace focus history** — back/forward through recently-focused workspaces (`jmux back`/`jmux forward`, palette, `workspace.focus_back`/`forward`)
 - **Fish shell integration** — full parity with the zsh/bash integration, injected via `XDG_DATA_DIRS` `vendor_conf.d`
-- **SSH agent forwarding** — `cmux ssh -A` / dialog toggle (`ssh -A`)
+- **SSH agent forwarding** — `jmux ssh -A` / dialog toggle (`ssh -A`)
 - **Browser** — per-tab audio mute, focus mode, mouse back/forward side buttons (8/9), `react-grab` automation, configurable custom search engine, New Browser Workspace, omnibar first-click select-all
-- **Display placement** — `cmux window displays` lists monitors; `cmux window display <name|index>` moves the window to a monitor (fullscreen-on-monitor)
+- **Display placement** — `jmux window displays` lists monitors; `jmux window display <name|index>` moves the window to a monitor (fullscreen-on-monitor)
 - **Inline remote Reconnect** button on disconnected/errored remote workspace rows
 - **Configurable sidebar font size**; markdown viewer zoom controls
-- **App icon** shipped (`io.github.douglas.cmux_gtk`) and set as the window/taskbar icon
-- `cmux help` now prints a proper grouped help menu instead of raw JSON
+- **App icon** shipped (`com.jacobbriggs.jmux`) and set as the window/taskbar icon
+- `jmux help` now prints a proper grouped help menu instead of raw JSON
 
 ### Fixed
 
@@ -33,7 +33,7 @@ Large parity push porting the remaining portable features from upstream cmux
 
 ### Fixed
 
-- `cmux surface send-key` now correctly sends non-printable keys (Return, Escape, Tab, Backspace, Delete, Space, arrow keys, Home/End, Page Up/Down, Insert, F1–F12). Previously all special keys were silently dropped because the keycode was hardcoded to 0
+- `jmux surface send-key` now correctly sends non-printable keys (Return, Escape, Tab, Backspace, Delete, Space, arrow keys, Home/End, Page Up/Down, Insert, F1–F12). Previously all special keys were silently dropped because the keycode was hardcoded to 0
 
 ## [0.62.0-alpha.10] - 2026-03-28
 
@@ -50,7 +50,7 @@ Large parity push porting the remaining portable features from upstream cmux
 
 ### Added
 
-- **Remote SSH workspaces** — `cmux ssh user@host` connects to remote hosts with a full cmux workspace: auto-bootstrapped daemon (`cmuxd-remote`), SOCKS5 proxy tunnel for browser traffic, CLI relay for remote cmux commands, sidebar connection state indicators (Connecting / Connected / Disconnected / Error)
+- **Remote SSH workspaces** — `jmux ssh user@host` connects to remote hosts with a full jmux workspace: auto-bootstrapped daemon (`jmuxd-remote`), SOCKS5 proxy tunnel for browser traffic, CLI relay for remote jmux commands, sidebar connection state indicators (Connecting / Connected / Disconnected / Error)
 - Remote workspace connection health monitor with automatic reconnect on session restore
 - Toast error notifications for remote workspace connection failures
 - `persist_scrollback` setting (default: on) — when disabled, terminal scrollback is omitted from session snapshots entirely, preventing passwords and tokens from being written to disk
@@ -62,7 +62,7 @@ Large parity push porting the remaining portable features from upstream cmux
 
 ### Fixed
 
-- **SSRF**: Proxy tunnel `proxy.open` now resolves hostnames and checks all resolved IPs against a CIDR denylist (loopback, link-local, RFC-1918, cloud metadata `169.254.169.254`). Set `CMUXD_PROXY_ALLOW_PRIVATE=1` on the remote host to allow proxying to local dev servers
+- **SSRF**: Proxy tunnel `proxy.open` now resolves hostnames and checks all resolved IPs against a CIDR denylist (loopback, link-local, RFC-1918, cloud metadata `169.254.169.254`). Set `JMUXD_PROXY_ALLOW_PRIVATE=1` on the remote host to allow proxying to local dev servers
 - **XSS**: HTTP interstitial "Proceed Anyway" button uses `data-href` + event listener instead of inline `onclick` — eliminates HTML/JS nested escaping context
 - **RPC mutex safety**: JSON-RPC client recovers from mutex poison on bookkeeping maps; stdin mutex poison marks connection dead to prevent partial-write protocol corruption
 - Block `javascript:` scheme in browser navigation allowlist
@@ -94,7 +94,7 @@ Large parity push porting the remaining portable features from upstream cmux
 - Remove `sh -c` shell wrapper from remote daemon SSH invocation — pass args directly
 - Cap proxy tunnel at 32 concurrent connections with panic-safe counter
 - Sanitize terminal-sourced titles and directories (strip C0/C1 control chars before GTK display)
-- Remove `CMUX_SOCKET_PASSWORD` from environment at startup to prevent child process access
+- Remove `JMUX_SOCKET_PASSWORD` from environment at startup to prevent child process access
 - Safe integer cast for SSH port numbers (`u16::try_from` instead of `as u16`)
 - Restrict `xdg-open` deep links to whitelisted URL schemes
 - Validate SSH options restored from session files (require `Key=Value` format)
@@ -114,7 +114,7 @@ Large parity push porting the remaining portable features from upstream cmux
 
 ### Changed
 
-- Ghostty submodule switched to `douglas/ghostty` `cmux-linux-1.3.1` branch (upstream 1.3.1 + Linux embedded support, fully controlled)
+- Ghostty submodule switched to `douglas/ghostty` `jmux-linux-1.3.1` branch (upstream 1.3.1 + Linux embedded support, fully controlled)
 
 ### Fixed
 
@@ -165,7 +165,7 @@ Large parity push porting the remaining portable features from upstream cmux
 - Prevent download filename path traversal via absolute paths
 - Prevent browser profile name path traversal in create/rename/delete
 - Browser eval and action-with-reply commands now time out after 30 seconds instead of hanging indefinitely
-- Scrollback temp files moved to `~/.cache/cmux/scrollback/` with restrictive permissions (0o600) and symlink protection
+- Scrollback temp files moved to `~/.cache/jmux/scrollback/` with restrictive permissions (0o600) and symlink protection
 - Browser history file written with 0o600 permissions (no longer world-readable)
 - WebKit profile data/cache directories set to 0o700 permissions
 - XDG_RUNTIME_DIR validation no longer follows symlinks
@@ -177,14 +177,14 @@ Large parity push porting the remaining portable features from upstream cmux
 
 ## [0.62.0-alpha.1] - 2026-03-22
 
-First public release of cmux-gtk — the Linux port of cmux, a terminal multiplexer for AI coding agents. Built with Rust, GTK4/libadwaita, and Ghostty.
+First public release of jmux — the Linux port of jmux, a terminal multiplexer for AI coding agents. Built with Rust, GTK4/libadwaita, and Ghostty.
 
 ### Added
 
 - **Terminal multiplexer** — workspaces, split panes (horizontal/vertical), tabbed surfaces, directional focus (Alt+Arrow), pane zoom, drag-and-drop reordering
 - **Integrated browser** — WebKit6 panels with 120+ automation commands (Playwright-style API: click, fill, type, find, wait, snapshot, eval, cookies, storage, network interception)
 - **Shell integration** — auto-injected for zsh and bash; reports CWD, git branch, PR status, listening ports, and semantic prompt markers
-- **Remote SSH workspaces** — `cmux ssh user@host` with auto-bootstrap daemon, SOCKS5 proxy tunnel for browser traffic, CLI relay, sidebar connection indicators
+- **Remote SSH workspaces** — `jmux ssh user@host` with auto-bootstrap daemon, SOCKS5 proxy tunnel for browser traffic, CLI relay, sidebar connection indicators
 - **Session persistence** — terminal scrollback, window geometry, pane layout, browser URLs and back/forward history all restored on restart
 - **Socket API** — V1 text protocol (60 commands) and V2 JSON-RPC protocol (210+ methods) for full automation
 - **Browser automation** — element finding (by text, role, label, placeholder, test ID), waiting, screenshots, dialog handling, frame selection, console capture, network interception, geolocation/offline spoofing
@@ -199,11 +199,11 @@ First public release of cmux-gtk — the Linux port of cmux, a terminal multiple
 - **File drag-and-drop** — drop files onto terminal to paste shell-escaped paths
 - **All-surfaces search** — Ctrl+P to search text across all terminals in all workspaces
 - **Copy mode** — vi-style terminal text selection with vim badge indicator
-- **tmux compatibility** — CLI shim that maps tmux commands to cmux socket API
-- **Themes browser** — `cmux themes` command lists bundled Ghostty themes
-- **Claude Code wrapper** — `cmux/bin/claude` injects hooks for sidebar status and notifications
+- **tmux compatibility** — CLI shim that maps tmux commands to jmux socket API
+- **Themes browser** — `jmux themes` command lists bundled Ghostty themes
+- **Claude Code wrapper** — `jmux/bin/claude` injects hooks for sidebar status and notifications
 - **macOS command aliases** — browser commands accept both underscore (`browser.find_by_text`) and dot notation (`browser.find.text`) for cross-platform script parity
-- **Configurable shortcuts** — all keyboard shortcuts customizable via ~/.config/cmux/shortcuts.json
+- **Configurable shortcuts** — all keyboard shortcuts customizable via ~/.config/jmux/shortcuts.json
 
 ### Fixed
 

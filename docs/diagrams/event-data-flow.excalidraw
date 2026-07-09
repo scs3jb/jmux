@@ -10,9 +10,9 @@
       "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
       "seed": 3000, "version": 1, "versionNonce": 3000, "isDeleted": false,
       "boundElements": null, "updated": 1, "link": null, "locked": false,
-      "text": "cmux-gtk Event & Data Flow",
+      "text": "jmux Event & Data Flow",
       "fontSize": 28, "fontFamily": 1, "textAlign": "center", "verticalAlign": "top",
-      "containerId": null, "originalText": "cmux-gtk Event & Data Flow",
+      "containerId": null, "originalText": "jmux Event & Data Flow",
       "autoResize": true, "lineHeight": 1.25
     },
 

@@ -1,4 +1,4 @@
-# cmux-gtk
+# jmux
 
 ## Building
 
@@ -6,7 +6,7 @@ ALWAYS build the release binary with **all link features** enabled, so the
 installed build has ghostty linked AND the quake-style quick-terminal:
 
 ```sh
-cargo build --release --features cmux/link-ghostty,cmux/quick-terminal
+cargo build --release --features jmux/link-ghostty,jmux/quick-terminal
 ```
 
 - `link-ghostty` — links the ghostty terminal library (required).
@@ -19,12 +19,12 @@ Do not use a plain `cargo build --release` for anything that will be installed.
 
 ## Installing
 
-`scripts/install.sh` copies `target/release/cmux-app` + the `cmux`/`cmux-cli`
+`scripts/install.sh` copies `target/release/jmux-app` + the `jmux`/`jmux-cli`
 wrappers and shell integration into a prefix (default `/usr/local`, needs root):
 
 ```sh
 sudo bash scripts/install.sh
 ```
 
-Build first (above) — the script refuses to run if `target/release/cmux-app`
+Build first (above) — the script refuses to run if `target/release/jmux-app`
 is missing.

@@ -1,0 +1,538 @@
+//! Remote daemon bootstrap — probe, build, upload, and verify jmuxd-remote.
+//!
+//! Flow:
+//! 1. SSH probe: detect remote OS/arch via `uname`
+//! 2. Check if daemon binary exists at versioned path on remote
+//! 3. If missing: find/download/build locally, then upload via scp
+//!    Priority order for obtaining the binary:
+//!    a. JMUX_REMOTE_DAEMON_BINARY env var
+//!    b. Pre-built binary in XDG cache
+//!    c. Download from GitHub Releases
+//!    d. Build from Go source (developer fallback)
+//! 4. Verify: start daemon, run hello handshake
+
+use std::process::Command;
+
+/// Platform info detected from a remote host.
+#[derive(Debug, Clone)]
+pub struct RemotePlatform {
+    pub go_os: String,
+    pub go_arch: String,
+}
+
+/// Probe the remote host to detect OS and architecture.
+pub fn probe_platform(ssh_args: &[String]) -> Result<RemotePlatform, String> {
+    let output = ssh_command(ssh_args, "uname -s && uname -m", 6)
+        .output()
+        .map_err(|e| format!("Failed to run SSH probe: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("SSH probe failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    if lines.len() < 2 {
+        return Err(format!("Unexpected probe output: {}", stdout.trim()));
+    }
+
+    let go_os = match lines[0].trim() {
+        "Linux" => "linux",
+        "Darwin" => "darwin",
+        "FreeBSD" => "freebsd",
+        other => return Err(format!("Unsupported remote OS: {}", other)),
+    };
+
+    let go_arch = match lines[1].trim() {
+        "x86_64" | "amd64" => "amd64",
+        "aarch64" | "arm64" => "arm64",
+        "armv7l" => "arm",
+        other => return Err(format!("Unsupported remote architecture: {}", other)),
+    };
+
+    Ok(RemotePlatform {
+        go_os: go_os.to_string(),
+        go_arch: go_arch.to_string(),
+    })
+}
+
+/// Versioned path where the daemon binary is installed on the remote host.
+pub fn remote_daemon_path(version: &str, platform: &RemotePlatform) -> String {
+    format!(
+        "~/.jmux/bin/jmuxd-remote/{}/{}-{}/jmuxd-remote",
+        version, platform.go_os, platform.go_arch,
+    )
+}
+
+/// Check if the daemon binary exists on the remote host.
+pub fn check_remote_binary(ssh_args: &[String], remote_path: &str) -> bool {
+    let output =
+        ssh_command(ssh_args, &format!("test -x {} && echo OK", remote_shell_path(remote_path)), 6)
+            .output();
+
+    match output {
+        Ok(out) => out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "OK",
+        Err(_) => false,
+    }
+}
+
+/// Build the daemon binary locally from Go source.
+///
+/// Requires Go toolchain installed. Builds for the target platform.
+/// Returns the path to the built binary.
+pub fn build_daemon_locally(
+    platform: &RemotePlatform,
+    go_source_dir: &str,
+) -> Result<String, String> {
+    // SAFETY: getuid() is always safe.
+    let uid = unsafe { libc::getuid() };
+    let output_path = format!(
+        "/tmp/jmuxd-remote-{uid}-{}-{}",
+        platform.go_os, platform.go_arch
+    );
+
+    tracing::info!(
+        go_os = %platform.go_os,
+        go_arch = %platform.go_arch,
+        source = go_source_dir,
+        output = %output_path,
+        "Building jmuxd-remote from Go source"
+    );
+
+    let status = Command::new("go")
+        .arg("build")
+        .arg("-o")
+        .arg(&output_path)
+        .arg("./cmd/jmuxd-remote")
+        .env("GOOS", &platform.go_os)
+        .env("GOARCH", &platform.go_arch)
+        .env("CGO_ENABLED", "0")
+        .current_dir(go_source_dir)
+        .status()
+        .map_err(|e| format!("Failed to run go build: {}", e))?;
+
+    if !status.success() {
+        return Err("go build failed".to_string());
+    }
+
+    Ok(output_path)
+}
+
+/// Render a remote path that may begin with `~/` into a shell token the remote
+/// shell will expand to an absolute path. `shell_escape::escape` quotes the
+/// leading tilde, which defeats expansion — the shell then creates/looks up a
+/// literal `~` directory instead of `$HOME`. Expand `~/` to `"$HOME"/` and
+/// escape only the remainder so a path like `~/.jmux/bin/x` resolves correctly.
+pub(crate) fn remote_shell_path(path: &str) -> String {
+    if path == "~" {
+        return "\"$HOME\"".to_string();
+    }
+    match path.strip_prefix("~/") {
+        Some(rest) => format!("\"$HOME\"/{}", shell_escape::escape(rest.into())),
+        None => shell_escape::escape(path.into()).into_owned(),
+    }
+}
+
+/// Render a remote path for an `scp` destination (`host:<path>`). Since OpenSSH
+/// 9.0, `scp` speaks the SFTP protocol by default and the SFTP server does NOT
+/// perform shell tilde expansion — a destination like `host:~/.jmux/bin/x` is
+/// written to a *literal* `~` directory under `$HOME` (the `~/~/.jmux/…` bug),
+/// unlike `mkdir`/`chmod` which run through the remote shell via
+/// [`remote_shell_path`]. SFTP resolves relative paths against the user's home,
+/// so strip a leading `~/` and hand scp a home-relative path; this also works
+/// with the legacy scp protocol, whose start directory is likewise `$HOME`.
+pub(crate) fn remote_scp_path(path: &str) -> String {
+    if path == "~" {
+        return ".".to_string();
+    }
+    path.strip_prefix("~/").unwrap_or(path).to_string()
+}
+
+/// Build an `ssh` command that runs a single one-shot remote shell command with
+/// the shared hardening flags (`-T -S none -o ConnectTimeout=<secs>`). All the
+/// one-shot probes (uname, mkdir, chmod, test, relay metadata, port scan) go
+/// through this so the flag set lives in one place. The long-lived reverse
+/// tunnel needs different flags (`-N -R`, ExitOnForwardFailure) and is built
+/// inline in relay.rs.
+pub(crate) fn ssh_command(ssh_args: &[String], remote_cmd: &str, connect_timeout: u32) -> Command {
+    let mut cmd = Command::new("ssh");
+    cmd.args(["-T", "-S", "none"])
+        .arg("-o")
+        .arg(format!("ConnectTimeout={connect_timeout}"))
+        // One-shot probes need no port forwarding; clear the user's
+        // ~/.ssh/config LocalForward/RemoteForward so they don't bind (and
+        // collide on) the interactive session's forwarded ports.
+        .args(["-o", "ClearAllForwardings=yes"])
+        .args(ssh_args)
+        .arg(remote_cmd);
+    cmd
+}
+
+/// Upload a local binary to the remote host via scp.
+pub fn upload_daemon(
+    ssh_args: &[String],
+    local_path: &str,
+    remote_path: &str,
+) -> Result<(), String> {
+    // Create remote directory
+    let dir = remote_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("~");
+    let mkdir_status = ssh_command(ssh_args, &format!("mkdir -p {}", remote_shell_path(dir)), 6)
+        .status()
+        .map_err(|e| format!("Failed to create remote directory: {}", e))?;
+
+    if !mkdir_status.success() {
+        return Err("Failed to create remote directory".to_string());
+    }
+
+    // Build scp destination from ssh_args (extract destination)
+    let destination = ssh_args.last().ok_or("No SSH destination in args")?;
+
+    // Translate the SSH options (everything before the trailing destination) into
+    // their scp equivalents. scp shares ssh's -i identity and -o KEY=VAL options,
+    // but spells the port -P instead of -p and has no agent-forwarding flag, so -A
+    // is dropped (it isn't needed to copy a file). Forwarding -o is essential:
+    // options like ProxyJump/User/StrictHostKeyChecking are what let the earlier
+    // ssh probe reach the host, and scp fails without them.
+    let opts = &ssh_args[..ssh_args.len() - 1];
+    let mut scp_args: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < opts.len() {
+        match opts[i].as_str() {
+            "-p" if i + 1 < opts.len() => {
+                scp_args.push("-P".to_string()); // scp uses -P, not -p
+                scp_args.push(opts[i + 1].clone());
+                i += 2;
+            }
+            "-i" if i + 1 < opts.len() => {
+                scp_args.push("-i".to_string());
+                scp_args.push(opts[i + 1].clone());
+                i += 2;
+            }
+            "-o" if i + 1 < opts.len() => {
+                scp_args.push("-o".to_string());
+                scp_args.push(opts[i + 1].clone());
+                i += 2;
+            }
+            // -A (agent forwarding) has no scp equivalent; skip it and its absence.
+            _ => i += 1,
+        }
+    }
+
+    // Use a home-relative destination: modern scp (SFTP mode) won't expand a
+    // leading `~`, which would upload the binary into a literal `~` directory.
+    let scp_dest = format!("{}:{}", destination, remote_scp_path(remote_path));
+
+    tracing::info!(
+        local = local_path,
+        remote = %scp_dest,
+        "Uploading daemon binary"
+    );
+
+    let status = Command::new("scp")
+        .args(&scp_args)
+        .arg(local_path)
+        .arg(&scp_dest)
+        .status()
+        .map_err(|e| format!("scp failed: {}", e))?;
+
+    if !status.success() {
+        return Err("scp upload failed".to_string());
+    }
+
+    // Make executable
+    let chmod_status =
+        ssh_command(ssh_args, &format!("chmod +x {}", remote_shell_path(remote_path)), 6)
+            .status()
+            .map_err(|e| format!("chmod failed: {}", e))?;
+
+    if !chmod_status.success() {
+        return Err("Failed to chmod daemon binary".to_string());
+    }
+
+    Ok(())
+}
+
+/// Full bootstrap flow: probe → check → build → upload → verify path.
+///
+/// Returns the remote daemon path on success.
+pub fn bootstrap_daemon(ssh_args: &[String]) -> Result<String, String> {
+    let version = daemon_version();
+
+    // Step 1: Probe platform
+    tracing::info!("Probing remote platform...");
+    let platform = probe_platform(ssh_args)?;
+    tracing::info!(os = %platform.go_os, arch = %platform.go_arch, "Remote platform detected");
+
+    // Step 2: Check if binary exists
+    let remote_path = remote_daemon_path(&version, &platform);
+    if check_remote_binary(ssh_args, &remote_path) {
+        tracing::info!("Remote daemon binary already exists at {}", remote_path);
+        return Ok(remote_path);
+    }
+
+    // Step 3: Find or build local binary
+    let local_binary = find_or_build_local_binary(&platform)?;
+
+    // Step 4: Upload
+    upload_daemon(ssh_args, &local_binary, &remote_path)?;
+    tracing::info!("Daemon uploaded to {}", remote_path);
+
+    Ok(remote_path)
+}
+
+/// Find a pre-built binary or build from Go source.
+fn find_or_build_local_binary(platform: &RemotePlatform) -> Result<String, String> {
+    // Priority 1: JMUX_REMOTE_DAEMON_BINARY env var
+    if let Ok(path) = std::env::var("JMUX_REMOTE_DAEMON_BINARY") {
+        if std::path::Path::new(&path).exists() {
+            tracing::info!("Using explicit daemon binary: {}", path);
+            return Ok(path);
+        }
+    }
+
+    // Priority 2: Pre-built binary in cache
+    let version = daemon_version();
+    if let Some(cache_dir) = dirs::cache_dir() {
+        let cached = cache_dir
+            .join("jmux")
+            .join("remote-daemons")
+            .join(&version)
+            .join(format!("{}-{}", platform.go_os, platform.go_arch))
+            .join("jmuxd-remote");
+        if cached.exists() {
+            tracing::info!("Using cached daemon binary: {}", cached.display());
+            return Ok(cached.to_string_lossy().to_string());
+        }
+    }
+
+    // Priority 3: Download from GitHub Releases
+    let version = daemon_version();
+    match download_from_github_releases(&version, platform) {
+        Ok(path) => return Ok(path),
+        Err(e) => tracing::warn!("GitHub Releases download failed (non-fatal): {e}"),
+    }
+
+    // Priority 4: Build from Go source (developer fallback)
+    let go_source = find_go_source_dir()?;
+    build_daemon_locally(platform, &go_source)
+}
+
+/// Download the daemon binary for the target platform from GitHub Releases.
+///
+/// On success, writes to the XDG cache directory (same path that Priority 2
+/// checks), so subsequent runs avoid the download entirely.
+fn download_from_github_releases(
+    version: &str,
+    platform: &RemotePlatform,
+) -> Result<String, String> {
+    let asset_name = format!("jmuxd-remote-{}-{}", platform.go_os, platform.go_arch);
+    let url = format!(
+        "https://github.com/manaflow-ai/jmux/releases/download/v{version}/{asset_name}"
+    );
+
+    tracing::info!(%url, "Downloading jmuxd-remote from GitHub Releases");
+
+    let response = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("HTTP GET {url}: {e}"))?;
+
+    let body = response
+        .into_body()
+        .read_to_vec()
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
+
+    if body.is_empty() {
+        return Err("Downloaded binary is empty".to_string());
+    }
+
+    tracing::info!(bytes = body.len(), "Downloaded {asset_name}");
+
+    // Verify SHA-256 — mandatory except when the manifest itself is unreachable
+    // (offline / air-gapped environments).  Any other failure (hash mismatch,
+    // asset not listed) is a hard error to prevent MITM binary substitution.
+    match verify_sha256(version, &asset_name, &body) {
+        Ok(()) => {}
+        Err(e)
+            if e.starts_with("Failed to fetch checksums")
+                || e.starts_with("Failed to read manifest") =>
+        {
+            tracing::error!("SHA-256 manifest unreachable, proceeding without verification: {e}");
+        }
+        Err(e) => {
+            return Err(format!("SHA-256 verification failed: {e}"));
+        }
+    }
+
+    // Write to cache so subsequent runs hit Priority 2 instead.
+    let cache_dir = dirs::cache_dir()
+        .ok_or("Cannot determine XDG cache directory")?
+        .join("jmux")
+        .join("remote-daemons")
+        .join(version)
+        .join(format!("{}-{}", platform.go_os, platform.go_arch));
+
+    std::fs::create_dir_all(&cache_dir).map_err(|e| format!("Cannot create cache dir: {e}"))?;
+
+    let final_path = cache_dir.join("jmuxd-remote");
+    let tmp_path = cache_dir.join("jmuxd-remote.tmp");
+
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        // Remove any existing tmp file so O_EXCL (create_new) won't fail and
+        // won't follow a symlink that may have been planted at the path.
+        let _ = std::fs::remove_file(&tmp_path);
+        let mut f = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o755)
+            .open(&tmp_path)
+            .map_err(|e| format!("Cannot write temp file: {e}"))?;
+        f.write_all(&body)
+            .map_err(|e| format!("Cannot write binary data: {e}"))?;
+    }
+
+    std::fs::rename(&tmp_path, &final_path)
+        .map_err(|e| format!("Cannot rename temp to final: {e}"))?;
+
+    tracing::info!(path = %final_path.display(), "Cached jmuxd-remote binary");
+    Ok(final_path.to_string_lossy().to_string())
+}
+
+/// Verify the binary against the SHA-256 manifest published with the release.
+fn verify_sha256(version: &str, asset_name: &str, data: &[u8]) -> Result<(), String> {
+    let manifest_url = format!(
+        "https://github.com/manaflow-ai/jmux/releases/download/v{version}/checksums-sha256.txt"
+    );
+
+    let response = ureq::get(&manifest_url)
+        .call()
+        .map_err(|e| format!("Failed to fetch checksums manifest: {e}"))?;
+
+    let body = response
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read manifest: {e}"))?;
+
+    for line in body.lines() {
+        // Format: "<sha256>  <filename>"
+        let mut parts = line.splitn(2, |c: char| c.is_whitespace());
+        let hash = parts.next().unwrap_or("").trim();
+        let name = parts.next().unwrap_or("").trim();
+        if name == asset_name {
+            use sha2::Digest;
+            let actual = sha2::Sha256::digest(data)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            if actual != hash {
+                return Err(format!(
+                    "SHA-256 mismatch for {asset_name}: expected {hash}, got {actual}"
+                ));
+            }
+            tracing::info!("SHA-256 verified for {asset_name}");
+            return Ok(());
+        }
+    }
+
+    Err(format!(
+        "{asset_name} not found in checksums manifest for v{version}"
+    ))
+}
+
+/// Find the Go source directory for jmuxd-remote.
+fn find_go_source_dir() -> Result<String, String> {
+    let candidates: &[std::path::PathBuf] = &[
+        // 1. Vendored source in this repository (daemon/remote/ at repo root).
+        //    CARGO_MANIFEST_DIR is jmux/jmux at compile time, so go up two levels.
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../daemon/remote"),
+        // 2. Legacy sibling repo location (~/src/jmux/daemon/remote).
+        dirs::home_dir()
+            .map(|h| h.join("src/jmux/daemon/remote"))
+            .unwrap_or_default(),
+    ];
+
+    for candidate in candidates {
+        if candidate.join("go.mod").exists() {
+            return Ok(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    Err(
+        "Cannot find jmuxd-remote Go source. Set JMUX_REMOTE_DAEMON_BINARY, \
+         ensure daemon/remote/ exists in the repository, or connect to the internet \
+         so the binary can be downloaded from GitHub Releases."
+            .to_string(),
+    )
+}
+
+/// The daemon version string used for binary caching and remote paths.
+fn daemon_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_remote_shell_path_expands_tilde() {
+        // A leading ~/ must become "$HOME"/… so the remote shell expands it;
+        // quoting the tilde (the old bug) created a literal `~` directory and
+        // broke the subsequent scp to the real $HOME path.
+        let p = remote_shell_path("~/.jmux/bin/jmuxd-remote/1.2.3/linux-amd64");
+        assert_eq!(p, "\"$HOME\"/.jmux/bin/jmuxd-remote/1.2.3/linux-amd64");
+        assert!(p.starts_with("\"$HOME\"/"), "got: {p}");
+        // Absolute paths are escaped as-is.
+        assert_eq!(remote_shell_path("/tmp/x"), "/tmp/x");
+        // A bare ~ expands to $HOME (not a quoted literal `~`).
+        assert_eq!(remote_shell_path("~"), "\"$HOME\"");
+        // A space in the remainder is quoted, but the tilde still expands.
+        let q = remote_shell_path("~/a b");
+        assert!(q.starts_with("\"$HOME\"/") && q.contains("'a b'"), "got: {q}");
+    }
+
+    #[test]
+    fn test_remote_scp_path_strips_tilde() {
+        // Modern scp speaks SFTP and does NOT expand `~`, so a `host:~/…`
+        // destination writes to a literal `~` dir (the `~/~/.jmux/…` bug).
+        // The destination must be home-relative instead.
+        assert_eq!(
+            remote_scp_path("~/.jmux/bin/jmuxd-remote/1.2.3/linux-amd64/jmuxd-remote"),
+            ".jmux/bin/jmuxd-remote/1.2.3/linux-amd64/jmuxd-remote"
+        );
+        assert!(!remote_scp_path("~/.jmux/bin/x").starts_with('~'), "tilde must be stripped");
+        // A bare ~ becomes the home directory itself.
+        assert_eq!(remote_scp_path("~"), ".");
+        // Absolute and already-relative paths pass through unchanged.
+        assert_eq!(remote_scp_path("/tmp/x"), "/tmp/x");
+        assert_eq!(remote_scp_path(".jmux/bin/x"), ".jmux/bin/x");
+    }
+
+    #[test]
+    fn test_remote_daemon_path_format() {
+        let platform = RemotePlatform {
+            go_os: "linux".to_string(),
+            go_arch: "amd64".to_string(),
+        };
+        let path = remote_daemon_path("1.2.3", &platform);
+        assert_eq!(
+            path,
+            "~/.jmux/bin/jmuxd-remote/1.2.3/linux-amd64/jmuxd-remote"
+        );
+    }
+
+    #[test]
+    fn test_remote_daemon_path_darwin_arm64() {
+        let platform = RemotePlatform {
+            go_os: "darwin".to_string(),
+            go_arch: "arm64".to_string(),
+        };
+        let path = remote_daemon_path("0.62.0-alpha.8", &platform);
+        assert_eq!(
+            path,
+            "~/.jmux/bin/jmuxd-remote/0.62.0-alpha.8/darwin-arm64/jmuxd-remote"
+        );
+    }
+}

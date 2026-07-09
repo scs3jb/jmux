@@ -11,13 +11,13 @@ It focuses on architecture, state ownership, integration boundaries, and release
 
 The current direction is correct.
 
-- `cmux` owns attention flow, workspace state, unread routing, and terminal widget identity.
+- `jmux` owns attention flow, workspace state, unread routing, and terminal widget identity.
 - `ghostty-gtk` owns GTK adaptation: GL context, viewport, resize propagation, IME, focus, scroll, and input forwarding.
 - `ghostty` core owns renderer policy and PTY/render lifecycle.
 
 The most important design conclusion from this round is:
 
-> The resize freeze was not a `cmux` layout bug. It was an embedded renderer policy bug in Ghostty.
+> The resize freeze was not a `jmux` layout bug. It was an embedded renderer policy bug in Ghostty.
 
 That matters because it validates the current layer boundaries. We should keep the fix in the renderer layer, not paper over it in the GTK host.
 
@@ -48,7 +48,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant Agent as Codex / Claude Code
-    participant Socket as cmux socket API
+    participant Socket as jmux socket API
     participant Model as SharedState
     participant UI as GTK UI
     participant User as Operator
@@ -86,14 +86,14 @@ That is the right layer for the fix because the behavior is a renderer presentat
 
 ## What Is Architecturally Sound
 
-### 1. Terminal widget caching belongs in `cmux`
+### 1. Terminal widget caching belongs in `jmux`
 
-`cmux` now preserves terminal widget identity by `panel_id` in [app.rs](../cmux/src/app.rs).
+`jmux` now preserves terminal widget identity by `panel_id` in [app.rs](../jmux/src/app.rs).
 
 That is the correct ownership model:
 
-- workspace/panel identity is a `cmux` concern
-- surface reuse policy is a `cmux` concern
+- workspace/panel identity is a `jmux` concern
+- surface reuse policy is a `jmux` concern
 - `ghostty` should not know about workspace switching
 
 The cache also prevents state loss across sidebar refreshes and workspace switches.
@@ -131,18 +131,18 @@ That means the verified resize fix is still not self-contained in an upstream-re
 
 Impact:
 
-- pushing only the `cmux-linux` PR does not fully reproduce the working behavior
+- pushing only the `jmux-linux` PR does not fully reproduce the working behavior
 - review becomes misleading if the Ghostty dependency is not called out explicitly
 
 Recommendation:
 
 - do not hide this dependency
 - split the Ghostty renderer fix into its own branch/PR if it is not already isolated
-- make the `cmux-linux` PR explicitly depend on that Ghostty change
+- make the `jmux-linux` PR explicitly depend on that Ghostty change
 
 ### ~~P2: UI event delivery still uses 33ms polling~~ (RESOLVED)
 
-**Resolved.** [window.rs](../cmux/src/ui/window.rs) now uses `glib::MainContext::default().spawn_local()` with async `recv().await` on a tokio mpsc channel. No more 33ms polling — events are delivered immediately when they arrive. The `try_recv()` is only used in a drain loop after the initial async wake to batch multiple pending events.
+**Resolved.** [window.rs](../jmux/src/ui/window.rs) now uses `glib::MainContext::default().spawn_local()` with async `recv().await` on a tokio mpsc channel. No more 33ms polling — events are delivered immediately when they arrive. The `try_recv()` is only used in a drain loop after the initial async wake to batch multiple pending events.
 
 ### P2: Focus recovery is intentionally heuristic
 
@@ -174,30 +174,30 @@ This is not blocking the MVP review, but it is not release-finished.
 
 ## Recommended Branch Strategy
 
-Because this work spans `cmux-linux` and external `ghostty`, the branch strategy should make that explicit.
+Because this work spans `jmux-linux` and external `ghostty`, the branch strategy should make that explicit.
 
 ```mermaid
 flowchart TD
     Base["main / upstream base"]
-    CmuxPR["cmux-linux PR branch\nreviewable branch"]
-    Dev["cmux-linux dev branch\nunsafe / iterative work"]
+    JmuxPR["jmux-linux PR branch\nreviewable branch"]
+    Dev["jmux-linux dev branch\nunsafe / iterative work"]
     GhosttyDev["ghostty dev branch\nembedded renderer fixes"]
     GhosttyPR["ghostty PR branch"]
 
-    Base --> CmuxPR
-    CmuxPR --> Dev
+    Base --> JmuxPR
+    JmuxPR --> Dev
     Base --> GhosttyDev
     GhosttyDev --> GhosttyPR
-    Dev -->|cherry-pick stable commits| CmuxPR
+    Dev -->|cherry-pick stable commits| JmuxPR
 ```
 
 Recommended workflow:
 
 1. keep `#828` as the clean review branch
-2. create a separate `cmux-linux` dev branch for ongoing experiments
+2. create a separate `jmux-linux` dev branch for ongoing experiments
 3. create a separate Ghostty branch for embedded renderer changes
 4. cherry-pick only stable commits back to the review branch
-5. link the `cmux-linux` PR to the Ghostty PR explicitly
+5. link the `jmux-linux` PR to the Ghostty PR explicitly
 
 ## Review Conclusion
 
@@ -205,20 +205,20 @@ The current MVP architecture is directionally correct.
 
 The key positive result is that the layers are finally telling the truth:
 
-- `cmux` handles attention and workspace semantics
+- `jmux` handles attention and workspace semantics
 - `ghostty-gtk` handles GTK adaptation
 - `ghostty` handles rendering policy
 
-The main release risk is not bad architecture inside `cmux`.
+The main release risk is not bad architecture inside `jmux`.
 The main release risk is cross-repo coupling: a required runtime fix currently lives in Ghostty, outside the PR branch that would be reviewed first.
 
 ## Push Recommendation
 
-Do not push the current `cmux-linux` branch as if it were self-contained.
+Do not push the current `jmux-linux` branch as if it were self-contained.
 
 Push plan:
 
 1. split the Ghostty embedded resize fix into its own branch
-2. keep the `cmux-linux` PR branch review-clean
+2. keep the `jmux-linux` PR branch review-clean
 3. mention the cross-repo dependency in the PR description
 4. only then push the PR branch

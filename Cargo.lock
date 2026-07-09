@@ -232,53 +232,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
-name = "cmux"
-version = "0.62.0-alpha.16"
-dependencies = [
- "anyhow",
- "base64",
- "dirs",
- "gdk-pixbuf",
- "gdk4",
- "ghostty-gtk",
- "ghostty-sys",
- "gio",
- "glib",
- "gtk4",
- "gtk4-layer-shell",
- "hmac",
- "libadwaita",
- "libc",
- "pulldown-cmark",
- "serde",
- "serde_json",
- "sha2",
- "shell-escape",
- "soup3",
- "syntect",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "uuid",
- "webkit6",
-]
-
-[[package]]
-name = "cmux-cli"
-version = "0.62.0-alpha.16"
-dependencies = [
- "anyhow",
- "clap",
- "dirs",
- "libc",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1136,6 +1089,53 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "jmux"
+version = "0.62.0-alpha.16"
+dependencies = [
+ "anyhow",
+ "base64",
+ "dirs",
+ "gdk-pixbuf",
+ "gdk4",
+ "ghostty-gtk",
+ "ghostty-sys",
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "hmac",
+ "libadwaita",
+ "libc",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shell-escape",
+ "soup3",
+ "syntect",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "uuid",
+ "webkit6",
+]
+
+[[package]]
+name = "jmux-cli"
+version = "0.62.0-alpha.16"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dirs",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

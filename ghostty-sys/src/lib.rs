@@ -36,7 +36,7 @@ pub enum ghostty_platform_e {
     GHOSTTY_PLATFORM_INVALID = 0,
     GHOSTTY_PLATFORM_MACOS = 1,
     GHOSTTY_PLATFORM_IOS = 2,
-    GHOSTTY_PLATFORM_LINUX = 3, // Added for cmux-linux
+    GHOSTTY_PLATFORM_LINUX = 3, // Added for jmux-linux
 }
 
 #[repr(C)]
