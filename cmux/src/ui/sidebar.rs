@@ -1095,7 +1095,11 @@ fn create_group_header_row(
         ("Pink", "pink"),
         ("None", ""),
     ] {
-        color_menu.append(Some(label), Some(&format!("group.color.{color}")));
+        let item = gtk4::gio::MenuItem::new(Some(label), Some(&format!("group.color.{color}")));
+        if let Some(icon) = color_swatch_icon(color_css_value(color)) {
+            item.set_icon(&icon);
+        }
+        color_menu.append_item(&item);
     }
     menu.append_submenu(Some("Set Color"), &color_menu);
     menu.append(Some("New Workspace in Group"), Some("group.new-ws"));
@@ -1299,29 +1303,11 @@ fn setup_row_context_menu(
     );
     menu.append(Some("Rename"), Some(&format!("sidebar.rename.{index}")));
 
-    // Color submenu — 16-color palette matching macOS + custom color picker
+    // Color submenu — 16-color palette matching macOS + custom color picker.
+    // Each named color shows a live swatch icon so you see the color, not just
+    // its name.
     let color_menu = gtk4::gio::Menu::new();
-    for (label, color) in &[
-        ("Red", "red"),
-        ("Crimson", "crimson"),
-        ("Orange", "orange"),
-        ("Amber", "amber"),
-        ("Yellow", "yellow"),
-        ("Lime", "lime"),
-        ("Green", "green"),
-        ("Teal", "teal"),
-        ("Cyan", "cyan"),
-        ("Sky", "sky"),
-        ("Blue", "blue"),
-        ("Indigo", "indigo"),
-        ("Purple", "purple"),
-        ("Violet", "violet"),
-        ("Pink", "pink"),
-        ("Rose", "rose"),
-        ("None", ""),
-    ] {
-        color_menu.append(Some(label), Some(&format!("sidebar.color.{index}.{color}")));
-    }
+    append_color_items(&color_menu, |color| format!("sidebar.color.{index}.{color}"));
     color_menu.append(
         Some("Custom Color…"),
         Some(&format!("sidebar.custom-color.{index}")),
@@ -2053,6 +2039,60 @@ fn show_close_pinned_dialog(
         }
     });
     dialog.present(Some(window));
+}
+
+/// Build a small solid-color swatch texture for a `#rrggbb` string, to show
+/// next to a color's name in the "Set Color" menu (a GdkTexture is a GIcon, so
+/// it can be a menu item's icon). Returns None for empty/invalid input (e.g. the
+/// "None" entry), which then shows with no swatch.
+fn color_swatch_icon(hex: &str) -> Option<gdk4::Texture> {
+    let h = hex.strip_prefix('#')?;
+    if h.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+    const S: usize = 16;
+    let mut buf = Vec::with_capacity(S * S * 3);
+    for _ in 0..S * S {
+        buf.extend_from_slice(&[r, g, b]);
+    }
+    let bytes = glib::Bytes::from(&buf);
+    Some(
+        gdk4::MemoryTexture::new(S as i32, S as i32, gdk4::MemoryFormat::R8g8b8, &bytes, S * 3)
+            .upcast(),
+    )
+}
+
+/// Append a palette of named colors (each with a live swatch icon) plus a
+/// "None" entry to `color_menu`, wiring each to `action_for(color_key)`.
+fn append_color_items(color_menu: &gtk4::gio::Menu, action_for: impl Fn(&str) -> String) {
+    for (label, color) in &[
+        ("Red", "red"),
+        ("Crimson", "crimson"),
+        ("Orange", "orange"),
+        ("Amber", "amber"),
+        ("Yellow", "yellow"),
+        ("Lime", "lime"),
+        ("Green", "green"),
+        ("Teal", "teal"),
+        ("Cyan", "cyan"),
+        ("Sky", "sky"),
+        ("Blue", "blue"),
+        ("Indigo", "indigo"),
+        ("Purple", "purple"),
+        ("Violet", "violet"),
+        ("Pink", "pink"),
+        ("Rose", "rose"),
+        ("None", ""),
+    ] {
+        let item = gtk4::gio::MenuItem::new(Some(label), Some(&action_for(color)));
+        if let Some(icon) = color_swatch_icon(color_css_value(color)) {
+            item.set_icon(&icon);
+        }
+        color_menu.append_item(&item);
+    }
 }
 
 fn color_css_value(name: &str) -> &str {
