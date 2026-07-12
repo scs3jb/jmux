@@ -145,6 +145,11 @@ pub fn create_window(
 
     let new_ws_btn = gtk4::Button::from_icon_name("tab-new-symbolic");
     new_ws_btn.set_tooltip_text(Some("New Workspace"));
+    // Never let keyboard focus land here: after a content rebuild drops focus,
+    // this button is the first focusable widget, and a stray Space/Enter while
+    // typing would open a new tab (same precedent as the pane-tab close button).
+    new_ws_btn.set_can_focus(false);
+    new_ws_btn.set_focus_on_click(false);
     {
         let state = state.clone();
         let list_box = list_box.clone();
