@@ -180,8 +180,47 @@ pub fn create_sidebar(state: &Rc<AppState>) -> SidebarWidgets {
     }
 }
 
+thread_local! {
+    /// Render signature of each sidebar ListBox's last build, keyed by widget
+    /// pointer. Shell integration re-reports identical titles/pwds many times
+    /// per second; without this, every report tears down and rebuilds every
+    /// row (hundreds of widgets + closures). See the skip check below.
+    static SIDEBAR_SIGNATURES: std::cell::RefCell<std::collections::HashMap<usize, u64>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 /// Refresh the workspace list from shared state.
 pub fn refresh_sidebar(list_box: &gtk4::ListBox, state: &Rc<AppState>) {
+    // Skip the rebuild when nothing the sidebar renders has changed. The
+    // signature hashes the Debug form of every workspace and group plus the
+    // selection and display settings — deliberately over-inclusive (a change
+    // to a non-rendered field costs one extra rebuild, same as before this
+    // check; a missed field would mean stale UI, so we hash everything).
+    let signature = {
+        use std::hash::{Hash, Hasher};
+        let tab_manager = lock_or_recover(&state.shared.tab_manager);
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        tab_manager.selected_index().hash(&mut h);
+        for ws in tab_manager.iter() {
+            format!("{ws:?}").hash(&mut h);
+        }
+        for group in tab_manager.groups() {
+            format!("{group:?}").hash(&mut h);
+        }
+        format!("{:?}", crate::settings::load().sidebar).hash(&mut h);
+        h.finish()
+    };
+    let key = list_box.as_ptr() as usize;
+    let unchanged = SIDEBAR_SIGNATURES.with(|s| s.borrow().get(&key) == Some(&signature));
+    // An empty list means this ListBox was never built (or a new widget reused
+    // a freed address) — never skip the first build.
+    if unchanged && list_box.first_child().is_some() {
+        return;
+    }
+    SIDEBAR_SIGNATURES.with(|s| {
+        s.borrow_mut().insert(key, signature);
+    });
+
     // Unparent popover menus before removing rows to avoid GTK warnings
     // about finalized widgets with leftover children.
     while let Some(child) = list_box.first_child() {
