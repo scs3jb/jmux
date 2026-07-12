@@ -73,7 +73,7 @@ One shared wall-clock frame iterator per state keeps every octopus in phase acro
 
 ### Stream Deck Plus companion — your fleet on physical keys
 
-[deck](https://home.jacobbriggs.com/git/jbriggs/deck) mirrors the same octopus state model onto a **Stream Deck Plus**: each key is a jmux workspace (amber = needs input, blue = working, teal = waiting), press a key to focus it, and use the dials/touchscreen to switch Claude tabs and **answer questions without touching the keyboard**.
+**deck** (coming soon to a public mirror) mirrors the same octopus state model onto a **Stream Deck Plus**: each key is a jmux workspace (amber = needs input, blue = working, teal = waiting), press a key to focus it, and use the dials/touchscreen to switch Claude tabs and **answer questions without touching the keyboard**.
 
 ![Stream Deck Plus companion](docs/demos/streamdeck.gif)
 
@@ -187,7 +187,7 @@ Fuzzy command palette and workspace switcher. Define your own entries in `jmux.j
 
 ### AI agent workflow
 - **Sidebar Claude-state octopus** — animated sprite on each workspace row (hammering = working, sparkler = needs input, laptop = background task); classified from pane title + terminal text, most-urgent pane wins, hibernated agents excluded
-- **Stream Deck Plus companion** — [deck](https://home.jacobbriggs.com/git/jbriggs/deck) shows workspaces as keys with the live octopus state; press to focus, dials + touchscreen to pick Claude tabs and answer questions
+- **Stream Deck Plus companion** — **deck** (coming soon to a public mirror) shows workspaces as keys with the live octopus state; press to focus, dials + touchscreen to pick Claude tabs and answer questions
 - **Agent integrations** — `jmux claude-teams` & `jmux omo` open teammates/subagents as native panes via a tmux shim; `terminal-notifier` → `jmux notify`. Turnkey status/notification hooks: `jmux claude-hook` / `codex-hook` / `kiro-hook` / `cursor-hook` / `gemini-hook` (or generic `jmux agent hook … --cli <name>`)
 - **AI workspace auto-naming** — opt-in: name an untitled workspace from its agent transcript when the agent finishes (`jmux ai-name`, or auto via Settings; uses `ANTHROPIC_API_KEY`)
 - **Task Manager** — `jmux top` CPU/RAM monitor (also `jmux ps` for JSON)
