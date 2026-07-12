@@ -247,6 +247,97 @@ fn truncate_scrollback(text: &str) -> String {
     truncated[i..].to_string()
 }
 
+/// Overlay live `/proc` data onto a built snapshot: each local panel's real
+/// shell cwd and a `claude --resume <id>` fallback for panels whose Claude
+/// wasn't launched through the shell wrapper.
+///
+/// The stored `panel.directory` is only refreshed by shell-integration pwd
+/// reports (OSC-7), which never fire while a foreground agent (Claude) owns the
+/// terminal — so it can be frozen at the launch directory (often HOME), causing
+/// restored tabs to reopen in the wrong folder. Reading `/proc/<shell>/cwd`
+/// sidesteps that. Remote panels never appear in the local `/proc`, stay absent
+/// from both maps, and keep their stored directory / `--continue` fallback.
+///
+/// This does two full `/proc` walks plus transcript-directory reads, so it is
+/// deliberately separate from `create_snapshot`: the periodic autosave calls it
+/// on the writer thread, keeping the GTK main loop (and the global hotkey)
+/// free of `/proc` I/O. Pure data — safe off the main thread.
+pub fn enrich_snapshot_with_live_proc(snapshot: &mut AppSessionSnapshot) {
+    let live_panel_cwds = crate::session::claude_resume::all_local_panel_cwds();
+
+    // Resolve the exact Claude Code session id backing each local terminal panel
+    // so a restored tab can `claude --resume <id>` into its precise conversation
+    // (not the directory-level `--continue`, which collapses multiple same-dir
+    // tabs onto one session). One /proc walk maps panel -> claude cwd; per cwd we
+    // hand out transcripts newest-first so tabs sharing a directory get distinct
+    // sessions.
+    let claude_session_ids: std::collections::HashMap<uuid::Uuid, String> = {
+        let mut entries: Vec<(uuid::Uuid, String)> =
+            crate::session::claude_resume::all_local_claude_cwds()
+                .into_iter()
+                .collect();
+        // Stable claim order across saves (panel id is a fixed per-tab key).
+        entries.sort_by_key(|(id, _)| *id);
+        let mut ids_by_cwd: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        let mut next_idx: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut out = std::collections::HashMap::new();
+        for (panel_id, cwd) in entries {
+            let ids = ids_by_cwd
+                .entry(cwd.clone())
+                .or_insert_with(|| crate::session::claude_resume::session_ids_for_cwd(&cwd));
+            if ids.is_empty() {
+                continue;
+            }
+            let idx = next_idx.entry(cwd).or_insert(0);
+            // Claim the next-newest unclaimed transcript; if there are more tabs
+            // than transcripts, extra tabs share the oldest resolved id.
+            let pick = ids.get(*idx).or_else(|| ids.last()).cloned();
+            *idx += 1;
+            if let Some(id) = pick {
+                out.insert(panel_id, id);
+            }
+        }
+        out
+    };
+
+    for window in &mut snapshot.windows {
+        for ws in &mut window.tab_manager.workspaces {
+            for panel in &mut ws.panels {
+                // Override the stored directory with the shell's live cwd when we
+                // could read it (local terminal panels only).
+                if let Some(live_cwd) = live_panel_cwds.get(&panel.id) {
+                    panel.directory = Some(live_cwd.clone());
+                    if let Some(ref mut terminal) = panel.terminal {
+                        terminal.working_directory = Some(live_cwd.clone());
+                    }
+                }
+                // /proc-resolved resume fallback for a Claude that wasn't
+                // launched through the wrapper (wrapper-reported ids were
+                // already pinned in create_snapshot).
+                if panel.agent_session_id.is_none() {
+                    if let Some(id) = claude_session_ids.get(&panel.id) {
+                        panel.agent_session_id = Some(id.clone());
+                        panel.agent_resume_command = Some(format!("claude --resume {id}"));
+                    }
+                }
+            }
+            // Prefer the focused panel's live cwd for the workspace directory
+            // (falling back to any panel's live cwd, then the stored value) —
+            // same rationale as the per-panel override.
+            let live_dir = ws
+                .focused_panel_id
+                .and_then(|id| live_panel_cwds.get(&id))
+                .or_else(|| ws.panels.iter().find_map(|p| live_panel_cwds.get(&p.id)))
+                .cloned();
+            if let Some(dir) = live_dir {
+                ws.current_directory = dir;
+            }
+        }
+    }
+}
+
 /// Create a snapshot from the current application state.
 pub fn create_snapshot(
     state: &crate::app::AppState,
@@ -297,59 +388,11 @@ pub fn create_snapshot(
     let browser_history_map: std::collections::HashMap<uuid::Uuid, (Vec<String>, Vec<String>)> =
         Default::default();
 
-    // Authoritative live cwd per local terminal panel, read from /proc in one
-    // walk. The stored `panel.directory` is only refreshed by shell-integration
-    // pwd reports, which never fire while a foreground agent (Claude) owns the
-    // terminal — so it can be frozen at the launch directory (often HOME),
-    // causing restored tabs to reopen in the wrong folder and `claude --resume`
-    // to run in a directory where the session doesn't belong. Overriding with
-    // the shell's real cwd fixes both. Remote panels are absent (shell is on the
-    // far host) and keep their stored directory.
-    let live_panel_cwds = crate::session::claude_resume::all_local_panel_cwds();
-
     let tm = lock_or_recover(&state.shared.tab_manager);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64();
-
-    // Resolve the exact Claude Code session id backing each local terminal panel
-    // so a restored tab can `claude --resume <id>` into its precise conversation
-    // (not the directory-level `--continue`, which collapses multiple same-dir
-    // tabs onto one session). One /proc walk maps panel -> claude cwd; per cwd we
-    // hand out transcripts newest-first so tabs sharing a directory get distinct
-    // sessions. Remote panels' claude runs on the far host, never appears in the
-    // local /proc, and so is absent here — it keeps the `--continue` fallback.
-    let claude_session_ids: std::collections::HashMap<uuid::Uuid, String> = {
-        let mut entries: Vec<(uuid::Uuid, String)> =
-            crate::session::claude_resume::all_local_claude_cwds()
-                .into_iter()
-                .collect();
-        // Stable claim order across saves (panel id is a fixed per-tab key).
-        entries.sort_by_key(|(id, _)| *id);
-        let mut ids_by_cwd: std::collections::HashMap<String, Vec<String>> =
-            std::collections::HashMap::new();
-        let mut next_idx: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-        let mut out = std::collections::HashMap::new();
-        for (panel_id, cwd) in entries {
-            let ids = ids_by_cwd
-                .entry(cwd.clone())
-                .or_insert_with(|| crate::session::claude_resume::session_ids_for_cwd(&cwd));
-            if ids.is_empty() {
-                continue;
-            }
-            let idx = next_idx.entry(cwd).or_insert(0);
-            // Claim the next-newest unclaimed transcript; if there are more tabs
-            // than transcripts, extra tabs share the oldest resolved id.
-            let pick = ids.get(*idx).or_else(|| ids.last()).cloned();
-            *idx += 1;
-            if let Some(id) = pick {
-                out.insert(panel_id, id);
-            }
-        }
-        out
-    };
 
     // Helper: create a workspace snapshot with scrollback/browser data attached
     let make_ws_snapshot = |ws: &crate::model::workspace::Workspace| -> SessionWorkspaceSnapshot {
@@ -358,32 +401,16 @@ pub fn create_snapshot(
             .values()
             .map(|panel| {
                 let mut snapshot = SessionPanelSnapshot::from_panel(panel);
-                // Override the stored directory with the shell's live cwd when we
-                // could read it (local terminal panels only). Keeps restored tabs
-                // in the folder the shell is actually in, not a stale launch dir.
-                if let Some(live_cwd) = live_panel_cwds.get(&panel.id) {
-                    snapshot.directory = Some(live_cwd.clone());
-                    if let Some(ref mut terminal) = snapshot.terminal {
-                        terminal.working_directory = Some(live_cwd.clone());
-                    }
-                }
                 if let Some(ref mut terminal) = snapshot.terminal {
                     terminal.scrollback = scrollback_map.get(&panel.id).cloned();
                 }
-                // Pin the exact Claude session for this tab. Prefer the id the
-                // shell wrapper reported (already on the snapshot via from_panel);
-                // otherwise fall back to the local /proc resolution for a Claude
-                // that wasn't launched through the wrapper. Rewriting
-                // agent_resume_command reopens the same conversation on local
-                // restore (remote restore rebuilds its own ssh command from the
-                // id) and also activates resume for an idle Claude whose title no
-                // longer names it.
-                let session_id = snapshot
-                    .agent_session_id
-                    .clone()
-                    .or_else(|| claude_session_ids.get(&panel.id).cloned());
-                if let Some(id) = session_id {
-                    snapshot.agent_session_id = Some(id.clone());
+                // Pin the exact Claude session the shell wrapper reported.
+                // Rewriting agent_resume_command reopens the same conversation on
+                // local restore (remote restore rebuilds its own ssh command from
+                // the id) and also activates resume for an idle Claude whose
+                // title no longer names it. Panels without a wrapper-reported id
+                // get a /proc-resolved fallback in enrich_snapshot_with_live_proc.
+                if let Some(id) = snapshot.agent_session_id.clone() {
                     snapshot.agent_resume_command = Some(format!("claude --resume {id}"));
                 }
                 if let Some(ref mut browser) = snapshot.browser {
@@ -410,16 +437,9 @@ pub fn create_snapshot(
             snapshot
         };
 
-        // Prefer the focused panel's live cwd for the workspace directory (falling
-        // back to any panel's live cwd, then the stored value). Same rationale as
-        // the per-panel override: ws.current_directory is only moved by pwd
-        // reports and can be frozen at HOME while an agent holds the terminal.
-        let current_directory = ws
-            .focused_panel_id
-            .and_then(|id| live_panel_cwds.get(&id))
-            .or_else(|| ws.panels.keys().find_map(|id| live_panel_cwds.get(id)))
-            .cloned()
-            .unwrap_or_else(|| ws.current_directory.clone());
+        // The stored directory; enrich_snapshot_with_live_proc overrides it with
+        // the focused panel's live /proc cwd afterwards.
+        let current_directory = ws.current_directory.clone();
 
         SessionWorkspaceSnapshot {
             process_title: ws.process_title.clone(),

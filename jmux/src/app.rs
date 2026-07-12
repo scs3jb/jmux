@@ -728,7 +728,9 @@ pub fn run() -> i32 {
         app.connect_shutdown(move |_app| {
             // Save session before shutdown — capture full scrollback here (the
             // one place we pay that cost), so a clean quit/SIGTERM preserves it.
-            let snapshot = session::store::create_snapshot(&state, true);
+            // Blocking on the /proc walks is fine here: we're quitting anyway.
+            let mut snapshot = session::store::create_snapshot(&state, true);
+            session::store::enrich_snapshot_with_live_proc(&mut snapshot);
             if let Err(e) = session::store::save_session(&snapshot) {
                 tracing::error!("Failed to save session on shutdown: {}", e);
             }
@@ -868,6 +870,11 @@ fn first_launch_init(app: &adw::Application, state: &Rc<AppState>, quake: bool) 
             static AUTOSAVE_WRITING: AtomicBool = AtomicBool::new(false);
             if !AUTOSAVE_WRITING.swap(true, Ordering::AcqRel) {
                 std::thread::spawn(move || {
+                    // The /proc walks (live cwds, claude session resolution)
+                    // also live on this thread — they read hundreds of files
+                    // and would hitch the main loop just like the fsync.
+                    let mut snapshot = snapshot;
+                    session::store::enrich_snapshot_with_live_proc(&mut snapshot);
                     if let Err(e) = session::store::save_session(&snapshot) {
                         tracing::warn!("Autosave failed: {}", e);
                     }
@@ -905,7 +912,8 @@ fn first_launch_init(app: &adw::Application, state: &Rc<AppState>, quake: bool) 
                         rss / (1024 * 1024),
                         threshold_mb
                     );
-                    let snapshot = session::store::create_snapshot(&state, true);
+                    let mut snapshot = session::store::create_snapshot(&state, true);
+                    session::store::enrich_snapshot_with_live_proc(&mut snapshot);
                     if let Err(e) = session::store::save_session(&snapshot) {
                         tracing::error!("Watchdog save failed: {}", e);
                     }
