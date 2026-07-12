@@ -1,0 +1,9 @@
+# Build/install manifest for /jb:build-install (see CLAUDE.md §Building —
+# NEVER plain `cargo build --release` for anything that will be installed).
+BUILD=cargo build --release --features jmux/link-ghostty,jmux/quick-terminal
+# Same check install.sh performs: the quick-terminal/global-hotkey portal
+# symbol must be in the binary, or the feature was silently dropped.
+VERIFY=grep -aqF org.freedesktop.portal.GlobalShortcuts target/release/jmux-app
+INSTALL=sudo bash scripts/install.sh
+RUNNING_CHECK=pgrep -x jmux-app
+VERSION_FILE=jmux/Cargo.toml
