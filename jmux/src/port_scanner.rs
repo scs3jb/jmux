@@ -30,7 +30,10 @@ fn scanner_loop(shared: Arc<SharedState>) {
         match scan_and_update(&shared) {
             Ok(changed) => {
                 if changed {
-                    shared.notify_ui_refresh();
+                    // Ports are sidebar metadata — a full rebuild_content here
+                    // would unparent the focused terminal and drop keyboard
+                    // focus mid-typing.
+                    shared.notify_metadata_refresh();
                 }
             }
             Err(e) => {
@@ -65,11 +68,13 @@ fn scan_and_update(shared: &Arc<SharedState>) -> Result<bool, Box<dyn std::error
         return Ok(clear_all_ports(shared));
     }
 
-    // Step 3: Map inodes → PIDs by scanning /proc/*/fd.
-    let inode_to_pids = map_inodes_to_pids(&listening_inodes)?;
+    // Step 3: Resolve every PID's cwd (one readlink each) and keep only PIDs
+    // whose cwd is under a panel directory. Only those can ever match in step 5,
+    // so this avoids readlinking every fd of every process on the system.
+    let pid_cwds = collect_candidate_pid_cwds(&workspace_dirs)?;
 
-    // Step 4: Map PIDs → cwds.
-    let pid_cwds = resolve_pid_cwds(&inode_to_pids);
+    // Step 4: Map inodes → PIDs by scanning only the candidate PIDs' fds.
+    let inode_to_pids = map_inodes_to_pids(&listening_inodes, &pid_cwds);
 
     // Step 5: For each (inode, port), find matching panel via PID cwd → panel directory.
     let mut panel_ports: HashMap<uuid::Uuid, Vec<u16>> = HashMap::new();
@@ -178,12 +183,14 @@ fn parse_tcp_line(line: &str) -> Option<(u64, u16)> {
     Some((inode, port))
 }
 
-/// Scan /proc/*/fd to find which PIDs own which socket inodes.
-fn map_inodes_to_pids(
-    listening_inodes: &[(u64, u16)],
-) -> Result<HashMap<u64, Vec<u32>>, std::io::Error> {
-    let target_inodes: HashSet<u64> = listening_inodes.iter().map(|(inode, _)| *inode).collect();
-    let mut inode_to_pids: HashMap<u64, Vec<u32>> = HashMap::new();
+/// Readlink /proc/*/cwd for every process and keep only PIDs whose cwd is
+/// under one of the panel directories. This is one readlink per process,
+/// versus one per *fd* per process if we scanned fds first — the cwd filter
+/// discards almost everything before the expensive fd walk.
+fn collect_candidate_pid_cwds(
+    workspace_dirs: &[(uuid::Uuid, String)],
+) -> Result<HashMap<u32, String>, std::io::Error> {
+    let mut result = HashMap::new();
 
     let proc_dir = fs::read_dir("/proc")?;
     for entry in proc_dir.flatten() {
@@ -194,6 +201,31 @@ fn map_inodes_to_pids(
             Err(_) => continue,
         };
 
+        let cwd_link = format!("/proc/{pid}/cwd");
+        let Ok(cwd) = fs::read_link(Path::new(&cwd_link)) else {
+            continue;
+        };
+        let cwd = cwd.to_string_lossy().into_owned();
+        if workspace_dirs
+            .iter()
+            .any(|(_, dir)| cwd.starts_with(dir.as_str()))
+        {
+            result.insert(pid, cwd);
+        }
+    }
+
+    Ok(result)
+}
+
+/// Scan the candidate PIDs' fds to find which of them own which socket inodes.
+fn map_inodes_to_pids(
+    listening_inodes: &[(u64, u16)],
+    pid_cwds: &HashMap<u32, String>,
+) -> HashMap<u64, Vec<u32>> {
+    let target_inodes: HashSet<u64> = listening_inodes.iter().map(|(inode, _)| *inode).collect();
+    let mut inode_to_pids: HashMap<u64, Vec<u32>> = HashMap::new();
+
+    for &pid in pid_cwds.keys() {
         let fd_path = format!("/proc/{pid}/fd");
         let fd_dir = match fs::read_dir(&fd_path) {
             Ok(dir) => dir,
@@ -220,20 +252,5 @@ fn map_inodes_to_pids(
         }
     }
 
-    Ok(inode_to_pids)
-}
-
-/// Resolve PID cwds from /proc/*/cwd symlinks.
-fn resolve_pid_cwds(inode_to_pids: &HashMap<u64, Vec<u32>>) -> HashMap<u32, String> {
-    let all_pids: HashSet<u32> = inode_to_pids.values().flatten().copied().collect();
-    let mut result = HashMap::new();
-
-    for pid in all_pids {
-        let cwd_link = format!("/proc/{pid}/cwd");
-        if let Ok(cwd) = fs::read_link(Path::new(&cwd_link)) {
-            result.insert(pid, cwd.to_string_lossy().into_owned());
-        }
-    }
-
-    result
+    inode_to_pids
 }
