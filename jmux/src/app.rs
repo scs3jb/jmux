@@ -68,8 +68,22 @@ impl AppState {
         working_directory: Option<&str>,
         command: Option<&str>,
     ) -> ghostty_gtk::surface::GhosttyGlSurface {
-        if let Some(surface) = self.terminal_cache.borrow().get(&panel_id) {
-            return surface.clone();
+        // Reuse a cached surface — but only return it as-is when it was
+        // actually initialized. A surface built before ghostty_app existed
+        // never wired its spawn path (initialize_with_env was skipped below),
+        // and handing it back uninitialized forever is the "all terminals
+        // blank" failure that forced the GtkStack revert (8bb1ab3). Fall
+        // through instead and initialize it now.
+        let cached = self.terminal_cache.borrow().get(&panel_id).cloned();
+        if let Some(surface) = &cached {
+            if surface.is_initialized() {
+                return surface.clone();
+            }
+            tracing::warn!(
+                %panel_id,
+                "cached terminal surface was never initialized (built before \
+                 ghostty init) — initializing it now"
+            );
         }
 
         // Guard against malformed launch commands: a command that is blank or
@@ -89,9 +103,12 @@ impl AppState {
             other => other,
         };
 
-        let gl_surface = ghostty_gtk::surface::GhosttyGlSurface::new();
-        gl_surface.set_hexpand(true);
-        gl_surface.set_vexpand(true);
+        let gl_surface = cached.unwrap_or_else(|| {
+            let s = ghostty_gtk::surface::GhosttyGlSurface::new();
+            s.set_hexpand(true);
+            s.set_vexpand(true);
+            s
+        });
 
         // Match the grace-period background to the terminal theme color.
         // Priority: Omarchy theme > ghostty config background > default black.
@@ -194,6 +211,15 @@ impl AppState {
 
         if let Some(app) = self.ghostty_app.borrow().as_ref() {
             gl_surface.initialize_with_env(app.raw(), working_directory, command, &env_vars);
+        } else {
+            // The uninitialized surface is still cached (widget identity must
+            // be stable), but is_initialized() stays false, so the next call
+            // and the page-rebuild signature both know to finish the job.
+            tracing::warn!(
+                %panel_id,
+                "terminal surface built before ghostty init — shell spawn deferred \
+                 to the next rebuild"
+            );
         }
 
         self.terminal_cache

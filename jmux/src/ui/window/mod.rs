@@ -539,6 +539,44 @@ fn workspace_signature(
     h.finish()
 }
 
+/// The page signature actually cached: `workspace_signature` plus the *build
+/// environment* — whether ghostty is initialized and whether each terminal
+/// panel has an initialized surface. A page built before ghostty came up (or
+/// whose surfaces were pruned) produces widgets that can never spawn a shell;
+/// without these bits its signature would match forever and the page would
+/// never be rebuilt — the "all terminals blank" regression that forced the
+/// first landing of the GtkStack to be reverted (8bb1ab3). Recompute this
+/// *after* a build when recording it, so the surfaces created by the build
+/// don't immediately invalidate their own page.
+fn page_signature(
+    state: &Rc<AppState>,
+    layout: &crate::model::panel::LayoutNode,
+    panels: &std::collections::HashMap<uuid::Uuid, Panel>,
+    effective_attention: Option<uuid::Uuid>,
+    zoomed_panel_id: Option<uuid::Uuid>,
+    focused_panel_id: Option<uuid::Uuid>,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    workspace_signature(
+        layout,
+        panels,
+        effective_attention,
+        zoomed_panel_id,
+        focused_panel_id,
+    )
+    .hash(&mut h);
+    state.ghostty_app.borrow().is_some().hash(&mut h);
+    {
+        let cache = state.terminal_cache.borrow();
+        for id in layout.all_panel_ids() {
+            let terminal_ready = cache.get(&id).map(|s| s.is_initialized());
+            terminal_ready.hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
 pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id: Option<uuid::Uuid>) {
     tracing::debug!("rebuild_content triggered");
 
@@ -575,7 +613,8 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
         } else {
             None
         };
-        let signature = workspace_signature(
+        let signature = page_signature(
+            state,
             &layout,
             &panels,
             effective_attention,
@@ -617,14 +656,57 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
                 stack.remove(&old);
             }
             stack.add_named(&widget, Some(&page_name));
+            // Record the *post-build* signature: the build itself creates and
+            // initializes surfaces, which are part of the signature.
+            let built_signature = page_signature(
+                state,
+                &layout,
+                &panels,
+                effective_attention,
+                zoomed_panel_id,
+                focused_panel_id,
+            );
             state
                 .workspace_page_signatures
                 .borrow_mut()
-                .insert(id, signature);
+                .insert(id, built_signature);
         }
 
         if let Some(page) = stack.child_by_name(&page_name) {
             stack.set_visible_child(&page);
+            // Deferred map probe: shells only spawn once the page allocates,
+            // so an unmapped page here is the blank-terminal failure. Debug
+            // logging only — but loud enough to catch in the field.
+            let page_weak = page.downgrade();
+            let stack_weak = stack.downgrade();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
+                let (page, stack) = match (page_weak.upgrade(), stack_weak.upgrade()) {
+                    (Some(p), Some(s)) => (p, s),
+                    (p, s) => {
+                        tracing::warn!(
+                            page_alive = p.is_some(),
+                            stack_alive = s.is_some(),
+                            "stack page probe: widgets destroyed after set_visible_child"
+                        );
+                        return;
+                    }
+                };
+                tracing::debug!(
+                    page_mapped = page.is_mapped(),
+                    page_w = page.width(),
+                    page_h = page.height(),
+                    stack_mapped = stack.is_mapped(),
+                    stack_w = stack.width(),
+                    stack_h = stack.height(),
+                    "stack page state probe"
+                );
+                if !page.is_mapped() {
+                    tracing::warn!(
+                        "visible stack page still unmapped 2s after switch — \
+                         terminals in it cannot spawn"
+                    );
+                }
+            });
         }
     } else {
         // No workspace to show — welcome screen or an empty-state label. Rebuilt
@@ -685,15 +767,25 @@ fn unparent_workspace_widgets(
     }
 }
 
-/// Remove stack pages (and forget the cache entries) for workspaces in this
-/// window that no longer exist. Pages for *other* windows are left alone.
-fn prune_workspace_pages(stack: &gtk4::Stack, state: &Rc<AppState>, win_id: Option<uuid::Uuid>) {
+/// Remove stack pages (and forget the cache entries) for workspaces that no
+/// longer exist anywhere.
+///
+/// Existence is deliberately the ONLY staleness test. Pages only enter this
+/// stack because THIS window's rebuild built them, and the render path
+/// (`selected_for_window`) treats `window_id: None` workspaces as belonging
+/// to any window — the original landing (74bb9b2) instead pruned on
+/// `ws.window_id == win_id`, which is false for every `window_id: None`
+/// workspace, so each freshly-built page was destroyed at the end of the same
+/// rebuild that created it. That unrealized the just-parented GL surfaces
+/// before their first allocation, the shell never spawned (spawn rides the
+/// first resize), and every terminal rendered permanently blank — the
+/// regression behind the 8bb1ab3 revert. A workspace moved to another window
+/// may briefly leave an empty page here; it is pruned when the workspace
+/// closes, which is harmless — wrongly pruning a live page is not.
+fn prune_workspace_pages(stack: &gtk4::Stack, state: &Rc<AppState>, _win_id: Option<uuid::Uuid>) {
     let live_ids: std::collections::HashSet<uuid::Uuid> = {
         let tm = lock_or_recover(&state.shared.tab_manager);
-        tm.iter()
-            .filter(|ws| win_id.is_none() || ws.window_id == win_id)
-            .map(|ws| ws.id)
-            .collect()
+        tm.iter().map(|ws| ws.id).collect()
     };
     // Collect names first (can't mutate the stack while iterating its children).
     let mut stale: Vec<(uuid::Uuid, gtk4::Widget)> = Vec::new();

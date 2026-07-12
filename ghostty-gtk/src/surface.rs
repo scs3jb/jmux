@@ -307,6 +307,14 @@ impl GhosttyGlSurface {
         }
     }
 
+    /// True once `initialize_with_env` has run: the surface has a ghostty app
+    /// and will spawn its shell on first allocation. A widget cached before
+    /// ghostty was ready reports false and must be initialized before use, or
+    /// it renders as a permanently blank terminal.
+    pub fn is_initialized(&self) -> bool {
+        !self.imp().app.get().is_null()
+    }
+
     /// Initialize the ghostty surface with the given app.
     ///
     /// This creates the underlying `ghostty_surface_t` and connects all
@@ -350,6 +358,7 @@ impl GhosttyGlSurface {
             #[weak(rename_to = widget)]
             self,
             move |_w, width, height| {
+                tracing::debug!(width, height, created = created.get(), "GLArea resize");
                 if !created.get() && width > 0 && height > 0 {
                     created.set(true);
                     widget.create_surface(app, wd.as_deref(), cmd.as_deref(), &env);
@@ -357,6 +366,31 @@ impl GhosttyGlSurface {
                 }
             }
         ));
+
+        // Spawn watchdog: the shell only spawns on the first resize, which
+        // requires the widget to be allocated (mapped + visible). If we're
+        // mapped but the surface never appeared, allocation was missed — nudge
+        // GTK and say so loudly instead of leaving a silently blank terminal
+        // (the failure mode that forced the GtkStack revert, 8bb1ab3).
+        let weak = self.downgrade();
+        glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
+            let Some(widget) = weak.upgrade() else { return };
+            if widget.imp().surface.get().is_null() {
+                tracing::warn!(
+                    mapped = widget.is_mapped(),
+                    realized = widget.is_realized(),
+                    w = widget.width(),
+                    h = widget.height(),
+                    parent = widget
+                        .parent()
+                        .map(|p| format!("{}({})", p.type_(), p.is_mapped()))
+                        .unwrap_or_default(),
+                    "ghostty surface not created 3s after init — forcing an \
+                     allocation pass"
+                );
+                widget.queue_resize();
+            }
+        });
     }
 
     #[allow(clippy::needless_return)] // guard clauses before cfg-gated body
@@ -374,6 +408,7 @@ impl GhosttyGlSurface {
         if !self.imp().surface.get().is_null() {
             return;
         }
+        tracing::debug!("create_surface: creating ghostty surface");
 
         #[cfg(feature = "link-ghostty")]
         {
