@@ -486,14 +486,16 @@ fn content_stack(content_box: &gtk4::Box) -> gtk4::Stack {
 /// Fold everything `build_layout`/`build_zoomed` consume into one hash. Two
 /// workspace states with the same signature produce identical widget trees, so
 /// the page can be reused as-is (just re-shown) instead of rebuilt. Excludes
-/// divider positions (GtkPaned owns those live) and all panel *metadata* (title,
-/// dir, git branch — handled by `refresh_metadata` without a rebuild).
+/// divider positions (GtkPaned owns those live), all panel *metadata* (title,
+/// dir, git branch — handled by `refresh_metadata` without a rebuild), and the
+/// focused panel — focus changes only run `update_focus_visuals` in place, so
+/// hashing focus here would leave a stale signature behind every pane-focus
+/// change and force a full GL-churning rebuild on the next workspace switch.
 fn workspace_signature(
     layout: &crate::model::panel::LayoutNode,
     panels: &std::collections::HashMap<uuid::Uuid, Panel>,
     effective_attention: Option<uuid::Uuid>,
     zoomed_panel_id: Option<uuid::Uuid>,
-    focused_panel_id: Option<uuid::Uuid>,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
     fn hash_node(
@@ -535,7 +537,6 @@ fn workspace_signature(
     hash_node(layout, panels, &mut h);
     zoomed_panel_id.hash(&mut h);
     effective_attention.hash(&mut h);
-    focused_panel_id.hash(&mut h);
     h.finish()
 }
 
@@ -554,18 +555,10 @@ fn page_signature(
     panels: &std::collections::HashMap<uuid::Uuid, Panel>,
     effective_attention: Option<uuid::Uuid>,
     zoomed_panel_id: Option<uuid::Uuid>,
-    focused_panel_id: Option<uuid::Uuid>,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    workspace_signature(
-        layout,
-        panels,
-        effective_attention,
-        zoomed_panel_id,
-        focused_panel_id,
-    )
-    .hash(&mut h);
+    workspace_signature(layout, panels, effective_attention, zoomed_panel_id).hash(&mut h);
     state.ghostty_app.borrow().is_some().hash(&mut h);
     {
         let cache = state.terminal_cache.borrow();
@@ -613,14 +606,7 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
         } else {
             None
         };
-        let signature = page_signature(
-            state,
-            &layout,
-            &panels,
-            effective_attention,
-            zoomed_panel_id,
-            focused_panel_id,
-        );
+        let signature = page_signature(state, &layout, &panels, effective_attention, zoomed_panel_id);
         let page_name = id.to_string();
 
         // Rebuild this workspace's page only when its structure actually changed
@@ -632,6 +618,7 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
             .get(&id)
             .map(|prev| *prev != signature)
             .unwrap_or(true);
+        tracing::debug!(workspace = %id, needs_build, "rebuild_content: page decision");
 
         if needs_build {
             // Free this workspace's cached surfaces/browsers from whatever page
@@ -658,14 +645,8 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
             stack.add_named(&widget, Some(&page_name));
             // Record the *post-build* signature: the build itself creates and
             // initializes surfaces, which are part of the signature.
-            let built_signature = page_signature(
-                state,
-                &layout,
-                &panels,
-                effective_attention,
-                zoomed_panel_id,
-                focused_panel_id,
-            );
+            let built_signature =
+                page_signature(state, &layout, &panels, effective_attention, zoomed_panel_id);
             state
                 .workspace_page_signatures
                 .borrow_mut()
@@ -729,6 +710,12 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
     // Removing a page unrealizes its surfaces — correct here, the workspace is
     // gone — and is what finally releases their GL resources.
     prune_workspace_pages(&stack, state, win_id);
+
+    // Re-apply focus-dependent visuals to the now-visible page. A reused page
+    // carries whatever dim/border state it had when last shown (or was given by
+    // a metadata refresh while hidden), so without this a workspace switch
+    // shows its focused pane dimmed until the next periodic refresh.
+    update_focus_visuals(content_box, state);
 
     // A tab was just closed — move keyboard focus onto the now-active pane's
     // terminal (surfaces are re-parented above, so this runs at the right time).
@@ -879,6 +866,13 @@ pub fn refresh_metadata(list_box: &gtk4::ListBox, content_box: &gtk4::Box, state
 /// walks the existing widget tree and updates those visuals directly. Without
 /// it, the pane that was focused when the layout was built stays bright while
 /// the others stay dimmed regardless of which pane is actually active.
+///
+/// Walks only the stack's *visible* page: hidden pages belong to other
+/// workspaces whose panes are never the focused panel, so touching them would
+/// dim every hidden page and make each workspace switch surface a pre-dimmed
+/// layout (and walking every realized workspace tree on each periodic
+/// metadata refresh is wasted work). `rebuild_content` re-applies visuals on
+/// every switch, so a page shown later is never stale.
 fn update_focus_visuals(content_box: &gtk4::Box, state: &Rc<AppState>) {
     let focused_str = {
         let tm = lock_or_recover(&state.shared.tab_manager);
@@ -896,7 +890,9 @@ fn update_focus_visuals(content_box: &gtk4::Box, state: &Rc<AppState>) {
         .map(|o| o.clamp(0.15, 1.0))
         .filter(|&o| o < 1.0);
 
-    let root: gtk4::Widget = content_box.clone().upcast();
+    let root: gtk4::Widget = content_stack(content_box)
+        .visible_child()
+        .unwrap_or_else(|| content_box.clone().upcast());
     for_each_descendant(&root, &mut |w| {
         // Split-region dim: bright when this region holds the focused pane.
         if w.has_css_class("pane-region") {
