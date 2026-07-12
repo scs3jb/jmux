@@ -340,5 +340,6 @@ fn icon_for(kind: PanelType) -> &'static str {
         PanelType::Notes => "accessories-text-editor-symbolic",
         PanelType::History => "document-open-recent-symbolic",
         PanelType::Vault => "drive-multidisk-symbolic",
+        PanelType::AgentMonitor => "utilities-system-monitor-symbolic",
     }
 }

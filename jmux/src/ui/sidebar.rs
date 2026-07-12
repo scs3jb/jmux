@@ -146,6 +146,22 @@ pub fn create_sidebar(state: &Rc<AppState>) -> SidebarWidgets {
     }
     help_box.append(&welcome_btn);
 
+    let monitor_btn = gtk4::Button::with_label("Sub-agent Monitor");
+    monitor_btn.add_css_class("flat");
+    monitor_btn.set_tooltip_text(Some(
+        "Show read-only panes tailing each Claude sub-agent in this workspace \
+         (Ctrl+Shift+M toggles)",
+    ));
+    {
+        let state = state.clone();
+        let help_popover = help_popover.clone();
+        monitor_btn.connect_clicked(move |_| {
+            help_popover.popdown();
+            crate::agent_monitor::toggle_selected(&state.shared);
+        });
+    }
+    help_box.append(&monitor_btn);
+
     let shortcuts_btn = gtk4::Button::with_label("Keyboard Shortcuts");
     shortcuts_btn.add_css_class("flat");
     {

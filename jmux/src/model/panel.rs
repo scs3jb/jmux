@@ -29,6 +29,11 @@ pub enum PanelType {
     /// Vault pane — searchable index of past agent sessions (Codex, Claude
     /// Code, OpenCode) that can be reopened/resumed in a terminal.
     Vault,
+    /// Read-only live view of one Claude Code subagent's transcript. The
+    /// `markdown_file` field holds the `agent-<id>.jsonl` path being tailed.
+    /// Created/removed by the workspace's subagent monitor (never by hand),
+    /// non-interactive by design, and excluded from session persistence.
+    AgentMonitor,
 }
 
 /// A panel within a workspace pane.
@@ -292,6 +297,29 @@ impl Panel {
         }
     }
 
+    /// Create a read-only subagent monitor pane tailing `transcript_path`.
+    pub fn new_agent_monitor(transcript_path: &str, title: &str) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            panel_type: PanelType::AgentMonitor,
+            title: Some(title.to_string()),
+            custom_title: None,
+            directory: None,
+            is_pinned: false,
+            is_manually_unread: false,
+            git_branch: None,
+            listening_ports: Vec::new(),
+            tty_name: None,
+            browser_url: None,
+            markdown_file: Some(transcript_path.to_string()),
+            command: None,
+            pending_scrollback: None,
+            pending_zoom: None,
+            parent_panel_id: None,
+            agent_session_id: None,
+        }
+    }
+
     /// Display title: custom title if set, otherwise process title, otherwise fallback by type.
     pub fn display_title(&self) -> &str {
         if let Some(ref t) = self.custom_title {
@@ -303,6 +331,7 @@ impl Panel {
         match self.panel_type {
             PanelType::Terminal => "Terminal",
             PanelType::Browser => "Browser",
+            PanelType::AgentMonitor => "Sub-agent",
             PanelType::Markdown => {
                 if let Some(ref f) = self.markdown_file {
                     if let Some(name) = std::path::Path::new(f).file_name() {

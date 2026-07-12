@@ -645,6 +645,10 @@ pub fn run() -> i32 {
 
             crate::port_scanner::spawn(shared_for_ports.clone());
 
+            // Sub-agent monitor sync (no-op per tick unless a workspace has
+            // the monitor toggled on).
+            crate::agent_monitor::start_ticker(shared_for_ports.clone());
+
             // Register the quick-terminal global hotkey (GlobalShortcuts portal)
             // if the feature build + setting are enabled.
             crate::ui::quick_terminal::register_global_shortcut(

@@ -82,6 +82,9 @@ pub struct Workspace {
     pub env: Vec<(String, String)>,
     /// Optional free-text description shown in the sidebar tooltip. Session-scoped.
     pub description: Option<String>,
+    /// When true, the subagent monitor keeps read-only panes tiled into this
+    /// workspace, one per live Claude Code subagent. Session-scoped.
+    pub subagent_monitor: bool,
 }
 
 /// Individual PR check result.
@@ -207,6 +210,7 @@ impl Workspace {
             closed_panels: Vec::new(),
             env: Vec::new(),
             description: None,
+            subagent_monitor: false,
         }
     }
 
@@ -252,6 +256,9 @@ impl Workspace {
             PanelType::Notes => Panel::new_notes(""),
             PanelType::History => Panel::new_history(),
             PanelType::Vault => Panel::new_vault(),
+            // Monitor panes are created only by the subagent monitor with a
+            // real transcript path; a generic split falls back to a terminal.
+            PanelType::AgentMonitor => Panel::new_terminal(),
         };
         let new_id = new_panel.id;
         self.panels.insert(new_id, new_panel);

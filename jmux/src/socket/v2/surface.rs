@@ -110,6 +110,7 @@ pub(super) fn handle_surface_current(id: Value, state: &Arc<SharedState>) -> Res
                 crate::model::PanelType::Notes => "notes",
                 crate::model::PanelType::History => "history",
                 crate::model::PanelType::Vault => "vault",
+                crate::model::PanelType::AgentMonitor => "agent_monitor",
             }).unwrap_or("unknown"),
             "title": panel.map(|p| p.display_title()).unwrap_or("?"),
             "directory": panel.and_then(|p| p.directory.as_deref()),
@@ -582,6 +583,8 @@ pub(super) fn handle_surface_create(
         crate::model::PanelType::Notes => crate::model::Panel::new_notes(""),
         crate::model::PanelType::History => crate::model::Panel::new_history(),
         crate::model::PanelType::Vault => crate::model::Panel::new_vault(),
+        // Not creatable over the socket; the subagent monitor owns these.
+        crate::model::PanelType::AgentMonitor => crate::model::Panel::new_terminal(),
     };
     if panel_type == crate::model::PanelType::Browser {
         new_panel.browser_url = url;

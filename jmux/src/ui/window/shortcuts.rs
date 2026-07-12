@@ -89,6 +89,7 @@ pub(super) fn setup_shortcuts(
                 "close.tab",
                 "close.tab.others",
                 "find.in_directory",
+                "workspace.toggle_agent_monitor",
             ];
             for action in &configurable_actions {
                 if let Some(binding) = shortcuts.get(action) {
@@ -103,6 +104,10 @@ pub(super) fn setup_shortcuts(
                                 state
                                     .shared
                                     .send_ui_event(crate::app::UiEvent::DeferUnread);
+                            }
+                            // Toggle read-only sub-agent monitor panes.
+                            "workspace.toggle_agent_monitor" => {
+                                crate::agent_monitor::toggle_selected(&state.shared);
                             }
                             "notification.toggle_unread" => {
                                 state

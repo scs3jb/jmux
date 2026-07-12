@@ -104,6 +104,11 @@ impl Default for ShortcutConfig {
             Some(Keybinding::ctrl_shift("U")),
         );
         bindings.insert("workspace.rename".into(), Some(Keybinding::ctrl_shift("R")));
+        // Toggle the read-only sub-agent monitor panes for this workspace.
+        bindings.insert(
+            "workspace.toggle_agent_monitor".into(),
+            Some(Keybinding::ctrl_shift("M")),
+        );
         bindings.insert(
             "workspace.move_up".into(),
             Some(Keybinding::ctrl_shift("Page_Up")),

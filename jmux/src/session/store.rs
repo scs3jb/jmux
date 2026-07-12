@@ -399,6 +399,9 @@ pub fn create_snapshot(
         let panels: Vec<SessionPanelSnapshot> = ws
             .panels
             .values()
+            // Sub-agent monitor panes are session-scoped views recreated by
+            // the monitor from live transcripts — never persist them.
+            .filter(|panel| panel.panel_type != crate::model::PanelType::AgentMonitor)
             .map(|panel| {
                 let mut snapshot = SessionPanelSnapshot::from_panel(panel);
                 if let Some(ref mut terminal) = snapshot.terminal {
@@ -430,7 +433,15 @@ pub fn create_snapshot(
             .collect();
 
         let layout = {
-            let mut snapshot = SessionWorkspaceLayoutSnapshot::from_layout(&ws.layout);
+            // Strip monitor panes from the persisted layout too, so a restore
+            // never references a panel the filter above dropped.
+            let mut pruned = ws.layout.clone();
+            for (id, panel) in &ws.panels {
+                if panel.panel_type == crate::model::PanelType::AgentMonitor {
+                    pruned.remove_panel(*id);
+                }
+            }
+            let mut snapshot = SessionWorkspaceLayoutSnapshot::from_layout(&pruned);
             if !split_ratio_persist {
                 normalize_divider_positions(&mut snapshot);
             }
@@ -447,7 +458,13 @@ pub fn create_snapshot(
             custom_color: ws.custom_color.clone(),
             is_pinned: ws.is_pinned,
             current_directory,
-            focused_panel_id: ws.focused_panel_id,
+            // Never persist focus on a (stripped) monitor pane.
+            focused_panel_id: ws.focused_panel_id.filter(|id| {
+                ws.panels
+                    .get(id)
+                    .map(|p| p.panel_type != crate::model::PanelType::AgentMonitor)
+                    .unwrap_or(true)
+            }),
             group_id: ws.group_id,
             layout,
             panels,

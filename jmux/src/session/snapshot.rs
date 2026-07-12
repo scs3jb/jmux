@@ -371,6 +371,9 @@ impl SessionPanelSnapshot {
             crate::model::PanelType::Notes => "notes".to_string(),
             crate::model::PanelType::History => "history".to_string(),
             crate::model::PanelType::Vault => "vault".to_string(),
+            // Serialized for completeness, but monitor panes are stripped from
+            // snapshots in create_snapshot — they never survive a restore.
+            crate::model::PanelType::AgentMonitor => "agent_monitor".to_string(),
         };
 
         // Detect agent resume command from live process title and stored command.

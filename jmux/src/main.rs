@@ -1,3 +1,4 @@
+mod agent_monitor;
 mod ai;
 mod app;
 mod browser_history;

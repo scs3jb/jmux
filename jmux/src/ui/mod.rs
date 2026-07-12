@@ -1,5 +1,6 @@
 //! GTK4/libadwaita UI layer — window, sidebar, panels, dialogs, and settings.
 
+pub mod agent_monitor_panel;
 pub mod all_surfaces_search;
 pub mod file_explorer;
 #[cfg(feature = "webkit")]

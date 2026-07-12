@@ -22,14 +22,14 @@ use uuid::Uuid;
 
 /// Encode an absolute working directory into Claude's project-dir name: every
 /// `/` and `.` becomes `-` (e.g. `/home/u/src/app` → `-home-u-src-app`).
-fn encode_project_dir(cwd: &str) -> String {
+pub(crate) fn encode_project_dir(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c == '/' || c == '.' { '-' } else { c })
         .collect()
 }
 
 /// `~/.claude/projects`, where Claude Code stores per-project transcripts.
-fn claude_projects_dir() -> Option<PathBuf> {
+pub(crate) fn claude_projects_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude/projects"))
 }
 
