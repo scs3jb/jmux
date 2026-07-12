@@ -989,10 +989,53 @@ pub fn active_config_path() -> PathBuf {
     }
 }
 
+/// Parsed-settings cache, validated by file mtimes. `load()` is called from
+/// hot paths (sidebar refresh, content rebuild — several times per second
+/// while an agent streams title updates), and re-reading + re-parsing two
+/// JSON files each time dominated those paths. A stat per file per call is
+/// enough to keep external edits, `save()`, and SIGUSR2 reloads all working:
+/// any write bumps the mtime and the next `load()` re-parses.
+struct SettingsCache {
+    settings: AppSettings,
+    main_path: PathBuf,
+    main_mtime: Option<std::time::SystemTime>,
+    shortcuts_mtime: Option<std::time::SystemTime>,
+}
+
+static SETTINGS_CACHE: std::sync::Mutex<Option<SettingsCache>> = std::sync::Mutex::new(None);
+
+fn mtime_of(path: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 /// Load settings from disk. Returns defaults if file doesn't exist.
 pub fn load() -> AppSettings {
+    let main_path = active_config_path();
+    let main_mtime = mtime_of(&main_path);
+    let shortcuts_mtime = mtime_of(&config_dir().join("shortcuts.json"));
+
+    let mut cache = match SETTINGS_CACHE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some(c) = cache.as_ref() {
+        if c.main_path == main_path
+            && c.main_mtime == main_mtime
+            && c.shortcuts_mtime == shortcuts_mtime
+            && main_mtime.is_some()
+        {
+            return c.settings.clone();
+        }
+    }
+
     let mut settings = load_main_settings();
     settings.shortcuts = shortcuts::load();
+    *cache = Some(SettingsCache {
+        settings: settings.clone(),
+        main_path,
+        main_mtime,
+        shortcuts_mtime,
+    });
     settings
 }
 
