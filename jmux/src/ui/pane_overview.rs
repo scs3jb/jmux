@@ -12,6 +12,7 @@ use libadwaita::prelude::*;
 use uuid::Uuid;
 
 use crate::app::{lock_or_recover, AppState};
+use crate::model::claude_state::{classify, is_shell_title, ClaudeState};
 use crate::model::PanelType;
 
 struct TileInfo {
@@ -23,6 +24,9 @@ struct TileInfo {
     dot: &'static str,
     dot_class: &'static str,
     focused: bool,
+    /// Claude working/needs-input/waiting state, when this pane is a live
+    /// agent — drives the octopus sprite on the tile.
+    claude_state: Option<ClaudeState>,
 }
 
 struct WorkspaceSection {
@@ -181,7 +185,7 @@ fn build_tile(
     vbox.set_size_request(200, 120);
     vbox.add_css_class("overview-tile");
 
-    // Header line: status dot + type icon + title.
+    // Header line: status dot + type icon + title + (working octopus).
     let head = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     let dot = gtk4::Label::new(Some(tile.dot));
     dot.add_css_class(tile.dot_class);
@@ -195,6 +199,13 @@ fn build_tile(
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("heading");
     head.append(&title);
+    // Animated deck octopus when an agent is live in this pane, so the overview
+    // shows at a glance which panes are working / need input / waiting.
+    if let Some(cs) = tile.claude_state {
+        let sprite = crate::ui::state_sprite::sprite_image(cs, &title);
+        sprite.set_valign(gtk4::Align::Center);
+        head.append(&sprite);
+    }
     vbox.append(&head);
 
     if !tile.directory.is_empty() {
@@ -265,32 +276,56 @@ fn collect_sections(state: &Rc<AppState>) -> Vec<WorkspaceSection> {
                 .filter_map(|pid| {
                     let panel = ws.panels.get(&pid)?;
                     let is_browser = panel.panel_type == PanelType::Browser;
+                    // Monitor panes render in a ghostty surface too, so their
+                    // live output is readable the same way as a terminal's.
+                    let has_screen = matches!(
+                        panel.panel_type,
+                        PanelType::Terminal | PanelType::AgentMonitor
+                    );
 
-                    // Activity snippet + status.
-                    let (activity, busy) = if panel.panel_type == PanelType::Terminal {
-                        let activity = state
+                    // Last non-blank on-screen line, for the activity snippet
+                    // and (for terminals) Claude-state classification.
+                    let screen_text = if has_screen {
+                        state
                             .terminal_cache
                             .borrow()
                             .get(&pid)
                             .and_then(|s| s.read_screen_text())
-                            .map(|t| {
-                                t.lines()
-                                    .rev()
-                                    .find(|l| !l.trim().is_empty())
-                                    .unwrap_or("")
-                                    .chars()
-                                    .take(120)
-                                    .collect::<String>()
-                            })
-                            .unwrap_or_default();
-                        (activity, crate::app::pane_is_busy(pid))
+                    } else {
+                        None
+                    };
+                    let last_line = screen_text.as_deref().map(|t| {
+                        t.lines()
+                            .rev()
+                            .find(|l| !l.trim().is_empty())
+                            .unwrap_or("")
+                            .chars()
+                            .take(120)
+                            .collect::<String>()
+                    });
+
+                    // Activity snippet + busy status.
+                    let (activity, busy) = if panel.panel_type == PanelType::Terminal {
+                        (last_line.clone().unwrap_or_default(), crate::app::pane_is_busy(pid))
+                    } else if panel.panel_type == PanelType::AgentMonitor {
+                        (last_line.clone().unwrap_or_default(), None)
                     } else if is_browser {
                         (panel.browser_url.clone().unwrap_or_default(), None)
                     } else {
-                        (
-                            panel.directory.clone().unwrap_or_default(),
-                            None,
-                        )
+                        (panel.directory.clone().unwrap_or_default(), None)
+                    };
+
+                    // Octopus state: only for terminal agent panes (non-shell,
+                    // not hibernated), mirroring the sidebar sprite logic.
+                    let claude_state = if panel.panel_type == PanelType::Terminal {
+                        let raw_title = panel.title.as_deref().unwrap_or("");
+                        if is_shell_title(raw_title) || state.shared.is_hibernated(&pid) {
+                            None
+                        } else {
+                            screen_text.as_deref().and_then(|t| classify(t, raw_title))
+                        }
+                    } else {
+                        None
                     };
 
                     let (dot, dot_class) = if attention == Some(pid) {
@@ -314,6 +349,7 @@ fn collect_sections(state: &Rc<AppState>) -> Vec<WorkspaceSection> {
                         dot,
                         dot_class,
                         focused: is_current && focused == Some(pid),
+                        claude_state,
                     })
                 })
                 .collect();
