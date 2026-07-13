@@ -319,6 +319,8 @@ pub enum UiEvent {
     /// Metadata-only refresh — sidebar + window title, no layout rebuild.
     /// Used by socket handlers that update directory, git branch, ports, etc.
     MetadataRefresh,
+    /// Show a transient toast message in the window.
+    ShowToast(String),
     SendInput {
         panel_id: Uuid,
         text: String,

@@ -177,6 +177,9 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "workspace.open_vault" => workspace::handle_workspace_open_vault(id, state),
         "workspace.hibernate" => workspace::handle_workspace_hibernate(id, &req.params, state),
         "workspace.wake" => workspace::handle_workspace_wake(id, &req.params, state),
+        "workspace.agent_monitor" => {
+            workspace::handle_workspace_agent_monitor(id, &req.params, state)
+        }
         "workspace.latest_unread" => workspace::handle_workspace_latest_unread(id, state),
         "workspace.close" => workspace::handle_workspace_close(id, &req.params, state),
         "workspace.set_status" => workspace::handle_workspace_set_status(id, &req.params, state),

@@ -28,16 +28,40 @@ const ACTIVE_WINDOW_SECS: u64 = 10 * 60;
 const MAX_MONITOR_PANES: usize = 6;
 
 /// Toggle the monitor for the currently selected workspace. Wired to the
-/// system-menu entry and the `workspace.toggle_agent_monitor` shortcut.
+/// header button, the sidebar menu entry, the socket method, and the
+/// `workspace.toggle_agent_monitor` shortcut.
 pub fn toggle_selected(shared: &Arc<SharedState>) {
-    {
+    let toast = {
         let mut tm = lock_or_recover(&shared.tab_manager);
-        if let Some(ws) = tm.selected_mut() {
+        tm.selected_mut().map(|ws| {
             ws.subagent_monitor = !ws.subagent_monitor;
             sync_workspace(ws);
-        }
+            toggle_toast(ws)
+        })
+    };
+    // The toggle is silent UI-wise when no sub-agents are live, so always say
+    // what happened — an armed-but-empty monitor otherwise looks broken.
+    if let Some(msg) = toast {
+        shared.send_ui_event(crate::app::UiEvent::ShowToast(msg));
     }
     shared.notify_ui_refresh();
+}
+
+/// Human-readable outcome of a toggle, from the workspace's post-sync state.
+fn toggle_toast(ws: &Workspace) -> String {
+    if !ws.subagent_monitor {
+        return "Sub-agent monitor off".into();
+    }
+    let live = ws
+        .panels
+        .values()
+        .filter(|p| p.panel_type == PanelType::AgentMonitor)
+        .count();
+    if live == 0 {
+        "Sub-agent monitor on — panes appear when Claude runs sub-agents here".into()
+    } else {
+        format!("Sub-agent monitor on — showing {live} live sub-agent(s)")
+    }
 }
 
 /// Install the periodic sync on the GTK main loop. Cheap when no workspace has

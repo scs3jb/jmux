@@ -767,6 +767,40 @@ pub(super) fn handle_workspace_wake(
     Response::success(id, serde_json::json!({"hibernated": false}))
 }
 
+/// `workspace.agent_monitor` — toggle (or explicitly `{"enable": bool}`) the
+/// read-only sub-agent monitor panes on the selected workspace. Returns the
+/// resulting state and how many monitor panes are live after the sync.
+pub(super) fn handle_workspace_agent_monitor(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
+    let enable = params.get("enable").and_then(|v| v.as_bool());
+    let result = {
+        let mut tm = lock_or_recover(&state.tab_manager);
+        tm.selected_mut().map(|ws| {
+            ws.subagent_monitor = enable.unwrap_or(!ws.subagent_monitor);
+            crate::agent_monitor::sync_workspace(ws);
+            let panes = ws
+                .panels
+                .values()
+                .filter(|p| p.panel_type == crate::model::PanelType::AgentMonitor)
+                .count();
+            (ws.subagent_monitor, panes)
+        })
+    };
+    match result {
+        Some((enabled, panes)) => {
+            state.notify_ui_refresh();
+            Response::success(
+                id,
+                serde_json::json!({"enabled": enabled, "monitor_panes": panes}),
+            )
+        }
+        None => Response::error(id, "not_found", "No selected workspace"),
+    }
+}
+
 // -----------------------------------------------------------------------
 // workspace.latest_unread
 // -----------------------------------------------------------------------

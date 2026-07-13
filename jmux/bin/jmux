@@ -404,6 +404,7 @@ Workspaces
   back | forward             Navigate recently-focused workspaces
   hibernate                  Pause the focused agent (SIGSTOP) / toggle
   wake                       Resume the focused agent (SIGCONT)
+  agents [on|off]            Toggle read-only sub-agent monitor panes
   top                        Open the Task Manager (CPU/RAM per agent)
   ps                         List terminal process CPU/RAM usage (JSON)
 
@@ -769,6 +770,13 @@ case "$command" in
     ;;
   hibernate)
     _jmux_act "hibernate"
+    ;;
+  agents|agent-monitor)
+    case "${1:-}" in
+      on)  _jmux_query workspace.agent_monitor '{"enable":true}' ;;
+      off) _jmux_query workspace.agent_monitor '{"enable":false}' ;;
+      *)   _jmux_query workspace.agent_monitor ;;
+    esac
     ;;
   wake)
     _jmux_act "wake"

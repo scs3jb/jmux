@@ -105,9 +105,10 @@ impl Default for ShortcutConfig {
         );
         bindings.insert("workspace.rename".into(), Some(Keybinding::ctrl_shift("R")));
         // Toggle the read-only sub-agent monitor panes for this workspace.
+        // S for "sub-agents" — Ctrl+Shift+M is taken by terminal copy mode.
         bindings.insert(
             "workspace.toggle_agent_monitor".into(),
-            Some(Keybinding::ctrl_shift("M")),
+            Some(Keybinding::ctrl_shift("S")),
         );
         bindings.insert(
             "workspace.move_up".into(),

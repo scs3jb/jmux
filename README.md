@@ -242,6 +242,7 @@ All shortcuts are configurable via `~/.config/jmux/shortcuts.json` (or **Setting
 | Ctrl+Shift+B | Toggle sidebar |
 | Ctrl+Shift+Z | Toggle pane zoom |
 | Ctrl+Shift+M | Enter copy mode |
+| Ctrl+Shift+S | Toggle sub-agent monitor panes |
 | Ctrl+Shift+U | Jump to latest unread |
 | Ctrl+1–9 | Jump to workspace |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous workspace |

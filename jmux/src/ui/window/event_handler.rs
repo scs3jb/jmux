@@ -72,6 +72,11 @@ pub(super) fn bind_shared_state_updates(
                 match event {
                     UiEvent::Refresh => needs_refresh = true,
                     UiEvent::MetadataRefresh => needs_metadata_refresh = true,
+                    UiEvent::ShowToast(msg) => {
+                        let toast = adw::Toast::new(&msg);
+                        toast.set_timeout(4);
+                        toast_overlay.add_toast(toast);
+                    }
                     UiEvent::SendInput { panel_id, text } => {
                         let sent = state.send_input_to_panel(panel_id, &text);
                         if !sent {

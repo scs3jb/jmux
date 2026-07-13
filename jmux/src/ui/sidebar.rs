@@ -150,7 +150,7 @@ pub fn create_sidebar(state: &Rc<AppState>) -> SidebarWidgets {
     monitor_btn.add_css_class("flat");
     monitor_btn.set_tooltip_text(Some(
         "Show read-only panes tailing each Claude sub-agent in this workspace \
-         (Ctrl+Shift+M toggles)",
+         (Ctrl+Shift+S toggles)",
     ));
     {
         let state = state.clone();

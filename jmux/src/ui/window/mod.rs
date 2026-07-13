@@ -266,6 +266,25 @@ pub fn create_window(
     }
     header.pack_end(&dock_btn);
 
+    // Sub-agent monitor toggle — read-only panes tailing Claude's sub-agents.
+    let monitor_btn = gtk4::Button::from_icon_name("utilities-system-monitor-symbolic");
+    monitor_btn.set_tooltip_text(Some(
+        "Toggle sub-agent monitor panes (Ctrl+Shift+S)",
+    ));
+    monitor_btn.add_css_class("flat");
+    // Keep it out of the focus chain — a focused header button turns stray
+    // Space/Enter presses into surprise activations while typing (see the
+    // new-workspace button fix).
+    monitor_btn.set_can_focus(false);
+    monitor_btn.set_focus_on_click(false);
+    {
+        let state = Rc::clone(state);
+        monitor_btn.connect_clicked(move |_| {
+            crate::agent_monitor::toggle_selected(&state.shared);
+        });
+    }
+    header.pack_end(&monitor_btn);
+
     // Pane overview button.
     let overview_btn = gtk4::Button::from_icon_name("view-grid-symbolic");
     overview_btn.set_tooltip_text(Some("Pane overview"));
