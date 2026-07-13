@@ -357,6 +357,17 @@ pub(super) fn install_css() {
             opacity: 0.9;
         }
 
+        /* ── Sub-agent monitor read-only badge ── */
+        .agent-monitor-badge {
+            background-color: alpha(@accent_bg_color, 0.85);
+            color: white;
+            font-size: 0.72em;
+            font-weight: 700;
+            border-radius: 4px;
+            padding: 1px 7px;
+            opacity: 0.85;
+        }
+
         /* ── Search overlay ── */
         .search-overlay {
             background-color: @theme_bg_color;

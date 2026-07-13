@@ -1,5 +1,6 @@
 //! jmux CLI — command-line client for the jmux socket API.
 
+mod agent_view;
 mod commands;
 mod config;
 mod format;
@@ -85,6 +86,11 @@ fn main() -> anyhow::Result<()> {
     // `jmux top` — live refreshing process table.
     if let Commands::Top { interval } = &cli.command {
         return run_top(&cli.socket, *interval);
+    }
+
+    // Local transcript viewer — no socket needed.
+    if let Commands::Agent(AgentCommands::View { transcript }) = &cli.command {
+        return agent_view::run(transcript);
     }
 
     // Agent hook events may involve multiple socket calls; handle them before
@@ -183,6 +189,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Config(_) => unreachable!(),
         Commands::Top { .. } => unreachable!(), // handled above
         Commands::Agent(AgentCommands::Hook { .. }) => unreachable!(), // handled above
+        Commands::Agent(AgentCommands::View { .. }) => unreachable!(), // handled above
         Commands::Agent(AgentCommands::Fork { message, name }) => (
             "agent.fork_conversation",
             serde_json::json!({"message": message, "workspace_name": name}),

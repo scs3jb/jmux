@@ -108,9 +108,10 @@ pub fn create_panel_widget(
         PanelType::Vault => {
             super::vault_panel::create_vault_widget(panel.id, state, is_attention_source)
         }
-        // Read-only sub-agent transcript tail (plain GTK, never focusable).
+        // Read-only sub-agent transcript, rendered Claude-CLI-style in a
+        // ghostty surface (never focusable — the viewer swallows input).
         PanelType::AgentMonitor => {
-            super::agent_monitor_panel::create_agent_monitor_widget(panel)
+            super::agent_monitor_panel::create_agent_monitor_widget(panel, is_focused, state)
         }
     }
 }

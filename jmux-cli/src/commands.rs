@@ -1227,6 +1227,12 @@ pub enum AgentCommands {
         #[arg(long)]
         panel: Option<String>,
     },
+    /// Render a subagent transcript read-only, Claude-CLI style, following
+    /// new entries (used by jmux's sub-agent monitor panes)
+    View {
+        /// Path to the agent-*.jsonl transcript
+        transcript: String,
+    },
     /// Spawn a subagent panel next to a parent panel (Codex Teams)
     SpawnSubagent {
         /// Parent panel UUID
