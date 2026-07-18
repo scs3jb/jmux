@@ -97,7 +97,13 @@ fn shortcut_catalog() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> 
 
 /// Create and show the settings preferences window.
 /// `on_close` is called after settings are saved so callers can refresh the UI.
-pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'static) {
+/// `shared` lets interactive controls (e.g. the ghostty theme picker) dispatch
+/// UI events such as a ghostty config reload.
+pub fn show_settings(
+    parent: &adw::ApplicationWindow,
+    shared: std::sync::Arc<crate::app::SharedState>,
+    on_close: impl Fn() + 'static,
+) {
     let current_settings = settings::load();
 
     // In-surface adw::PreferencesDialog (not a top-level window) so it renders
@@ -183,50 +189,75 @@ pub fn show_settings(parent: &adw::ApplicationWindow, on_close: impl Fn() + 'sta
     appearance_page.add(&theme_group);
 
     // ── Ghostty Terminal Themes group ──
-    // Discover theme names available in the user's ghostty themes directory
-    // and the system themes directory. These are the names you can set in
-    // ~/.config/ghostty/config as `theme = <name>` or as a conditional
-    // `theme = dark:<name>|light:<name>`.
+    // A live picker over the themes available in the user's ghostty themes
+    // directory and the system themes directory. Choosing one writes
+    // `theme = <name>` into ~/.config/ghostty/config and reloads ghostty so the
+    // embedded terminal updates immediately.
     {
         let ghostty_theme_group = adw::PreferencesGroup::new();
         ghostty_theme_group.set_title("Ghostty Terminal Themes");
         ghostty_theme_group.set_description(Some(
-            "Themes available for ~/.config/ghostty/config. \
-             Use `theme = Name` or `theme = dark:DarkName|light:LightName`.",
+            "Sets `theme = Name` in ~/.config/ghostty/config and reloads the terminal.",
         ));
 
-        // Collect user themes from ~/.config/ghostty/themes/
-        let user_themes = discover_ghostty_user_themes();
-        // Collect system themes from GHOSTTY_RESOURCES_DIR/themes/ or /usr/share/ghostty/themes/
-        let system_themes = discover_ghostty_system_themes();
+        // Merge user + system themes into one sorted, de-duplicated list.
+        let mut themes = discover_ghostty_user_themes();
+        themes.extend(discover_ghostty_system_themes());
+        themes.sort();
+        themes.dedup();
 
-        if user_themes.is_empty() && system_themes.is_empty() {
+        if themes.is_empty() {
             let empty_row = adw::ActionRow::new();
             empty_row.set_title("No themes found");
-            empty_row.set_subtitle("Add themes to ~/.config/ghostty/themes/");
+            empty_row.set_subtitle("Install ghostty themes or add them to ~/.config/ghostty/themes/");
             ghostty_theme_group.add(&empty_row);
         } else {
-            if !user_themes.is_empty() {
-                let user_row = adw::ActionRow::new();
-                user_row.set_title("My Themes");
-                user_row.set_subtitle(&user_themes.join(", "));
-                ghostty_theme_group.add(&user_row);
+            let theme_row = adw::ComboRow::new();
+            theme_row.set_title("Terminal Theme");
+
+            // If the config's current theme isn't a plain name we recognize
+            // (e.g. a `dark:X|light:Y` conditional, or a theme not on disk),
+            // surface it as the first entry so opening settings never silently
+            // rewrites it.
+            let current = read_ghostty_config_theme();
+            let mut labels: Vec<String> = themes.clone();
+            let mut selected = 0u32;
+            match current
+                .as_ref()
+                .and_then(|c| themes.iter().position(|t| t == c))
+            {
+                Some(idx) => selected = idx as u32,
+                None => {
+                    if let Some(cur) = current.clone() {
+                        labels.insert(0, format!("{cur}  (current)"));
+                        themes.insert(0, cur);
+                        selected = 0;
+                    }
+                }
             }
-            if !system_themes.is_empty() {
-                let sys_row = adw::ActionRow::new();
-                sys_row.set_title("Built-in Themes");
-                let preview = if system_themes.len() > 8 {
-                    format!(
-                        "{} … ({} total)",
-                        system_themes[..8].join(", "),
-                        system_themes.len()
-                    )
-                } else {
-                    system_themes.join(", ")
+
+            let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+            theme_row.set_model(Some(&gtk4::StringList::new(&label_refs)));
+            theme_row.set_selected(selected);
+
+            // Connect AFTER setting the initial selection so opening the dialog
+            // doesn't spuriously rewrite the config.
+            let themes_for_cb = themes.clone();
+            let shared_for_cb = shared.clone();
+            theme_row.connect_selected_notify(move |row| {
+                let idx = row.selected() as usize;
+                let Some(name) = themes_for_cb.get(idx) else {
+                    return;
                 };
-                sys_row.set_subtitle(&preview);
-                ghostty_theme_group.add(&sys_row);
-            }
+                if let Err(e) = set_ghostty_config_theme(name) {
+                    tracing::warn!(error = %e, theme = name, "Failed to write ghostty theme");
+                    return;
+                }
+                tracing::info!(theme = name, "Set ghostty theme; reloading config");
+                shared_for_cb.send_ui_event(crate::app::UiEvent::ReloadConfig);
+            });
+
+            ghostty_theme_group.add(&theme_row);
         }
 
         terminal_page.add(&ghostty_theme_group);
@@ -1524,11 +1555,76 @@ pub fn discover_ghostty_user_themes() -> Vec<String> {
     collect_theme_names(&dir)
 }
 
-/// Discover built-in ghostty themes from the system themes directory.
-/// Checks `$GHOSTTY_RESOURCES_DIR/themes/` first, then `/usr/share/ghostty/themes/`.
+/// Discover built-in ghostty themes from the system themes directories.
+/// Searches **both** `$GHOSTTY_RESOURCES_DIR/themes/` (if set) and
+/// `/usr/share/ghostty/themes/`, merging the results — themes may live in
+/// either location depending on how ghostty was installed.
 pub fn discover_ghostty_system_themes() -> Vec<String> {
-    let dir = std::env::var("GHOSTTY_RESOURCES_DIR")
-        .map(|d| std::path::PathBuf::from(d).join("themes"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("/usr/share/ghostty/themes"));
-    collect_theme_names(&dir)
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(res) = std::env::var("GHOSTTY_RESOURCES_DIR") {
+        dirs.push(std::path::PathBuf::from(res).join("themes"));
+    }
+    dirs.push(std::path::PathBuf::from("/usr/share/ghostty/themes"));
+
+    let mut names: Vec<String> = dirs.iter().flat_map(|d| collect_theme_names(d)).collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Path to the user's ghostty config file (`~/.config/ghostty/config`).
+fn ghostty_config_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("~/.config"))
+        .join("ghostty/config")
+}
+
+/// Return true if `line` is an uncommented `theme = ...` assignment.
+fn is_theme_assignment(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('#') {
+        return false;
+    }
+    match trimmed.strip_prefix("theme") {
+        Some(rest) => rest.trim_start().starts_with('='),
+        None => false,
+    }
+}
+
+/// Read the currently configured ghostty theme value from the config file.
+/// Ghostty is last-wins, so return the value of the last uncommented
+/// `theme = ...` line. Returns the raw value (which may be a `dark:X|light:Y`
+/// conditional). `None` if there is no theme set or the file is missing.
+pub fn read_ghostty_config_theme() -> Option<String> {
+    let contents = std::fs::read_to_string(ghostty_config_path()).ok()?;
+    contents
+        .lines()
+        .filter(|l| is_theme_assignment(l))
+        .last()
+        .and_then(|l| l.split_once('='))
+        .map(|(_, v)| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// Set `theme = <name>` in the ghostty config, preserving all other lines and
+/// comments. Replaces the last uncommented `theme = ...` line (last-wins), or
+/// appends one if none exists. Creates the file/dir if missing.
+pub fn set_ghostty_config_theme(name: &str) -> std::io::Result<()> {
+    let path = ghostty_config_path();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let mut lines: Vec<String> = existing.lines().map(String::from).collect();
+    let new_line = format!("theme = {name}");
+
+    match lines.iter().rposition(|l| is_theme_assignment(l)) {
+        Some(idx) => lines[idx] = new_line,
+        None => lines.push(new_line),
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    std::fs::write(&path, out)
 }

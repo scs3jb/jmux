@@ -91,8 +91,9 @@ pub(super) fn bind_shared_state_updates(
                             let lb = list_box.clone();
                             let cb = content_box.clone();
                             let st = Rc::clone(&state);
+                            let shared = st.shared.clone();
                             let app = window.application();
-                            crate::ui::settings::show_settings(&window, move || {
+                            crate::ui::settings::show_settings(&window, shared, move || {
                                 super::refresh_ui(&lb, &cb, &st);
                                 // Register the quick-terminal hotkey if it was
                                 // just enabled (no-op otherwise / if already up).

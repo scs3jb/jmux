@@ -240,7 +240,8 @@ pub fn create_window(
             let lb = list_box.clone();
             let cb = content_box.clone();
             let st = Rc::clone(&state);
-            super::settings::show_settings(&window_ref, move || {
+            let shared = st.shared.clone();
+            super::settings::show_settings(&window_ref, shared, move || {
                 refresh_ui(&lb, &cb, &st);
             });
         });

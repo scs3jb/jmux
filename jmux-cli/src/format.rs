@@ -81,11 +81,15 @@ pub fn format_response(method: &str, response: &Value) {
 pub fn run_themes(filter: Option<&str>) -> anyhow::Result<()> {
     let mut themes = Vec::new();
 
-    // System themes: /usr/share/ghostty/themes/ or GHOSTTY_RESOURCES_DIR
-    let system_dir = std::env::var("GHOSTTY_RESOURCES_DIR")
-        .map(|d| std::path::PathBuf::from(d).join("themes"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("/usr/share/ghostty/themes"));
-    collect_themes(&system_dir, &mut themes);
+    // System themes: search BOTH $GHOSTTY_RESOURCES_DIR/themes/ (if set) and
+    // /usr/share/ghostty/themes/ — themes may live in either location.
+    if let Ok(res) = std::env::var("GHOSTTY_RESOURCES_DIR") {
+        collect_themes(&std::path::PathBuf::from(res).join("themes"), &mut themes);
+    }
+    collect_themes(
+        &std::path::PathBuf::from("/usr/share/ghostty/themes"),
+        &mut themes,
+    );
 
     // User themes: ~/.config/ghostty/themes/
     if let Some(home) = std::env::var_os("HOME") {

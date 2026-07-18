@@ -405,7 +405,8 @@ pub(super) fn setup_shortcuts(
                     let lb = list_box.clone();
                     let cb = content_box.clone();
                     let st = Rc::clone(&state);
-                    crate::ui::settings::show_settings(&window, move || {
+                    let shared = st.shared.clone();
+                    crate::ui::settings::show_settings(&window, shared, move || {
                         super::refresh_ui(&lb, &cb, &st);
                     });
                 }

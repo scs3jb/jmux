@@ -240,6 +240,50 @@ fn configure_bundled_resources_dir() {
             resources_dir = dir,
             "Configured bundled Ghostty resources dir"
         );
+        ensure_bundled_themes(std::path::Path::new(dir));
+    }
+}
+
+/// The bundled Ghostty resources dir ships terminfo but no `themes/` (the
+/// `app-runtime=none` build installs none). Because we point
+/// `GHOSTTY_RESOURCES_DIR` at it, the embedded terminal would otherwise never
+/// find the system themes under `/usr/share/ghostty/themes/`, so a
+/// `theme = <name>` in the user's ghostty config is silently ignored. Link the
+/// system themes dir into the bundle so ghostty can resolve those names.
+#[cfg(feature = "link-ghostty")]
+fn ensure_bundled_themes(resources_dir: &std::path::Path) {
+    let link = resources_dir.join("themes");
+
+    // Already present (real dir or a live symlink)? Nothing to do.
+    if link.exists() {
+        return;
+    }
+
+    // Find a system themes dir that actually has themes.
+    let system = ["/usr/share/ghostty/themes", "/usr/local/share/ghostty/themes"]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.is_dir());
+    let Some(system) = system else {
+        return;
+    };
+
+    // Clear a stale/broken symlink left from a previous run before relinking.
+    if std::fs::symlink_metadata(&link).is_ok() {
+        let _ = std::fs::remove_file(&link);
+    }
+
+    match std::os::unix::fs::symlink(&system, &link) {
+        Ok(()) => tracing::info!(
+            themes = %system.display(),
+            link = %link.display(),
+            "Linked system Ghostty themes into bundled resources dir"
+        ),
+        Err(e) => tracing::warn!(
+            error = %e,
+            link = %link.display(),
+            "Could not link system Ghostty themes into bundled resources dir"
+        ),
     }
 }
 
