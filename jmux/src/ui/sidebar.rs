@@ -1138,24 +1138,13 @@ fn create_group_header_row(
         Some("group.collapse"),
     );
     menu.append(Some("Rename"), Some("group.rename"));
+    // Set Color — a live swatch grid embedded as a custom popover child (GTK4
+    // popover menus ignore per-item icons, so a plain menu would show only the
+    // colour names). The swatches activate the `group.color.*` actions below.
     let color_menu = gtk4::gio::Menu::new();
-    for (label, color) in &[
-        ("Red", "red"),
-        ("Orange", "orange"),
-        ("Yellow", "yellow"),
-        ("Green", "green"),
-        ("Teal", "teal"),
-        ("Blue", "blue"),
-        ("Purple", "purple"),
-        ("Pink", "pink"),
-        ("None", ""),
-    ] {
-        let item = gtk4::gio::MenuItem::new(Some(label), Some(&format!("group.color.{color}")));
-        if let Some(icon) = color_swatch_icon(color_css_value(color)) {
-            item.set_icon(&icon);
-        }
-        color_menu.append_item(&item);
-    }
+    let grid_item = gtk4::gio::MenuItem::new(None, None);
+    grid_item.set_attribute_value("custom", Some(&"group-color-grid".to_variant()));
+    color_menu.append_item(&grid_item);
     menu.append_submenu(Some("Set Color"), &color_menu);
     menu.append(Some("New Workspace in Group"), Some("group.new-ws"));
     let delete_menu = gtk4::gio::Menu::new();
@@ -1165,6 +1154,10 @@ fn create_group_header_row(
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(&row);
     popover.set_has_arrow(false);
+    popover.add_child(
+        &build_color_swatch_grid(GROUP_COLORS, &popover, |key| format!("group.color.{key}")),
+        "group-color-grid",
+    );
     {
         let gesture = gtk4::GestureClick::new();
         gesture.set_button(3);
@@ -1359,10 +1352,13 @@ fn setup_row_context_menu(
     menu.append(Some("Rename"), Some(&format!("sidebar.rename.{index}")));
 
     // Color submenu — 16-color palette matching macOS + custom color picker.
-    // Each named color shows a live swatch icon so you see the color, not just
-    // its name.
+    // The palette is a live swatch grid (custom popover child) so you see the
+    // actual colour, not just its name — GTK4 popover menus ignore per-item
+    // icons. The swatches activate the `sidebar.color.{index}.*` actions below.
     let color_menu = gtk4::gio::Menu::new();
-    append_color_items(&color_menu, |color| format!("sidebar.color.{index}.{color}"));
+    let grid_item = gtk4::gio::MenuItem::new(None, None);
+    grid_item.set_attribute_value("custom", Some(&"ws-color-grid".to_variant()));
+    color_menu.append_item(&grid_item);
     color_menu.append(
         Some("Custom Color…"),
         Some(&format!("sidebar.custom-color.{index}")),
@@ -1507,6 +1503,12 @@ fn setup_row_context_menu(
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);
     popover.set_has_arrow(false);
+    popover.add_child(
+        &build_color_swatch_grid(PALETTE_COLORS, &popover, move |key| {
+            format!("sidebar.color.{index}.{key}")
+        }),
+        "ws-color-grid",
+    );
 
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(3); // Right click
@@ -2096,58 +2098,92 @@ fn show_close_pinned_dialog(
     dialog.present(Some(window));
 }
 
-/// Build a small solid-color swatch texture for a `#rrggbb` string, to show
-/// next to a color's name in the "Set Color" menu (a GdkTexture is a GIcon, so
-/// it can be a menu item's icon). Returns None for empty/invalid input (e.g. the
-/// "None" entry), which then shows with no swatch.
-fn color_swatch_icon(hex: &str) -> Option<gdk4::Texture> {
-    let h = hex.strip_prefix('#')?;
-    if h.len() != 6 {
-        return None;
-    }
-    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
-    const S: usize = 16;
-    let mut buf = Vec::with_capacity(S * S * 3);
-    for _ in 0..S * S {
-        buf.extend_from_slice(&[r, g, b]);
-    }
-    let bytes = glib::Bytes::from(&buf);
-    Some(
-        gdk4::MemoryTexture::new(S as i32, S as i32, gdk4::MemoryFormat::R8g8b8, &bytes, S * 3)
-            .upcast(),
-    )
-}
+/// The 16-color workspace palette (macOS-style) + a trailing "None" clear
+/// entry. Each pair is (display label, colour key); the key maps to a hex via
+/// [`color_css_value`] and to an action suffix.
+const PALETTE_COLORS: &[(&str, &str)] = &[
+    ("Red", "red"),
+    ("Crimson", "crimson"),
+    ("Orange", "orange"),
+    ("Amber", "amber"),
+    ("Yellow", "yellow"),
+    ("Lime", "lime"),
+    ("Green", "green"),
+    ("Teal", "teal"),
+    ("Cyan", "cyan"),
+    ("Sky", "sky"),
+    ("Blue", "blue"),
+    ("Indigo", "indigo"),
+    ("Purple", "purple"),
+    ("Violet", "violet"),
+    ("Pink", "pink"),
+    ("Rose", "rose"),
+    ("None", ""),
+];
 
-/// Append a palette of named colors (each with a live swatch icon) plus a
-/// "None" entry to `color_menu`, wiring each to `action_for(color_key)`.
-fn append_color_items(color_menu: &gtk4::gio::Menu, action_for: impl Fn(&str) -> String) {
-    for (label, color) in &[
-        ("Red", "red"),
-        ("Crimson", "crimson"),
-        ("Orange", "orange"),
-        ("Amber", "amber"),
-        ("Yellow", "yellow"),
-        ("Lime", "lime"),
-        ("Green", "green"),
-        ("Teal", "teal"),
-        ("Cyan", "cyan"),
-        ("Sky", "sky"),
-        ("Blue", "blue"),
-        ("Indigo", "indigo"),
-        ("Purple", "purple"),
-        ("Violet", "violet"),
-        ("Pink", "pink"),
-        ("Rose", "rose"),
-        ("None", ""),
-    ] {
-        let item = gtk4::gio::MenuItem::new(Some(label), Some(&action_for(color)));
-        if let Some(icon) = color_swatch_icon(color_css_value(color)) {
-            item.set_icon(&icon);
+/// The smaller group-header palette (all CSS-keyword colours) + "None".
+const GROUP_COLORS: &[(&str, &str)] = &[
+    ("Red", "red"),
+    ("Orange", "orange"),
+    ("Yellow", "yellow"),
+    ("Green", "green"),
+    ("Teal", "teal"),
+    ("Blue", "blue"),
+    ("Purple", "purple"),
+    ("Pink", "pink"),
+    ("None", ""),
+];
+
+/// Build a grid of colour swatches to embed in a `PopoverMenu` as a custom
+/// child (via a menu item's `custom` attribute). GTK4 popover menus ignore
+/// per-item icons, so this is how "Set Color" shows an actual swatch per colour
+/// — purple for Purple — instead of a bare list of names. Clicking a swatch
+/// activates `action_for(key)` on the widget hierarchy (the same actions a
+/// plain menu item would trigger) and dismisses the menu. The `""` key renders
+/// as a "no colour" swatch.
+fn build_color_swatch_grid(
+    colors: &[(&str, &str)],
+    popover: &gtk4::PopoverMenu,
+    action_for: impl Fn(&str) -> String,
+) -> gtk4::Widget {
+    let flow = gtk4::FlowBox::new();
+    flow.set_selection_mode(gtk4::SelectionMode::None);
+    flow.set_min_children_per_line(8);
+    flow.set_max_children_per_line(8);
+    flow.set_column_spacing(4);
+    flow.set_row_spacing(4);
+    flow.set_margin_start(8);
+    flow.set_margin_end(8);
+    flow.set_margin_top(6);
+    flow.set_margin_bottom(6);
+    flow.set_can_focus(false);
+    flow.add_css_class("color-swatch-grid");
+
+    for (label, key) in colors {
+        let btn = gtk4::Button::new();
+        btn.add_css_class("color-swatch");
+        btn.set_tooltip_text(Some(label));
+        btn.set_size_request(22, 22);
+        if key.is_empty() {
+            btn.add_css_class("color-swatch-none");
+        } else {
+            let css = gtk4::CssProvider::new();
+            css.load_from_data(&format!(
+                "button {{ background-image: none; background-color: {}; }}",
+                color_css_value(key)
+            ));
+            btn.style_context()
+                .add_provider(&css, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
         }
-        color_menu.append_item(&item);
+        let action = action_for(key);
+        let popover = popover.clone();
+        btn.connect_clicked(move |b| {
+            let _ = b.activate_action(&action, None);
+            popover.popdown();
+        });
+        flow.append(&btn);
     }
+    flow.upcast()
 }
 
 fn color_css_value(name: &str) -> &str {

@@ -5,7 +5,11 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SB=/tmp/jmux-demo; RT=/tmp/jmux-demo-rt; SOCK="$RT/jmux.sock"
 
 start_sway() {
-  pkill -9 -x jmux-app 2>/dev/null; pkill -9 -x sway 2>/dev/null; sleep 1.2
+  # Scope kills to THIS harness's own instances by full path/config — never a
+  # bare `pkill -x jmux-app`, which matches the user's real /usr/local/bin
+  # instance by process name and SIGKILLs it (losing all live sessions).
+  pkill -9 -f "$REPO/target/release/jmux-app" 2>/dev/null
+  pkill -9 -f "$SB/sway.conf" 2>/dev/null; sleep 1.2
   printf 'output HEADLESS-1 resolution 1600x1000\ndefault_border none\n' > "$SB/sway.conf"
   HOME="$SB" XDG_RUNTIME_DIR="$RT" WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 \
     sway -c "$SB/sway.conf" >/tmp/sway.log 2>&1 &

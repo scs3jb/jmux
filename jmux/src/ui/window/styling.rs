@@ -285,6 +285,38 @@ pub(super) fn install_css() {
             color: #986a44;
         }
 
+        /* ── Colour swatch grid (Set Color menu) ── */
+        .color-swatch-grid flowboxchild {
+            padding: 0;
+            min-width: 0;
+            min-height: 0;
+        }
+
+        .color-swatch {
+            min-width: 20px;
+            min-height: 20px;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid alpha(@theme_fg_color, 0.25);
+            box-shadow: none;
+            background-image: none;
+        }
+
+        .color-swatch:hover {
+            border-color: @theme_fg_color;
+        }
+
+        /* No-colour swatch — hollow with a diagonal strike. */
+        .color-swatch-none {
+            background-color: transparent;
+            background-image: linear-gradient(
+                to bottom right,
+                transparent calc(50% - 1px),
+                #e01b24 calc(50% - 1px),
+                #e01b24 calc(50% + 1px),
+                transparent calc(50% + 1px));
+        }
+
         /* ── Progress bar (capsule style) ── */
         .sidebar-progress {
             min-height: 3px;
