@@ -7,8 +7,13 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Top-level application settings.
+///
+/// Deliberately *not* `deny_unknown_fields`: a key this build no longer knows
+/// (an older file, a renamed setting, a hand-edited typo) would otherwise fail
+/// the whole parse, and a failed parse means every setting silently reverts to
+/// its default. Unknown keys are ignored instead.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct AppSettings {
     /// Appearance settings.
     pub theme: ThemeMode,
@@ -312,6 +317,9 @@ pub enum NotificationSound {
 #[serde(rename_all = "snake_case")]
 pub enum SocketAccess {
     Off,
+    /// `cmux_only` is the pre-rename spelling; a file still holding it would
+    /// otherwise fail to parse and reset every setting to its default.
+    #[serde(alias = "cmux_only")]
     JmuxOnly,
     AllowAll,
 }
@@ -685,6 +693,8 @@ pub struct LinkRoutingSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkTarget {
+    /// `cmux_browser` is the pre-rename spelling — see [`SocketAccess`].
+    #[serde(alias = "cmux_browser")]
     JmuxBrowser,
     SystemBrowser,
 }
@@ -729,7 +739,7 @@ impl LinkRoutingSettings {
 /// jmux will use that command to re-launch the agent only if the corresponding
 /// toggle is enabled.  All agents default to enabled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(from = "AgentRestoreWire")]
 pub struct AgentRestoreSettings {
     /// Restore Claude Code sessions on launch (`claude --continue`).
     pub claude_code: bool,
@@ -756,8 +766,60 @@ pub struct AgentRestoreSettings {
     pub hermes: bool,
     /// Restore Antigravity sessions on launch (`agy`). Also covers sessions
     /// saved as Gemini, which Antigravity replaced.
-    #[serde(default = "default_true", alias = "gemini")]
+    #[serde(default = "default_true")]
     pub antigravity: bool,
+}
+
+/// Read-side form of [`AgentRestoreSettings`], carrying the legacy `gemini`
+/// key that Antigravity replaced.
+///
+/// This exists instead of `#[serde(alias = "gemini")]` on `antigravity`. A
+/// file holding *both* keys — every file written by a build that knew Gemini
+/// and then upgraded — made serde report `duplicate field antigravity`, which
+/// failed the whole settings parse and reset every setting to its default.
+#[derive(Deserialize)]
+struct AgentRestoreWire {
+    #[serde(default = "default_true")]
+    claude_code: bool,
+    #[serde(default = "default_true")]
+    codex: bool,
+    #[serde(default = "default_true")]
+    opencode: bool,
+    #[serde(default = "default_true")]
+    rovo_dev: bool,
+    #[serde(default)]
+    cursor: bool,
+    #[serde(default)]
+    grok: bool,
+    #[serde(default)]
+    amp: bool,
+    #[serde(default)]
+    pi: bool,
+    #[serde(default)]
+    hermes: bool,
+    #[serde(default)]
+    antigravity: Option<bool>,
+    /// Pre-Antigravity name for the same toggle. Used only when `antigravity`
+    /// is absent, so a file with both keys parses.
+    #[serde(default)]
+    gemini: Option<bool>,
+}
+
+impl From<AgentRestoreWire> for AgentRestoreSettings {
+    fn from(w: AgentRestoreWire) -> Self {
+        Self {
+            claude_code: w.claude_code,
+            codex: w.codex,
+            opencode: w.opencode,
+            rovo_dev: w.rovo_dev,
+            cursor: w.cursor,
+            grok: w.grok,
+            amp: w.amp,
+            pi: w.pi,
+            hermes: w.hermes,
+            antigravity: w.antigravity.or(w.gemini).unwrap_or(true),
+        }
+    }
 }
 
 impl Default for AgentRestoreSettings {
@@ -903,7 +965,7 @@ impl AppSettings {
 
 /// Inclusive port range scanned on the remote host for the CLI relay tunnel.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct RemotePortRange {
     pub start: u16,
     pub end: u16,
@@ -934,7 +996,7 @@ impl RemotePortRange {
 /// A named goal runner: which agent CLI + model + effort executes a goal
 /// (see docs/roadmap/DESIGN-goal-graph.md).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct GoalRunner {
     /// Adapter: "claude" (default — full state detection + sub-agent
     /// mirroring) or "custom" (uses `command_template`).
@@ -968,7 +1030,7 @@ pub struct GoalRunner {
 
 /// Settings for goal-driven agent workspaces (`jmux goal`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct GoalSettings {
     /// Runner used when a goal doesn't name one. An empty/unknown name
     /// falls back to a stock claude runner.
@@ -1147,6 +1209,28 @@ pub fn load() -> AppSettings {
 /// `jmux.json` as the canonical new format); writes to `settings.json` only when
 /// the user has a `settings.json` and no `jmux.json` (backward compatibility).
 pub fn save(settings: &AppSettings) -> Result<(), std::io::Error> {
+    save_guarded(settings, ClobberUnreadable::No)
+}
+
+/// Save settings, replacing a settings file that this build cannot parse.
+///
+/// Only the settings dialog should use this. There the user is looking at the
+/// settings and pressed save, so replacing an unreadable file is exactly what
+/// they asked for. Every other caller writes a single incidental value (a
+/// split ratio, the quick terminal height) and must not be the reason a file
+/// full of settings gets replaced — see [`save`].
+pub fn save_replacing_unreadable(settings: &AppSettings) -> Result<(), std::io::Error> {
+    save_guarded(settings, ClobberUnreadable::Yes)
+}
+
+/// Whether a save may replace a settings file that fails to parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClobberUnreadable {
+    No,
+    Yes,
+}
+
+fn save_guarded(settings: &AppSettings, clobber: ClobberUnreadable) -> Result<(), std::io::Error> {
     let dir = config_dir();
     std::fs::create_dir_all(&dir)?;
     {
@@ -1154,7 +1238,44 @@ pub fn save(settings: &AppSettings) -> Result<(), std::io::Error> {
         let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     }
 
-    let path = active_config_path();
+    save_at(&active_config_path(), settings, clobber)?;
+    shortcuts::save(&settings.shortcuts)?;
+    Ok(())
+}
+
+fn save_at(
+    path: &std::path::Path,
+    settings: &AppSettings,
+    clobber: ClobberUnreadable,
+) -> Result<(), std::io::Error> {
+    // The guard. A file we cannot parse loads as defaults, so writing back
+    // over it replaces every setting the user ever chose with a default —
+    // which is how a duplicate `antigravity` key once emptied this file. Leave
+    // the file alone instead: a build that can parse it again picks it up
+    // whole on the next launch.
+    if clobber == ClobberUnreadable::No {
+        if let Ok(existing) = std::fs::read_to_string(path) {
+            if let Err(err) = parse_settings(&existing) {
+                tracing::error!(
+                    "Refusing to overwrite {}: this build cannot parse it ({err}), so the \
+                     settings in memory are defaults, not yours. Fix or delete the file — \
+                     saving from the settings dialog replaces it deliberately.",
+                    path.display()
+                );
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{} does not parse; refusing to overwrite it", path.display()),
+                ));
+            }
+        }
+    }
+
+    // Keep one rolling backup of the file we are about to replace, so even a
+    // forced or buggy write leaves the previous generation on disk.
+    if path.exists() {
+        let _ = std::fs::copy(path, path.with_extension("json.bak"));
+    }
+
     let json = serde_json::to_string_pretty(settings).map_err(std::io::Error::other)?;
     {
         use std::io::Write;
@@ -1164,11 +1285,9 @@ pub fn save(settings: &AppSettings) -> Result<(), std::io::Error> {
             .truncate(true)
             .write(true)
             .mode(0o600)
-            .open(&path)?;
+            .open(path)?;
         f.write_all(json.as_bytes())?;
     }
-
-    shortcuts::save(&settings.shortcuts)?;
     Ok(())
 }
 
@@ -1273,10 +1392,187 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_fields_rejected() {
-        let json = r#"{"bogus_field": true}"#;
-        let result: Result<AppSettings, _> = serde_json::from_str(json);
-        assert!(result.is_err(), "unknown fields should be rejected");
+    fn unknown_fields_are_ignored_not_fatal() {
+        // A key this build doesn't know must not cost the user every other
+        // setting: a failed parse falls back to defaults, and the next save
+        // writes those defaults over the file.
+        let json = r#"{"bogus_field": true, "theme": "dark"}"#;
+        let settings: AppSettings = serde_json::from_str(json).expect("unknown key must not fail");
+        assert_eq!(settings.theme, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn agent_restore_accepts_both_gemini_and_antigravity() {
+        // The exact file shape that reset every setting to its default:
+        // written by a build that knew Gemini, then read by one that renamed
+        // the key to Antigravity.
+        let json = r#"{"theme": "dark",
+                       "agent_restore": {"gemini": true, "antigravity": false}}"#;
+        let settings: AppSettings = serde_json::from_str(json).expect("both keys must parse");
+        assert_eq!(settings.theme, ThemeMode::Dark);
+        assert!(!settings.agent_restore.antigravity, "antigravity wins over gemini");
+    }
+
+    /// A throwaway directory, removed when the test ends. Avoids a `tempfile`
+    /// dev-dependency for the handful of tests that need real files.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let dir = std::env::temp_dir()
+                .join(format!("jmux-settings-{}-{name}-{seq}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn join(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The file that actually broke: a real settings file holding a key this
+    /// build no longer knows.
+    const UNREADABLE: &str = r#"{"theme": "dark", "sidebar_font_size": 10.0,
+                                 "agent_restore": {"gemini": true},
+                                 "removed_in_a_later_build": {"nested": [1, 2]},
+                                 "this_one_is_not_even_valid": }"#;
+
+    #[test]
+    fn every_key_this_build_ever_knew_parses_together() {
+        // The general form of the bug. Take everything this build writes, add
+        // every key an older build wrote — including a legacy key sitting next
+        // to the key that replaced it — and it must still parse. A rename that
+        // collides (the `gemini` alias on `antigravity`) fails here instead of
+        // silently resetting a real user's settings.
+        let mut doc = serde_json::to_value(AppSettings::default()).unwrap();
+        doc["socket_access"] = serde_json::json!("cmux_only");
+        doc["link_routing"]["default_target"] = serde_json::json!("cmux_browser");
+        doc["agent_restore"]["gemini"] = serde_json::json!(false);
+        doc["a_setting_a_later_build_removed"] = serde_json::json!(42);
+
+        let settings: AppSettings = serde_json::from_value(doc)
+            .expect("a file holding every key this build ever wrote must parse");
+
+        assert_eq!(settings.socket_access, SocketAccess::JmuxOnly);
+        assert_eq!(settings.link_routing.default_target, LinkTarget::JmuxBrowser);
+        // `antigravity` is present too (defaults serialize it), and wins.
+        assert!(settings.agent_restore.antigravity);
+    }
+
+    #[test]
+    fn save_refuses_to_overwrite_an_unreadable_file() {
+        // The guard. An unreadable file loads as defaults; writing those back
+        // is what turned one bad key into a wiped settings file.
+        let dir = TempDir::new("guard");
+        let path = dir.join("settings.json");
+        std::fs::write(&path, UNREADABLE).unwrap();
+
+        let err = save_at(&path, &AppSettings::default(), ClobberUnreadable::No)
+            .expect_err("must refuse");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            UNREADABLE,
+            "the file must be left exactly as it was"
+        );
+    }
+
+    #[test]
+    fn save_from_the_settings_dialog_may_replace_an_unreadable_file() {
+        let dir = TempDir::new("forced");
+        let path = dir.join("settings.json");
+        std::fs::write(&path, UNREADABLE).unwrap();
+
+        let mut settings = AppSettings::default();
+        settings.theme = ThemeMode::Dark;
+        save_at(&path, &settings, ClobberUnreadable::Yes).expect("forced save must work");
+
+        assert_eq!(load_settings_at(&path).theme, ThemeMode::Dark);
+        assert_eq!(
+            std::fs::read_to_string(path.with_extension("json.bak")).unwrap(),
+            UNREADABLE,
+            "the replaced file must survive as the backup"
+        );
+    }
+
+    #[test]
+    fn save_writes_normally_when_the_file_parses() {
+        let dir = TempDir::new("normal");
+        let path = dir.join("settings.json");
+        let mut settings = AppSettings::default();
+        settings.sidebar_font_size = 10.0;
+
+        save_at(&path, &settings, ClobberUnreadable::No).expect("no file yet");
+        settings.theme = ThemeMode::Dark;
+        save_at(&path, &settings, ClobberUnreadable::No).expect("readable file");
+
+        let loaded = load_settings_at(&path);
+        assert_eq!(loaded.theme, ThemeMode::Dark);
+        assert_eq!(loaded.sidebar_font_size, 10.0);
+    }
+
+    #[test]
+    fn unreadable_file_is_kept_and_recovered_from_the_backup() {
+        let dir = TempDir::new("recover");
+        let path = dir.join("settings.json");
+        std::fs::write(&path, UNREADABLE).unwrap();
+        std::fs::write(
+            path.with_extension("json.bak"),
+            r#"{"theme": "dark", "sidebar_font_size": 10.0}"#,
+        )
+        .unwrap();
+
+        let loaded = load_settings_at(&path);
+        assert_eq!(loaded.theme, ThemeMode::Dark, "must come from the backup");
+        assert_eq!(loaded.sidebar_font_size, 10.0);
+        assert_eq!(
+            std::fs::read_to_string(path.with_extension("json.invalid")).unwrap(),
+            UNREADABLE,
+            "the unreadable file must be kept for the user"
+        );
+    }
+
+    #[test]
+    fn unreadable_file_with_no_usable_backup_falls_back_to_defaults() {
+        let dir = TempDir::new("nobackup");
+        let path = dir.join("settings.json");
+        std::fs::write(&path, UNREADABLE).unwrap();
+        std::fs::write(path.with_extension("json.bak"), "also not json").unwrap();
+
+        assert_eq!(load_settings_at(&path).theme, ThemeMode::System);
+        assert!(path.with_extension("json.invalid").exists());
+    }
+
+    #[test]
+    fn pre_rename_settings_file_still_parses() {
+        // Shape of a real file written before the cmux -> jmux rename. Every
+        // legacy spelling here used to fail the parse, which reset the lot.
+        let json = r#"{"theme": "dark",
+                       "socket_access": "cmux_only",
+                       "sidebar_font_size": 10.0,
+                       "link_routing": {"default_target": "cmux_browser"},
+                       "agent_restore": {"gemini": true, "antigravity": true}}"#;
+        let settings: AppSettings = serde_json::from_str(json).expect("legacy file must parse");
+        assert_eq!(settings.theme, ThemeMode::Dark);
+        assert_eq!(settings.socket_access, SocketAccess::JmuxOnly);
+        assert_eq!(settings.link_routing.default_target, LinkTarget::JmuxBrowser);
+        assert_eq!(settings.sidebar_font_size, 10.0);
+    }
+
+    #[test]
+    fn legacy_gemini_key_seeds_antigravity() {
+        let json = r#"{"agent_restore": {"gemini": false}}"#;
+        let settings: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(!settings.agent_restore.antigravity);
     }
 
     #[test]
@@ -1333,17 +1629,48 @@ mod tests {
 }
 
 fn load_main_settings() -> AppSettings {
-    let path = active_config_path();
-    match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            let clean = strip_jsonc_comments(&content);
-            serde_json::from_str(&clean).unwrap_or_else(|err| {
-                tracing::warn!("Failed to parse {}: {err}", path.display());
-                AppSettings::default()
-            })
+    load_settings_at(&active_config_path())
+}
+
+fn load_settings_at(path: &std::path::Path) -> AppSettings {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return AppSettings::default();
+    };
+
+    match parse_settings(&content) {
+        Ok(settings) => settings,
+        Err(err) => {
+            // Falling straight through to the defaults loses every setting the
+            // user ever changed. Keep the file we could not read, then try the
+            // rolling backup before giving up. `save` refuses to overwrite the
+            // file while it is in this state.
+            tracing::error!(
+                "Failed to parse {}: {err}. Keeping a copy at {}.invalid",
+                path.display(),
+                path.display()
+            );
+            let _ = std::fs::copy(path, path.with_extension("json.invalid"));
+
+            let backup = path.with_extension("json.bak");
+            match std::fs::read_to_string(&backup).ok().and_then(|c| {
+                parse_settings(&c)
+                    .inspect_err(|e| {
+                        tracing::warn!("Backup {} is unusable too: {e}", backup.display())
+                    })
+                    .ok()
+            }) {
+                Some(settings) => {
+                    tracing::warn!("Recovered settings from {}", backup.display());
+                    settings
+                }
+                None => AppSettings::default(),
+            }
         }
-        Err(_) => AppSettings::default(),
     }
+}
+
+fn parse_settings(content: &str) -> Result<AppSettings, serde_json::Error> {
+    serde_json::from_str(&strip_jsonc_comments(content))
 }
 
 /// Percent-encode a string for safe embedding in URL query parameters.

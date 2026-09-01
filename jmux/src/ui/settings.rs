@@ -1508,7 +1508,10 @@ pub fn show_settings(
                 show_tab_close_button: show_tab_close_row.is_active(),
             };
 
-            if let Err(e) = settings::save(&new_settings) {
+            // The user is looking at the settings and pressed save, so this is
+            // the one place allowed to replace a settings file this build
+            // cannot parse.
+            if let Err(e) = settings::save_replacing_unreadable(&new_settings) {
                 tracing::warn!("Failed to save settings: {}", e);
             }
 
