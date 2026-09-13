@@ -105,6 +105,23 @@ fn is_braille(c: char) -> bool {
     ('\u{2800}'..='\u{28FF}').contains(&c)
 }
 
+/// A title spinner frame: Codex and Claude animate the pane title with braille
+/// frames or quarter-circle frames (◐◓◑◒), rewriting it ~5×/s while working.
+pub fn is_spinner_glyph(c: char) -> bool {
+    is_braille(c) || matches!(c, '◐' | '◓' | '◑' | '◒')
+}
+
+/// The title without its leading spinner frame, so a label does not show a
+/// stale frame when the sidebar skips rebuilding for spinner-only changes.
+pub fn strip_spinner(title: &str) -> &str {
+    let rest = title.trim_start_matches(is_spinner_glyph);
+    if rest.len() == title.len() {
+        title
+    } else {
+        rest.trim_start()
+    }
+}
+
 /// Whether the *main* agent's turn is running (interruptible). The cheapest
 /// tell is the animated braille spinner in the title; otherwise the footer's
 /// "esc to interrupt" or a live parenthesised timer ("✢ Working… (1m 8s ·").
@@ -362,6 +379,14 @@ mod tests {
     fn braille_title_is_working() {
         assert_eq!(classify("", "⠋ Fixing the bug"), Some(ClaudeState::Working));
         assert_eq!(classify("", "✳ Fixing the bug"), None);
+    }
+
+    #[test]
+    fn strips_spinner_frames() {
+        assert_eq!(strip_spinner("⠼ Review spec | torrent-to-plex"), "Review spec | torrent-to-plex");
+        assert_eq!(strip_spinner("◐ UI flickering"), "UI flickering");
+        assert_eq!(strip_spinner("✳ Claude Code"), "✳ Claude Code");
+        assert_eq!(strip_spinner("jbriggs@host:~"), "jbriggs@host:~");
     }
 
     #[test]

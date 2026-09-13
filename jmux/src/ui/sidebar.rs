@@ -214,6 +214,26 @@ pub fn create_sidebar(state: &Rc<AppState>) -> SidebarWidgets {
     }
 }
 
+/// Streams Debug output into a hasher, skipping title spinner glyphs. Codex and
+/// Claude rewrite the pane title ~5×/s with a new spinner frame; hashing those
+/// frames rebuilt every row 5×/s, which made the sidebar flicker, reset the
+/// sprite, and dropped clicks on rows torn down mid-press. The sprite shows the
+/// working state, and the title label strips the frame, so nothing goes stale.
+struct HashWriter<'a, H: std::hash::Hasher>(&'a mut H);
+impl<H: std::hash::Hasher> std::fmt::Write for HashWriter<'_, H> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        use crate::model::claude_state::is_spinner_glyph;
+        if s.contains(is_spinner_glyph) {
+            for c in s.chars().filter(|c| !is_spinner_glyph(*c)) {
+                self.0.write(c.encode_utf8(&mut [0; 4]).as_bytes());
+            }
+        } else {
+            self.0.write(s.as_bytes());
+        }
+        Ok(())
+    }
+}
+
 thread_local! {
     /// Render signature of each sidebar ListBox's last build, keyed by widget
     /// pointer. Shell integration re-reports identical titles/pwds many times
@@ -267,13 +287,6 @@ pub fn refresh_sidebar(list_box: &gtk4::ListBox, state: &Rc<AppState>) {
         // format!("{ws:?}") built multi-MB temporary strings (a Workspace's
         // Debug includes log entries and metadata blocks) up to 5×/s while
         // an agent's title spinner was animating.
-        struct HashWriter<'a, H: Hasher>(&'a mut H);
-        impl<H: Hasher> std::fmt::Write for HashWriter<'_, H> {
-            fn write_str(&mut self, s: &str) -> std::fmt::Result {
-                self.0.write(s.as_bytes());
-                Ok(())
-            }
-        }
         use std::fmt::Write as _;
         let tab_manager = lock_or_recover(&state.shared.tab_manager);
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -642,7 +655,9 @@ fn create_workspace_row(
         }
     }
 
-    let title_label = gtk4::Label::new(Some(workspace.display_title()));
+    let title_label = gtk4::Label::new(Some(crate::model::claude_state::strip_spinner(
+        workspace.display_title(),
+    )));
     title_label.set_hexpand(true);
     title_label.set_halign(gtk4::Align::Start);
     title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -706,6 +721,7 @@ fn create_workspace_row(
                         .custom_title
                         .as_deref()
                         .or(panel.title.as_deref())
+                        .map(crate::model::claude_state::strip_spinner)
                         .unwrap_or("pane");
                     let text = if gb.is_dirty {
                         format!("  {} git {} *", panel_title, gb.branch)
@@ -2418,4 +2434,24 @@ pub fn compact_path(path: &str) -> String {
     }
 
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HashWriter;
+    use std::fmt::Write as _;
+    use std::hash::Hasher;
+
+    fn hash(s: &str) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        let _ = write!(HashWriter(&mut h), "{s:?}");
+        h.finish()
+    }
+
+    #[test]
+    fn spinner_frames_do_not_change_signature() {
+        assert_eq!(hash("⠦ Review spec | x"), hash("⠇ Review spec | x"));
+        assert_eq!(hash("◐ Fix flicker"), hash("◑ Fix flicker"));
+        assert_ne!(hash("⠦ Review spec | x"), hash("⠦ Other task | x"));
+    }
 }
