@@ -1441,7 +1441,8 @@ fn build_workspace_from_snapshot(
             pending_scrollback: panel_snapshot
                 .terminal
                 .as_ref()
-                .and_then(|t| t.scrollback.clone()),
+                .and_then(|t| t.scrollback.clone())
+                .map(Into::into),
             pending_zoom: panel_snapshot
                 .browser
                 .as_ref()

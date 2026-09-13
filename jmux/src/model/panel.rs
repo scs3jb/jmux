@@ -40,6 +40,33 @@ pub enum PanelType {
     Graph,
 }
 
+/// Restored scrollback waiting for its terminal surface. Debug prints only the
+/// length: the sidebar hashes each workspace's Debug output on every refresh,
+/// and printing up to 400,000 chars per unopened terminal cost ~30% of the main
+/// thread after a restart.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PendingScrollback(pub String);
+
+impl std::fmt::Debug for PendingScrollback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PendingScrollback({} bytes)", self.0.len())
+    }
+}
+
+impl From<String> for PendingScrollback {
+    fn from(text: String) -> Self {
+        Self(text)
+    }
+}
+
+impl std::ops::Deref for PendingScrollback {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
 /// A panel within a workspace pane.
 ///
 /// Panels are the leaf nodes of the layout tree. Each panel is either a
@@ -64,7 +91,7 @@ pub struct Panel {
     /// Custom command to run instead of the default shell (e.g., "ssh user@host").
     pub command: Option<String>,
     /// Scrollback text to replay when the terminal surface is first created (session restore).
-    pub pending_scrollback: Option<String>,
+    pub pending_scrollback: Option<PendingScrollback>,
     /// Browser zoom level to restore (session restore).
     pub pending_zoom: Option<f64>,
     /// Parent panel ID for Codex Teams subagent panes. When set, this panel was
@@ -944,6 +971,17 @@ fn same_panel_set(node: &LayoutNode, expected: &[Uuid]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sidebar hashes a workspace's Debug output on every refresh. A
+    /// restored terminal keeps up to 400,000 chars of scrollback until its
+    /// surface is created, so Debug must not print that text.
+    #[test]
+    fn debug_omits_pending_scrollback_text() {
+        let mut panel = Panel::new_terminal();
+        panel.pending_scrollback = Some("x".repeat(400_000).into());
+        let debug = format!("{panel:?}");
+        assert!(debug.len() < 2_000, "Debug is {} chars", debug.len());
+    }
 
     #[test]
     fn test_single_pane() {
