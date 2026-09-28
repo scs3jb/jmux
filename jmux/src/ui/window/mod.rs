@@ -519,6 +519,41 @@ fn content_stack(content_box: &gtk4::Box) -> gtk4::Stack {
 /// `prune_workspace_pages` leaves it alone.
 const HEADLESS_PAGE: &str = "::headless-spawn::";
 
+/// Page-name prefix for a page waiting in `retire_page`. Not a UUID, so
+/// `prune_workspace_pages` skips it and `child_by_name` never returns it.
+const RETIRED_PAGE_PREFIX: &str = "::retired::";
+
+/// How long a retired page stays parented (off screen) before removal.
+const RETIRE_PAGE_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Remove a stack page after it has been off screen for a moment, not at once.
+///
+/// GTK 4.22's GtkGLArea leaks a full-frame copy (width × height × 4 bytes,
+/// ~5 MB for a normal pane, ~30 MB at 4K) when it unrealizes while its last
+/// frame's dmabuf texture is still held — which is always the case right
+/// after it was on screen, since the renderer keeps the previous frame. The
+/// unrealize path calls `gdk_gl_texture_release` (a GPU→CPU copy) and then
+/// drops the only pointer to that texture. Fixed upstream in GTK main by
+/// 7ff233c7 ("glarea: Fix memory leaks"); not in 4.22.x.
+///
+/// Waiting until the page is unmapped and a later frame has rendered lets the
+/// dmabuf texture die first, so unrealize has nothing left to copy.
+fn retire_page(stack: &gtk4::Stack, page: gtk4::Widget) {
+    stack
+        .page(&page)
+        .set_name(&format!("{RETIRED_PAGE_PREFIX}{}", uuid::Uuid::new_v4()));
+    page.set_visible(false);
+    let stack_weak = stack.downgrade();
+    glib::timeout_add_local_once(RETIRE_PAGE_DELAY, move || {
+        let Some(stack) = stack_weak.upgrade() else {
+            return;
+        };
+        if page.parent().as_ref() == Some(stack.upcast_ref::<gtk4::Widget>()) {
+            stack.remove(&page);
+        }
+    });
+}
+
 /// A never-visible `GtkBox` inside a realized window, used to park terminal
 /// surfaces that must spawn their command before (or without ever) being shown.
 ///
@@ -738,7 +773,7 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
                 )
             };
             if let Some(old) = stack.child_by_name(&page_name) {
-                stack.remove(&old);
+                retire_page(&stack, old);
             }
             stack.add_named(&widget, Some(&page_name));
             // Record the *post-build* signature: the build itself creates and
@@ -890,7 +925,7 @@ fn prune_workspace_pages(stack: &gtk4::Stack, state: &Rc<AppState>, _win_id: Opt
         }
     }
     for (id, w) in stale {
-        stack.remove(&w);
+        retire_page(stack, w);
         state.workspace_page_signatures.borrow_mut().remove(&id);
     }
 }

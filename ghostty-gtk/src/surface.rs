@@ -227,6 +227,12 @@ mod imp {
             }
             self.callback_userdata.borrow_mut().take();
             self.close_handler.borrow_mut().take();
+
+            // The context menu popover is parented to this widget; GTK does not
+            // unparent a GtkGLArea's children for us.
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
         }
     }
 
@@ -235,6 +241,14 @@ mod imp {
             self.parent_realize();
             tracing::debug!("GLArea realize");
             let widget = self.obj();
+            // Attach the IME only while realized. The Wayland IM context holds
+            // a strong ref to its client widget, so a link kept past unrealize
+            // pins the surface: dispose never runs, and the ghostty surface,
+            // pty, child shell and io threads outlive the closed panel
+            // (~7 MB each). GtkText does the same set/clear pairing.
+            if let Some(im_context) = self.im_context.borrow().as_ref() {
+                im_context.set_client_widget(Some(&*widget));
+            }
             widget.make_current();
             if widget.error().is_some() {
                 tracing::error!("Failed to make GL context current");
@@ -252,6 +266,9 @@ mod imp {
 
         fn unrealize(&self) {
             tracing::debug!("GLArea unrealize");
+            if let Some(im_context) = self.im_context.borrow().as_ref() {
+                im_context.set_client_widget(Option::<&gtk4::Widget>::None);
+            }
             // Release the renderer GL state that realize() allocated via
             // ghostty_surface_display_realized (glyph atlas, cell buffers, FBOs).
             // GtkGLArea gives no guarantee the context is current on unrealize,
@@ -1521,7 +1538,7 @@ impl GhosttyGlSurface {
             return;
         };
 
-        im_context.set_client_widget(Some(self));
+        // The client widget is set in realize() and cleared in unrealize().
         im_context.set_use_preedit(true);
 
         // Weak refs: `im_context` is stored on the widget's imp, so strong `self`
