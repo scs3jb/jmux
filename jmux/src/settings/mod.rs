@@ -1158,7 +1158,8 @@ pub fn active_config_path() -> PathBuf {
 /// while an agent streams title updates), and re-reading + re-parsing two
 /// JSON files each time dominated those paths. A stat per file per call is
 /// enough to keep external edits, `save()`, and SIGUSR2 reloads all working:
-/// any write bumps the mtime and the next `load()` re-parses.
+/// any write bumps the mtime and the next `load()` re-parses. A missing file
+/// (mtime `None`) is cached too: creating it changes the mtime to `Some`.
 struct SettingsCache {
     settings: AppSettings,
     main_path: PathBuf,
@@ -1186,7 +1187,6 @@ pub fn load() -> AppSettings {
         if c.main_path == main_path
             && c.main_mtime == main_mtime
             && c.shortcuts_mtime == shortcuts_mtime
-            && main_mtime.is_some()
         {
             return c.settings.clone();
         }
