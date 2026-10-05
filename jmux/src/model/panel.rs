@@ -417,7 +417,7 @@ impl Panel {
 }
 
 /// Git branch info for a panel or workspace.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitBranch {
     pub branch: String,
     pub is_dirty: bool,
