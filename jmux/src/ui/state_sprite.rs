@@ -19,7 +19,7 @@ use gdk_pixbuf::{PixbufAnimation, PixbufAnimationIter};
 use gtk4::prelude::*;
 
 use crate::app::AppState;
-use crate::model::claude_state::{classify, is_shell_title, ClaudeState};
+use crate::model::claude_state::{classify, is_agent_screen, is_shell_title, ClaudeState};
 use crate::model::{PanelType, Workspace};
 
 const WORKING_GIF: &[u8] = include_bytes!("../../assets/working.gif");
@@ -43,20 +43,21 @@ pub fn workspace_claude_state(workspace: &Workspace, state: &Rc<AppState>) -> Op
             if panel.panel_type != PanelType::Terminal {
                 return None;
             }
-            let raw_title = panel.title.as_deref().unwrap_or("");
-            if is_shell_title(raw_title) {
-                return None;
-            }
             // A hibernated agent is paused, not working.
             if state.shared.is_hibernated(&pid) {
                 return None;
             }
-            let text = state
+            let raw_title = panel.title.as_deref().unwrap_or("");
+            let text_opt = state
                 .terminal_cache
                 .borrow()
                 .get(&pid)
-                .and_then(|s| s.read_screen_text())?;
-            classify(&text, raw_title)
+                .and_then(|s| s.read_screen_text());
+            let text = text_opt.as_deref().unwrap_or("");
+            if is_shell_title(raw_title) && !is_agent_screen(text) {
+                return None;
+            }
+            classify(text, raw_title)
         })
         .max()
 }
@@ -69,9 +70,9 @@ pub fn sprite_image(claude_state: ClaudeState, reference: &impl IsA<gtk4::Widget
     let image = gtk4::Image::new();
     image.set_pixel_size(sprite_px(reference.as_ref()));
     image.set_tooltip_text(Some(match claude_state {
-        ClaudeState::Working => "Claude is working",
-        ClaudeState::NeedsInput => "Claude needs your input",
-        ClaudeState::Waiting => "Claude is waiting on a background task",
+        ClaudeState::Working => "Agent is working",
+        ClaudeState::NeedsInput => "Agent needs your input",
+        ClaudeState::Waiting => "Agent is waiting on a background task",
     }));
     image.add_css_class("claude-sprite");
 

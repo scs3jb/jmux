@@ -12,7 +12,7 @@ use libadwaita::prelude::*;
 use uuid::Uuid;
 
 use crate::app::{lock_or_recover, AppState};
-use crate::model::claude_state::{classify, is_shell_title, ClaudeState};
+use crate::model::claude_state::{classify, is_agent_screen, is_shell_title, ClaudeState};
 use crate::model::PanelType;
 
 struct TileInfo {
@@ -324,10 +324,13 @@ fn collect_sections(state: &Rc<AppState>) -> Vec<WorkspaceSection> {
                     // not hibernated), mirroring the sidebar sprite logic.
                     let claude_state = if panel.panel_type == PanelType::Terminal {
                         let raw_title = panel.title.as_deref().unwrap_or("");
-                        if is_shell_title(raw_title) || state.shared.is_hibernated(&pid) {
+                        let text = screen_text.as_deref().unwrap_or("");
+                        if (is_shell_title(raw_title) && !is_agent_screen(text))
+                            || state.shared.is_hibernated(&pid)
+                        {
                             None
                         } else {
-                            screen_text.as_deref().and_then(|t| classify(t, raw_title))
+                            classify(text, raw_title)
                         }
                     } else {
                         None

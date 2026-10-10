@@ -54,13 +54,63 @@ pub fn has_selection_menu(text: &str) -> bool {
     has_pointer_menu(text) || has_menu_footer(text)
 }
 
+/// Check whether `word` appears as a whole word in `haystack` (lowercase).
+/// A word boundary is the start/end of string or a non-alphanumeric character.
+pub fn is_word_match(haystack: &str, word: &str) -> bool {
+    let mut start = 0;
+    while let Some(pos) = haystack[start..].find(word) {
+        let abs = start + pos;
+        let before_ok = abs == 0
+            || !haystack.as_bytes()[abs - 1].is_ascii_alphanumeric()
+                && haystack.as_bytes()[abs - 1] != b'_';
+        let after_idx = abs + word.len();
+        let after_ok = after_idx >= haystack.len()
+            || !haystack.as_bytes()[after_idx].is_ascii_alphanumeric()
+                && haystack.as_bytes()[after_idx] != b'_';
+        if before_ok && after_ok {
+            return true;
+        }
+        start = abs + word.len();
+    }
+    false
+}
+
+/// Whether the terminal screen text looks like an AI agent session (Antigravity/agy,
+/// Claude Code, Codex) rather than an ordinary shell. Used when the pane title
+/// still looks like a generic shell ("bash", "user@host:~/path") because the
+/// agent did not rewrite the window title.
+pub fn is_agent_screen(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("antigravity")
+        || lower.contains("thought process")
+        || lower.contains("generating...")
+        || lower.contains("esc to cancel")
+        || lower.contains("enter/esc to cancel")
+        || lower.contains("activated bash mode")
+        || lower.contains("? for shortcuts")
+        || lower.contains("> you:")
+        || lower.contains("claude code")
+        || lower.contains("esc to interrupt")
+        || is_word_match(&lower, "agy")
+}
+
 /// Whether a terminal pane's title looks like a plain shell rather than an
 /// agent — "user@host:~/path" or a bare shell name. Such panes never carry a
-/// Claude state.
+/// Claude state unless `is_agent_screen()` detects an active agent on screen.
 pub fn is_shell_title(title: &str) -> bool {
     let t = title.trim();
+    let lower = t.to_ascii_lowercase();
+    // Known agent titles are never shell titles, even if formatted with user@host
+    if lower.contains("claude")
+        || lower.contains("codex")
+        || lower.contains("antigravity")
+        || lower.contains("gemini")
+        || is_word_match(&lower, "agy")
+    {
+        return false;
+    }
     if matches!(
-        t.to_ascii_lowercase().as_str(),
+        lower.as_str(),
         "bash" | "zsh" | "fish" | "sh" | "-bash" | "-zsh"
     ) {
         return true;
@@ -122,24 +172,62 @@ pub fn strip_spinner(title: &str) -> &str {
     }
 }
 
-/// Whether the *main* agent's turn is running (interruptible). The cheapest
-/// tell is the animated braille spinner in the title; otherwise the footer's
-/// "esc to interrupt" or a live parenthesised timer ("✢ Working… (1m 8s ·").
-/// The paren anchor matters — past-tense summaries ("Crunched for 2m 15s")
-/// must NOT count as active.
+/// Whether the *main* agent's turn is running (interruptible).
+/// Tells:
+/// - animated spinner glyph in the title (Claude braille, Codex quarter-circles)
+/// - cancel/interrupt hints in the live footer:
+///   - Claude/Codex: "esc to interrupt"
+///   - Antigravity (agy): "esc to cancel", "enter/esc to cancel", "generating..."
+/// - live parenthesised timer ("✢ Working… (1m 8s ·")
+/// - active in-terminal spinner line (agy animates braille spinners `⣷ Thinking...`,
+///   `⠋ Thought Process`, `⣷ tool: write_file` directly in the terminal text)
 fn is_active_turn(live: &str, raw_title: &str) -> bool {
     if raw_title
         .trim_start()
         .chars()
         .next()
-        .is_some_and(is_braille)
+        .is_some_and(is_spinner_glyph)
     {
         return true;
     }
-    if live.to_ascii_lowercase().contains("esc to interrupt") {
+    let lower = live.to_ascii_lowercase();
+    if lower.contains("esc to interrupt")
+        || lower.contains("esc to cancel")
+        || lower.contains("enter/esc to cancel")
+        || lower.contains("generating...")
+    {
+        return true;
+    }
+    if has_live_spinner(live) {
         return true;
     }
     has_live_timer(live)
+}
+
+/// Whether `live` contains an active spinner line from an in-progress agent turn
+/// (e.g. `agy`'s braille spinner `⣷ Thinking...`, `⠋ Thought Process`, `⣷ tool: write_file`).
+fn has_live_spinner(live: &str) -> bool {
+    for line in live.lines() {
+        let s = line.trim();
+        if s.chars().any(is_spinner_glyph) {
+            let lower = s.to_ascii_lowercase();
+            if lower.contains("thinking")
+                || lower.contains("thought")
+                || lower.contains("generating")
+                || lower.contains("tool:")
+                || lower.contains("to cancel")
+                || lower.contains("signing in")
+                || lower.contains("working")
+                || lower.contains("running")
+            {
+                if lower.contains("crunched for") {
+                    continue;
+                }
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// `\(\d+m \d+s` or `\(\d+s\b`
@@ -190,7 +278,11 @@ fn has_live_timer(s: &str) -> bool {
 /// back at the prompt — the "waiting on something to finish" state.
 fn is_background_running(live: &str) -> bool {
     let lower = live.to_ascii_lowercase();
-    if lower.contains("shell still running") || lower.contains("shells still running") {
+    if lower.contains("shell still running")
+        || lower.contains("shells still running")
+        || lower.contains("task still running")
+        || lower.contains("tasks still running")
+    {
         return true;
     }
     if live.contains("↓ to manage") {
@@ -228,13 +320,16 @@ fn has_shell_count(lower: &str) -> bool {
     false
 }
 
-/// `waiting for \d+ background agent`
+/// `waiting for \d+ background agent` or `waiting for \d+ background task`
 fn waiting_for_background_agents(lower: &str) -> bool {
     for (pos, _) in lower.match_indices("waiting for ") {
         let rest = &lower[pos + "waiting for ".len()..];
         let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
-        if digits > 0 && rest[digits..].starts_with(" background agent") {
-            return true;
+        if digits > 0 {
+            let tail = &rest[digits..];
+            if tail.starts_with(" background agent") || tail.starts_with(" background task") {
+                return true;
+            }
         }
     }
     false
@@ -255,13 +350,14 @@ fn has_subagent_row(live: &str) -> bool {
 // ── Selection menus ──────────────────────────────────────────────────────────
 
 /// A line that looks like a numbered menu option:
-/// leading indent, optional ❯ pointer, "N." or "N)", then a non-empty label.
+/// leading indent, optional ❯ or > pointer, "N." or "N)", then a non-empty label.
 /// Returns (pointed, number).
 fn parse_option(line: &str) -> Option<(bool, u32)> {
     let mut s = line.trim_start();
-    let pointed = s.starts_with('❯');
+    let pointed = s.starts_with('❯') || s.starts_with('>');
     if pointed {
-        s = s['❯'.len_utf8()..].trim_start();
+        let prefix_len = if s.starts_with('❯') { '❯'.len_utf8() } else { 1 };
+        s = s[prefix_len..].trim_start();
     }
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
     if digits == 0 {
@@ -311,7 +407,11 @@ fn has_pointer_menu(text: &str) -> bool {
 /// unmistakable tell is the nav footer near the bottom.
 fn has_menu_footer(text: &str) -> bool {
     let lower = tail(text, 8).to_ascii_lowercase();
-    lower.contains("enter to select") || lower.contains("↑/↓ to navigate")
+    lower.contains("enter to select")
+        || lower.contains("enter to submit")
+        || lower.contains("enter to confirm")
+        || lower.contains("↑/↓ to navigate")
+        || (lower.contains("↑/↓") && (lower.contains("navigate") || lower.contains("select")))
 }
 
 // ── "Ends in a question" ─────────────────────────────────────────────────────
@@ -319,11 +419,14 @@ fn has_menu_footer(text: &str) -> bool {
 /// Chrome lines that are not part of Claude's response (footers, separators,
 /// status/recap/spinner lines, task-panel rows, the input box).
 const CHROME_GLYPHS: &[char] = &[
-    '✻', '✶', '✳', '✢', '✣', '※', '⏵', '◯', '●', '◻', '◼', '✔', '⎿', '│',
+    '✻', '✶', '✳', '✢', '✣', '※', '⏵', '◯', '●', '◻', '◼', '✔', '⎿', '│', '⚙',
 ];
 const CHROME_TEXT: &[&str] = &[
     "for shortcuts",
     "esc to interrupt",
+    "esc to cancel",
+    "thought process",
+    "generating...",
     "auto mode on",
     "ctrl+t",
     "for agents",
@@ -487,5 +590,60 @@ mod tests {
         text.push_str(&"line\n".repeat(20));
         text.push('❯');
         assert_eq!(classify(&text, ""), None);
+    }
+
+    #[test]
+    fn agy_generating_is_working() {
+        let text = "Analyzing directory...\nGenerating... (Enter/Esc to cancel)\n";
+        assert_eq!(classify(text, "bash"), Some(ClaudeState::Working));
+        assert_eq!(classify(text, "jbriggs@bigboy:~/src"), Some(ClaudeState::Working));
+    }
+
+    #[test]
+    fn agy_thinking_spinner_is_working() {
+        let text = "Antigravity v1.3.1\n⣷ Thinking... (12s)\n";
+        assert_eq!(classify(text, "bash"), Some(ClaudeState::Working));
+        let text2 = "▾ Thought Process\n⠋ Thinking...\n";
+        assert_eq!(classify(text2, "bash"), Some(ClaudeState::Working));
+    }
+
+    #[test]
+    fn agy_tool_execution_is_working() {
+        let text = "⣷ tool: run_command\nGenerating... (Enter/Esc to cancel)\n";
+        assert_eq!(classify(text, "bash"), Some(ClaudeState::Working));
+        let text2 = "⚙ tool: write_file\nGenerating... (Enter/Esc to cancel)\n";
+        assert_eq!(classify(text2, "bash"), Some(ClaudeState::Working));
+    }
+
+    #[test]
+    fn agy_idle_prompt_is_none() {
+        let text = "I completed the changes.\n> you: \n? for shortcuts\n";
+        assert_eq!(classify(text, "bash"), None);
+        assert!(is_agent_screen(text));
+    }
+
+    #[test]
+    fn agy_screen_detection() {
+        assert!(is_agent_screen("Antigravity 2.0"));
+        assert!(is_agent_screen("▾ Thought Process"));
+        assert!(is_agent_screen("Generating... (Enter/Esc to cancel)"));
+        assert!(is_agent_screen("> you: "));
+        assert!(is_agent_screen("running agy in terminal"));
+        assert!(!is_agent_screen("ls -la\nfile1.txt file2.txt\n$ "));
+    }
+
+    #[test]
+    fn agy_menu_is_needs_input() {
+        let text = "Allow command execution?\n> 1. Yes\n  2. No\n";
+        assert_eq!(classify(text, "bash"), Some(ClaudeState::NeedsInput));
+        let text2 = "Select an option:\n  Option 1\n  Option 2\nenter to submit · esc to cancel\n";
+        assert_eq!(classify(text2, "bash"), Some(ClaudeState::NeedsInput));
+    }
+
+    #[test]
+    fn agy_title_recognition() {
+        assert!(!is_shell_title("agy"));
+        assert!(!is_shell_title("agy -p 'fix bug'"));
+        assert!(!is_shell_title("Antigravity"));
     }
 }
