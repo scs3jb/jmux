@@ -335,17 +335,28 @@ pub(super) fn bind_shared_state_updates(
 
                         if let Some(panel_id) = panel_id {
                             let mut tm = lock_or_recover(&state.shared.tab_manager);
+                            let mut detect_branch_for = None;
                             if let Some(ws) = tm.find_workspace_with_panel_mut(panel_id) {
                                 if let Some(panel) = ws.panels.get_mut(&panel_id) {
                                     panel.directory = Some(directory.clone());
                                 }
                                 if ws.focused_panel_id == Some(panel_id) {
                                     ws.current_directory = directory.clone();
-                                    // Auto-detect git branch from directory
-                                    ws.git_branch = super::styling::detect_git_branch(&directory);
+                                    detect_branch_for = Some(ws.id);
                                 }
                             }
                             drop(tm);
+                            // Auto-detect git branch from directory. Shells
+                            // report the pwd at every prompt, and `git status`
+                            // can take seconds in a large repo — keep it off
+                            // the main thread and out of the tab_manager lock.
+                            if let Some(ws_id) = detect_branch_for {
+                                super::styling::detect_git_branch_async(
+                                    state.shared.clone(),
+                                    ws_id,
+                                    directory,
+                                );
+                            }
                             needs_metadata_refresh = true;
                         }
                     }

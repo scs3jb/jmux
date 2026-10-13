@@ -48,6 +48,40 @@ fn read_snapshot_quiet(path: &Path) -> Option<AppSessionSnapshot> {
 /// overwriting a good on-disk session with an empty one on its first autosave.
 static HAD_WORKSPACES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Fingerprint of the last snapshot this process wrote, so unchanged autosaves
+/// can skip the disk entirely. Held across the write, which also serializes
+/// the background autosave against the synchronous shutdown save.
+static LAST_SAVED_FINGERPRINT: std::sync::Mutex<Option<u64>> = std::sync::Mutex::new(None);
+
+/// Hash of everything in the snapshot except `created_at`, streamed straight
+/// from the serializer so no JSON string is built.
+fn snapshot_fingerprint(snapshot: &AppSessionSnapshot) -> u64 {
+    use std::hash::Hasher;
+    struct HashSink(std::collections::hash_map::DefaultHasher);
+    impl Write for HashSink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.write(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    // The serializer emits many tiny writes; batch them so the hasher sees
+    // large chunks (per-call overhead otherwise dominates).
+    let mut sink = std::io::BufWriter::with_capacity(64 * 1024, HashSink(Default::default()));
+    let _ = serde_json::to_writer(
+        &mut sink,
+        &(
+            snapshot.version,
+            &snapshot.windows,
+            &snapshot.closed_workspaces,
+        ),
+    );
+    let _ = sink.flush(); // HashSink never fails
+    sink.get_ref().0.finish()
+}
+
 /// Save a session snapshot to disk.
 pub fn save_session(snapshot: &AppSessionSnapshot) -> anyhow::Result<()> {
     let path = session_path();
@@ -77,6 +111,18 @@ pub fn save_session(snapshot: &AppSessionSnapshot) -> anyhow::Result<()> {
         }
     }
 
+    // Autosave runs every 8s; an idle session produces the same snapshot each
+    // time. Skip the backup copy, rewrite and fsync when nothing but
+    // `created_at` (written, never read) changed since our last successful
+    // save and the file is still there.
+    let fingerprint = snapshot_fingerprint(snapshot);
+    let mut last_saved = LAST_SAVED_FINGERPRINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if *last_saved == Some(fingerprint) && path.exists() {
+        return Ok(());
+    }
+
     // Keep one rolling backup of the last good (non-empty) session, so even a
     // bad overwrite or corruption leaves a recoverable generation behind.
     if new_live > 0 && path.exists() {
@@ -86,8 +132,13 @@ pub fn save_session(snapshot: &AppSessionSnapshot) -> anyhow::Result<()> {
 
     let json = serde_json::to_string_pretty(snapshot)?;
     write_atomic(&path, json.as_bytes())?;
+    *last_saved = Some(fingerprint);
 
-    tracing::debug!("Session saved to {} ({} live workspaces)", path.display(), new_live);
+    tracing::debug!(
+        "Session saved to {} ({} live workspaces)",
+        path.display(),
+        new_live
+    );
     Ok(())
 }
 
@@ -584,6 +635,24 @@ fn normalize_divider_positions(layout: &mut crate::session::snapshot::SessionWor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fingerprint_ignores_created_at_only() {
+        let snapshot = |created_at: f64, version: u32| AppSessionSnapshot {
+            version,
+            created_at,
+            windows: Vec::new(),
+            closed_workspaces: Vec::new(),
+        };
+        assert_eq!(
+            snapshot_fingerprint(&snapshot(1.0, 1)),
+            snapshot_fingerprint(&snapshot(2.0, 1))
+        );
+        assert_ne!(
+            snapshot_fingerprint(&snapshot(1.0, 1)),
+            snapshot_fingerprint(&snapshot(1.0, 2))
+        );
+    }
 
     #[test]
     fn test_truncate_scrollback_short_text() {
