@@ -694,6 +694,14 @@ pub fn show_settings(
     qt_hotkey_row.set_text(&current_settings.quick_terminal.hotkey);
     qt_group.add(&qt_hotkey_row);
 
+    let qt_display_row = adw::EntryRow::new();
+    qt_display_row.set_title("Preferred Display (blank for primary)");
+    qt_display_row.set_tooltip_text(Some(
+        "Output connector, e.g. DP-1 or HDMI-A-1. Uses the primary display while disconnected, then returns when reconnected.",
+    ));
+    qt_display_row.set_text(&current_settings.quick_terminal.preferred_display);
+    qt_group.add(&qt_display_row);
+
     let qt_height_adj = gtk4::Adjustment::new(
         (current_settings.quick_terminal.height_fraction * 100.0) as f64,
         10.0,
@@ -1502,6 +1510,7 @@ pub fn show_settings(
                     hotkey: qt_hotkey_row.text().trim().to_string(),
                     height_fraction: (qt_height_row.value() as f32 / 100.0).clamp(0.1, 1.0),
                     animation_ms: current_settings.quick_terminal.animation_ms,
+                    preferred_display: qt_display_row.text().trim().to_string(),
                 },
                 shortcuts: shortcuts_state.borrow().clone(),
                 minimal_mode: current_settings.minimal_mode,

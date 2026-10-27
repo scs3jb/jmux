@@ -95,6 +95,7 @@ pub(super) fn bind_shared_state_updates(
                             let app = window.application();
                             crate::ui::settings::show_settings(&window, shared, move || {
                                 super::refresh_ui(&lb, &cb, &st);
+                                crate::ui::quick_terminal::refresh_display();
                                 // Register the quick-terminal hotkey if it was
                                 // just enabled (no-op otherwise / if already up).
                                 if let Some(app) = &app {

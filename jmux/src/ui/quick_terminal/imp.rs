@@ -2,9 +2,9 @@
 //!
 //! Reuses `create_window` (chromeless: no header, collapsed sidebar) and turns
 //! the window into a top-anchored `wlr-layer-shell` overlay. Showing/hiding
-//! animates the layer-shell top margin so it slides down from / up past the top
-//! edge of the screen. Layer surfaces have no compositor decorations, so there
-//! are no maximize/close buttons by construction.
+//! reveals clipped content within the selected output, never moving the surface
+//! into a neighbouring monitor. Layer surfaces have no compositor decorations,
+//! so there are no maximize/close buttons by construction.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -26,20 +26,28 @@ struct QuickState {
     window: adw::ApplicationWindow,
     visible: bool,
     height: i32,
-    current_margin: i32,
-    /// Slide tween duration (ms), read from settings once at creation so the
-    /// hide path doesn't touch disk on every toggle.
+    revealer: gtk4::Revealer,
+    content: gtk4::Widget,
+    /// Slide duration from the current settings.
     animation_ms: u32,
-    /// Bumped on each slide; an in-flight tween stops when it's superseded.
-    generation: u64,
+    monitor: Option<gtk4::gdk::Monitor>,
 }
 
 pub fn handle(action: QuickTermAction, app: &gtk4::Application, state: &Rc<AppState>) {
+    let app = app.clone();
+    let state = Rc::clone(state);
+    // Wait for the first desktop query so the initial frame uses the primary
+    // output too, rather than briefly mapping on an arbitrary monitor.
+    super::display::with_primary(move || handle_ready(action, &app, &state));
+}
+
+fn handle_ready(action: QuickTermAction, app: &gtk4::Application, state: &Rc<AppState>) {
     let Some(adw_app) = app.downcast_ref::<adw::Application>().cloned() else {
         tracing::warn!("quick terminal: application is not an adw::Application");
         return;
     };
     ensure_window(&adw_app, state);
+    refresh_display();
     QUICK.with(|q| {
         if let Some(qs) = q.borrow_mut().as_mut() {
             let show = match action {
@@ -62,7 +70,7 @@ pub fn handle(action: QuickTermAction, app: &gtk4::Application, state: &Rc<AppSt
     });
 }
 
-/// Create the drop-down window on first use (hidden, off-screen above the top).
+/// Create the drop-down window on first use, initially hidden.
 fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     if QUICK.with(|q| q.borrow().is_some()) {
         return;
@@ -86,8 +94,32 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     let window = crate::ui::window::create_window(app, state, window_id, rx, true);
 
     let cfg = crate::settings::load().quick_terminal;
-    let height = height_for_fraction(&window, cfg.height_fraction);
+    let height = height_for_fraction(cfg.height_fraction);
 
+    install_resize_handle(&window);
+    let (revealer, content) = configure_window(&window, height, cfg.animation_ms);
+
+    QUICK.with(|q| {
+        *q.borrow_mut() = Some(QuickState {
+            window,
+            visible: false,
+            height,
+            revealer,
+            content,
+            animation_ms: cfg.animation_ms,
+            monitor: None,
+        });
+    });
+    watch_monitor();
+    refresh_display();
+}
+
+/// Keep the layer surface on its output; animate only clipped child content.
+fn configure_window(
+    window: &adw::ApplicationWindow,
+    height: i32,
+    animation_ms: u32,
+) -> (gtk4::Revealer, gtk4::Widget) {
     // Top-anchored, full-width overlay layer surface (no decorations).
     window.init_layer_shell();
     window.set_layer(Layer::Overlay);
@@ -97,24 +129,28 @@ fn ensure_window(app: &adw::Application, state: &Rc<AppState>) {
     window.set_anchor(Edge::Right, true);
     window.set_anchor(Edge::Bottom, false);
     window.set_keyboard_mode(KeyboardMode::OnDemand);
-    window.set_default_height(height);
-    window.set_height_request(height);
-    window.set_margin(Edge::Top, -height); // hidden above the screen
+    window.set_default_size(-1, -1);
+    window.set_margin(Edge::Top, 0);
     window.set_visible(false);
 
-    install_resize_handle(&window);
-    watch_monitor();
-
-    QUICK.with(|q| {
-        *q.borrow_mut() = Some(QuickState {
-            window,
-            visible: false,
-            height,
-            current_margin: -height,
-            animation_ms: cfg.animation_ms,
-            generation: 0,
-        });
+    let content = window.content().expect("quick-terminal content");
+    window.set_content(gtk4::Widget::NONE);
+    content.set_height_request(height);
+    let revealer = gtk4::Revealer::new();
+    revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
+    revealer.set_transition_duration(animation_ms);
+    revealer.set_child(Some(&content));
+    window.set_content(Some(&revealer));
+    let weak_window = window.downgrade();
+    revealer.connect_child_revealed_notify(move |r| {
+        if !r.reveals_child() && !r.is_child_revealed() {
+            if let Some(window) = weak_window.upgrade() {
+                window.set_visible(false);
+            }
+        }
     });
+
+    (revealer, content)
 }
 
 /// Smallest height the drop-down can be dragged to (px).
@@ -124,19 +160,12 @@ const RESIZE_GRIP_PX: i32 = 6;
 /// How close to the bottom edge a press must start to begin a resize (px).
 const RESIZE_ZONE_PX: i32 = 12;
 
-/// Resize the drop-down to `height` px, re-clamping to the current monitor, and
-/// keep it correctly positioned: parked at `-height` above the top edge while
-/// hidden, flush at margin 0 while shown. Used by the drag handle and by the
-/// monitor-change watcher.
+/// Resize the clipped content, clamped to the selected monitor.
 fn set_height(qs: &mut QuickState, height: i32) {
-    let max_h = monitor_height_for(&qs.window).unwrap_or_else(|| height.max(MIN_HEIGHT));
+    let max_h = monitor_height().unwrap_or_else(|| height.max(MIN_HEIGHT));
     let height = height.clamp(MIN_HEIGHT, max_h.max(MIN_HEIGHT));
     qs.height = height;
-    qs.window.set_default_height(height);
-    qs.window.set_height_request(height);
-    let margin = if qs.visible { 0 } else { -height };
-    qs.current_margin = margin;
-    qs.window.set_margin(Edge::Top, margin);
+    qs.content.set_height_request(height);
 }
 
 /// Add a thin grab strip along the bottom edge plus a drag gesture so the user
@@ -198,12 +227,9 @@ fn install_resize_handle(window: &adw::ApplicationWindow) {
     }
     drag.connect_drag_end(move |_gesture, _ox, _oy| {
         let Some((height, mon_h)) = QUICK.with(|q| {
-            q.borrow().as_ref().map(|s| {
-                (
-                    s.height,
-                    monitor_height_for(&s.window).unwrap_or(1080).max(1),
-                )
-            })
+            q.borrow()
+                .as_ref()
+                .map(|s| (s.height, monitor_height().unwrap_or(1080).max(1)))
         }) else {
             return;
         };
@@ -217,149 +243,162 @@ fn install_resize_handle(window: &adw::ApplicationWindow) {
     outer_box.add_controller(drag);
 }
 
-/// Re-fit the drop-down whenever the monitor geometry or layout changes, so it
-/// keeps matching the screen after the desktop resolution is changed.
+/// Re-select the output and height when settings or the desktop layout changes.
+pub fn refresh_display() {
+    let cfg = crate::settings::load().quick_terminal;
+    QUICK.with(|q| {
+        if let Some(qs) = q.borrow_mut().as_mut() {
+            let monitor = super::display::select_monitor(&cfg.preferred_display);
+            if monitor != qs.monitor {
+                qs.window.set_monitor(monitor.as_ref());
+                qs.monitor = monitor;
+            }
+            qs.animation_ms = cfg.animation_ms;
+            qs.revealer.set_transition_duration(cfg.animation_ms);
+            let height = height_for_fraction(cfg.height_fraction);
+            set_height(qs, height);
+        }
+    });
+}
+
 fn watch_monitor() {
     let Some(display) = gtk4::gdk::Display::default() else {
         return;
     };
-
-    let refit: Rc<dyn Fn()> = Rc::new(|| {
-        let fraction = crate::settings::load().quick_terminal.height_fraction;
-        QUICK.with(|q| {
-            if let Some(qs) = q.borrow_mut().as_mut() {
-                let height = height_for_fraction(&qs.window, fraction);
-                set_height(qs, height);
-            }
-        });
-    });
-
     let monitors = display.monitors();
-
-    // A resolution change on an existing output updates that monitor's geometry.
+    let watch = |mon: gtk4::gdk::Monitor| {
+        mon.connect_geometry_notify(|_| refresh_display());
+        mon.connect_connector_notify(|_| refresh_display());
+    };
     for i in 0..monitors.n_items() {
-        if let Some(mon) = monitors
-            .item(i)
-            .and_then(|m| m.downcast::<gtk4::gdk::Monitor>().ok())
-        {
-            let refit = refit.clone();
-            mon.connect_geometry_notify(move |_| refit());
+        if let Some(mon) = monitors.item(i).and_downcast::<gtk4::gdk::Monitor>() {
+            watch(mon);
         }
     }
-
-    // Outputs being added/removed/replaced changes the monitor list; re-fit from
-    // whichever monitor the drop-down now lives on. A newly plugged output often
-    // reports its real mode a beat after the list changes, so re-fit again once
-    // it has settled rather than latching onto a transient 0-height geometry.
-    monitors.connect_items_changed(move |_, _, _, _| {
-        refit();
-        let refit = refit.clone();
-        glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || refit());
+    monitors.connect_items_changed(move |list, position, _, added| {
+        for i in position..position + added {
+            if let Some(mon) = list.item(i).and_downcast::<gtk4::gdk::Monitor>() {
+                watch(mon);
+            }
+        }
+        refresh_display();
+        super::display::update_primary();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(400), refresh_display);
+    });
+    super::display::update_primary();
+    // Primary-output changes need not change GDK's monitor list or geometry.
+    glib::timeout_add_local(std::time::Duration::from_secs(2), || {
+        super::display::update_primary();
+        glib::ControlFlow::Continue
     });
 }
 
 fn slide_in(qs: &mut QuickState) {
     qs.visible = true;
     qs.window.set_keyboard_mode(KeyboardMode::OnDemand);
-    if !qs.window.is_visible() {
-        // First show: map just above the top edge (off-screen) so the
-        // compositor's one-time window-open effect plays out of view. The
-        // surface then STAYS mapped — hide only slides it off-screen — so every
-        // later show is a pure margin slide with no re-map and no open effect
-        // (which otherwise reads as an expand-from-center).
-        qs.current_margin = -qs.height;
-        qs.window.set_margin(Edge::Top, -qs.height);
-        qs.window.set_visible(true);
-    }
-    qs.window.present(); // raise + focus (no re-map once already mapped)
-    slide(qs, 0);
+    qs.window.present();
+    qs.revealer.set_reveal_child(true);
 }
 
 fn slide_out(qs: &mut QuickState) {
     qs.visible = false;
-    slide(qs, -qs.height);
-}
-
-/// Animate the layer-shell top margin from its current value to `to` with a
-/// glib-timeout tween (ease-out cubic). Used for both show (slide down, `to` 0)
-/// and hide (slide up, `to` -height). The window stays mapped throughout
-/// (off-screen above the top edge when hidden). A frame-clock-driven adw
-/// animation does not run reliably on a just-mapped layer surface, so we step
-/// the margin manually, recording the live position each frame so a toggle
-/// mid-animation reverses smoothly.
-fn slide(qs: &mut QuickState, to: i32) {
-    let from = qs.current_margin;
-    qs.generation += 1;
-    let generation = qs.generation;
-    let duration = qs.animation_ms.max(1) as f64;
-    let win = qs.window.clone();
-    let hide_at_end = to < 0;
-    let start = std::time::Instant::now();
-    glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
-        let t = (start.elapsed().as_secs_f64() * 1000.0 / duration).min(1.0);
-        let eased = 1.0 - (1.0 - t).powi(3);
-        let v = (from as f64 + (to - from) as f64 * eased).round() as i32;
-        // Stop if a newer slide superseded this one (or the window is gone);
-        // otherwise record the live margin so a reversing toggle starts here.
-        let superseded = QUICK.with(|q| match q.borrow_mut().as_mut() {
-            Some(s) if s.generation == generation => {
-                s.current_margin = v;
-                false
-            }
-            _ => true,
-        });
-        if superseded {
-            return glib::ControlFlow::Break;
-        }
-        win.set_margin(Edge::Top, v);
-        if t >= 1.0 {
-            if hide_at_end {
-                // Stay mapped (parked off-screen) so the next show is a slide,
-                // not a re-map; just release the keyboard so the hidden console
-                // doesn't keep eating input.
-                win.set_keyboard_mode(KeyboardMode::None);
-            }
-            glib::ControlFlow::Break
-        } else {
-            glib::ControlFlow::Continue
-        }
-    });
-}
-
-/// Height (px) of the monitor the drop-down is actually displayed on.
-///
-/// Using the surface's own monitor (rather than blindly `monitors().item(0)`)
-/// keeps us correct across hotplug: when a second output is added the primary
-/// index can shift to the new monitor — whose geometry may still be 0 mid-plug
-/// — which previously collapsed the window to the minimum height. Falls back to
-/// the tallest connected monitor with a known geometry, ignoring transient
-/// 0-height readings.
-fn monitor_height_for(window: &adw::ApplicationWindow) -> Option<i32> {
-    let display = gtk4::gdk::Display::default()?;
-    if let Some(surface) = window.surface() {
-        if let Some(mon) = display.monitor_at_surface(&surface) {
-            let h = mon.geometry().height();
-            if h > 0 {
-                return Some(h);
-            }
-        }
+    qs.window.set_keyboard_mode(KeyboardMode::None);
+    qs.revealer.set_reveal_child(false);
+    if qs.animation_ms == 0 {
+        qs.window.set_visible(false);
     }
-    let monitors = display.monitors();
-    let mut best = 0;
-    for i in 0..monitors.n_items() {
-        if let Some(mon) = monitors
-            .item(i)
-            .and_then(|m| m.downcast::<gtk4::gdk::Monitor>().ok())
-        {
-            best = best.max(mon.geometry().height());
-        }
-    }
-    (best > 0).then_some(best)
 }
 
-/// Pixel height for the configured monitor-height `fraction`, falling back to a
-/// 1080p assumption when the monitor can't be queried.
-fn height_for_fraction(window: &adw::ApplicationWindow, fraction: f32) -> i32 {
-    let mon_h = monitor_height_for(window).unwrap_or(1080);
+/// Use the explicitly selected output, including before the surface is mapped.
+fn monitor_height() -> Option<i32> {
+    let cfg = crate::settings::load().quick_terminal;
+    super::display::select_monitor(&cfg.preferred_display)
+        .map(|m| m.geometry().height())
+        .filter(|h| *h > 0)
+}
+
+fn height_for_fraction(fraction: f32) -> i32 {
+    let mon_h = monitor_height().unwrap_or(1080);
     ((mon_h as f32) * fraction.clamp(0.1, 1.0)).round() as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frames(milliseconds: u64) {
+        let main_loop = glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(milliseconds), move || {
+            quit.quit()
+        });
+        main_loop.run();
+    }
+
+    fn wait_for(condition: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !condition() && std::time::Instant::now() < deadline {
+            frames(16);
+        }
+        assert!(
+            condition(),
+            "desktop did not finish the transition within 3 seconds"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an unlocked Wayland layer-shell desktop"]
+    fn slide_stays_inside_output_and_unmaps_when_hidden() {
+        adw::init().expect("desktop GTK initialization");
+        let main_loop = glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        let ready = Rc::new(Cell::new(false));
+        let callback_ready = ready.clone();
+        super::super::display::with_primary(move || {
+            callback_ready.set(true);
+            quit.quit();
+        });
+        if !ready.get() {
+            main_loop.run();
+        }
+        let window = adw::ApplicationWindow::builder().build();
+        window.set_content(Some(&gtk4::Label::new(Some(
+            "jmux display regression test",
+        ))));
+        let (revealer, content) = configure_window(&window, 180, 80);
+        let monitor = super::super::display::select_monitor("").expect("connected output");
+        eprintln!(
+            "Testing clipped slide on {}",
+            monitor.connector().unwrap_or_default()
+        );
+        window.set_monitor(Some(&monitor));
+        let mut qs = QuickState {
+            window: window.clone(),
+            visible: false,
+            height: 180,
+            revealer,
+            content,
+            animation_ms: 80,
+            monitor: Some(monitor.clone()),
+        };
+        slide_in(&mut qs);
+        wait_for(|| qs.revealer.is_child_revealed());
+        assert!(window.is_visible());
+        assert_eq!(window.margin(Edge::Top), 0);
+        let surface = window.surface().expect("mapped surface");
+        assert_eq!(
+            gtk4::prelude::WidgetExt::display(&window).monitor_at_surface(&surface),
+            Some(monitor)
+        );
+        slide_out(&mut qs);
+        wait_for(|| !window.is_visible());
+        assert!(!window.is_visible(), "hidden terminal must be unmapped");
+        assert_eq!(window.margin(Edge::Top), 0);
+        slide_in(&mut qs);
+        frames(30);
+        slide_out(&mut qs);
+        wait_for(|| !window.is_visible());
+        assert!(!window.is_visible(), "reversed slide must finish hidden");
+        window.destroy();
+    }
 }

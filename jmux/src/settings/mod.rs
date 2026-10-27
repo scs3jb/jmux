@@ -898,6 +898,8 @@ pub struct QuickTerminalSettings {
     pub height_fraction: f32,
     /// Slide animation duration in milliseconds.
     pub animation_ms: u32,
+    /// Output connector (for example DP-1). Empty follows the primary display.
+    pub preferred_display: String,
 }
 
 impl Default for QuickTerminalSettings {
@@ -907,6 +909,7 @@ impl Default for QuickTerminalSettings {
             hotkey: "CTRL+grave".to_string(),
             height_fraction: 0.45,
             animation_ms: 150,
+            preferred_display: String::new(),
         }
     }
 }

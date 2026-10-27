@@ -36,7 +36,15 @@ pub fn handle(action: QuickTermAction, app: &gtk4::Application, state: &Rc<AppSt
 }
 
 #[cfg(feature = "quick-terminal")]
+mod display;
+#[cfg(feature = "quick-terminal")]
 mod imp;
+
+/// Apply display and size settings to an existing drop-down.
+pub fn refresh_display() {
+    #[cfg(feature = "quick-terminal")]
+    imp::refresh_display();
+}
 
 #[cfg(feature = "quick-terminal")]
 pub mod portal;
