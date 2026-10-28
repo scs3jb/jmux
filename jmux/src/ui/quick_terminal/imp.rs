@@ -129,18 +129,32 @@ fn configure_window(
     window.set_anchor(Edge::Right, true);
     window.set_anchor(Edge::Bottom, false);
     window.set_keyboard_mode(KeyboardMode::OnDemand);
-    window.set_default_size(-1, -1);
+    // Pin the surface height. The window must not follow the revealer's size,
+    // or every content change and every slide frame resizes the surface.
+    window.set_default_size(-1, height);
+    window.set_height_request(height);
+    window.add_css_class("quick-terminal");
     window.set_margin(Edge::Top, 0);
     window.set_visible(false);
 
     let content = window.content().expect("quick-terminal content");
     window.set_content(gtk4::Widget::NONE);
-    content.set_height_request(height);
+    content.add_css_class("quick-terminal-content");
     let revealer = gtk4::Revealer::new();
+    // Top-aligned in the transparent surface, so only the content slides.
+    revealer.set_valign(gtk4::Align::Start);
     revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
     revealer.set_transition_duration(animation_ms);
-    revealer.set_child(Some(&content));
+    // A scroller without scrollbars clips content taller than the pinned
+    // height, so a large child can never grow the surface.
+    let clip = gtk4::ScrolledWindow::new();
+    clip.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::External);
+    clip.set_height_request(height);
+    content.set_vexpand(true);
+    clip.set_child(Some(&content));
+    revealer.set_child(Some(&clip));
     window.set_content(Some(&revealer));
+    let content = clip.upcast::<gtk4::Widget>();
     let weak_window = window.downgrade();
     revealer.connect_child_revealed_notify(move |r| {
         if !r.reveals_child() && !r.is_child_revealed() {
@@ -165,6 +179,8 @@ fn set_height(qs: &mut QuickState, height: i32) {
     let max_h = monitor_height().unwrap_or_else(|| height.max(MIN_HEIGHT));
     let height = height.clamp(MIN_HEIGHT, max_h.max(MIN_HEIGHT));
     qs.height = height;
+    qs.window.set_default_size(-1, height);
+    qs.window.set_height_request(height);
     qs.content.set_height_request(height);
 }
 
@@ -399,6 +415,52 @@ mod tests {
         slide_out(&mut qs);
         wait_for(|| !window.is_visible());
         assert!(!window.is_visible(), "reversed slide must finish hidden");
+        window.destroy();
+    }
+
+    #[test]
+    #[ignore = "requires an unlocked Wayland layer-shell desktop"]
+    fn surface_keeps_full_height_through_slides_and_content_changes() {
+        adw::init().expect("desktop GTK initialization");
+        let window = adw::ApplicationWindow::builder().build();
+        let body = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let tab = gtk4::Label::new(Some("tab"));
+        tab.set_size_request(-1, 600);
+        body.append(&tab);
+        window.set_content(Some(&body));
+        let (revealer, content) = configure_window(&window, 400, 200);
+        let mut qs = QuickState {
+            window: window.clone(),
+            visible: false,
+            height: 400,
+            revealer,
+            content,
+            animation_ms: 200,
+            monitor: None,
+        };
+        slide_in(&mut qs);
+        wait_for(|| qs.revealer.is_child_revealed());
+        frames(100);
+        let shown = window.height();
+        assert_eq!(qs.content.height(), 400, "visible area is not the pinned height");
+        // Closing a tab drops the content's natural size.
+        body.remove(&tab);
+        frames(200);
+        let after_close = window.height();
+        assert_eq!(body.height(), 400, "content does not fill the surface");
+        let mut during_hide = Vec::new();
+        slide_out(&mut qs);
+        while window.is_visible() && during_hide.len() < 100 {
+            frames(16);
+            during_hide.push(window.height());
+        }
+        eprintln!("shown={shown} after_close={after_close} hide={during_hide:?}");
+        assert!(shown >= 400, "shown surface too small: {shown}");
+        assert_eq!(after_close, shown, "content change resized the surface");
+        assert!(
+            during_hide.iter().all(|h| *h == shown || *h == 0),
+            "surface resized during hide: {during_hide:?}"
+        );
         window.destroy();
     }
 }

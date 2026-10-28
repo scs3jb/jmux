@@ -35,6 +35,12 @@ pub(super) fn install_css() {
         .quick-terminal-resize-grip:hover {
             background: alpha(@accent_color, 0.45);
         }
+        window.quick-terminal {
+            background: transparent;
+        }
+        .quick-terminal-content {
+            background-color: @window_bg_color;
+        }
 
         /* ── Workspace rows ── */
         .workspace-row {
