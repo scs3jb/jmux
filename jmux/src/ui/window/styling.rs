@@ -637,8 +637,46 @@ pub(super) fn install_css() {
     }
 }
 
+/// Detect the git branch for `directory` on a worker thread and store it on
+/// workspace `ws_id`, unless the workspace has since moved to another
+/// directory. A detection already running for the same workspace and
+/// directory absorbs repeat requests (shells re-report the pwd every prompt).
+pub(super) fn detect_git_branch_async(
+    shared: std::sync::Arc<crate::app::SharedState>,
+    ws_id: uuid::Uuid,
+    directory: String,
+) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static IN_FLIGHT: Mutex<Option<HashSet<(uuid::Uuid, String)>>> = Mutex::new(None);
+
+    let key = (ws_id, directory);
+    if !crate::app::lock_or_recover(&IN_FLIGHT)
+        .get_or_insert_with(HashSet::new)
+        .insert(key.clone())
+    {
+        return;
+    }
+    std::thread::spawn(move || {
+        let branch = detect_git_branch(&key.1);
+        crate::app::lock_or_recover(&IN_FLIGHT)
+            .get_or_insert_with(HashSet::new)
+            .remove(&key);
+        let mut tm = crate::app::lock_or_recover(&shared.tab_manager);
+        let Some(ws) = tm.workspace_mut(key.0) else {
+            return;
+        };
+        if ws.current_directory != key.1 || ws.git_branch == branch {
+            return;
+        }
+        ws.git_branch = branch;
+        drop(tm);
+        shared.notify_metadata_refresh();
+    });
+}
+
 /// Detect git branch and dirty state from a directory path.
-pub(super) fn detect_git_branch(directory: &str) -> Option<GitBranch> {
+fn detect_git_branch(directory: &str) -> Option<GitBranch> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(directory)
