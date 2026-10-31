@@ -135,6 +135,10 @@ fn configure_window(
     window.set_height_request(height);
     window.add_css_class("quick-terminal");
     window.set_margin(Edge::Top, 0);
+    // Ignore other surfaces' exclusive zones (e.g. a top bar). Otherwise the
+    // compositor starts the surface below the bar while the height is a
+    // fraction of the full monitor, so it runs off the bottom of the screen.
+    window.set_exclusive_zone(-1);
     window.set_visible(false);
 
     let content = window.content().expect("quick-terminal content");
