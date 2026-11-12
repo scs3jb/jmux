@@ -241,9 +241,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "agent.fork_conversation" => {
             workspace::handle_agent_fork_conversation(id, &req.params, state)
         }
-        "agent.spawn_subagent" => {
-            workspace::handle_agent_spawn_subagent(id, &req.params, state)
-        }
+        "agent.spawn_subagent" => workspace::handle_agent_spawn_subagent(id, &req.params, state),
 
         // Goal commands (autonomous loop — docs/roadmap/DESIGN-goal-graph.md)
         "goal.create" => goal::handle_goal_create(id, &req.params, state),
@@ -280,9 +278,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "pane.create" => pane::handle_pane_new(id, &req.params, state),
         "pane.break" => pane::handle_pane_break(id, &req.params, state),
         "pane.join" => pane::handle_pane_join(id, &req.params, state),
-        "panel.move_to_workspace" => {
-            pane::handle_panel_move_to_workspace(id, &req.params, state)
-        }
+        "panel.move_to_workspace" => pane::handle_panel_move_to_workspace(id, &req.params, state),
         "panel.toggle_zoom" => pane::handle_panel_toggle_zoom(id, &req.params, state),
 
         // Surface commands
@@ -341,9 +337,7 @@ pub fn dispatch(json_line: &str, state: &Arc<SharedState>) -> Response {
         "notification.mark_read" => {
             notification::handle_notification_mark_read(id, &req.params, state)
         }
-        "notification.dismiss" => {
-            notification::handle_notification_dismiss(id, &req.params, state)
-        }
+        "notification.dismiss" => notification::handle_notification_dismiss(id, &req.params, state),
         "notification.open" => notification::handle_notification_open(id, &req.params, state),
 
         // Browser automation commands — delegated to socket::browser module

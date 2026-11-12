@@ -57,7 +57,10 @@ pub fn generate_workspace_title(transcript: &str) -> Result<String, String> {
     let title = json
         .get("content")
         .and_then(|c| c.as_array())
-        .and_then(|a| a.iter().find_map(|b| b.get("text").and_then(|t| t.as_str())))
+        .and_then(|a| {
+            a.iter()
+                .find_map(|b| b.get("text").and_then(|t| t.as_str()))
+        })
         .ok_or_else(|| {
             json.get("error")
                 .and_then(|e| e.get("message"))

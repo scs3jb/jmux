@@ -1267,7 +1267,10 @@ fn save_at(
                 );
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("{} does not parse; refusing to overwrite it", path.display()),
+                    format!(
+                        "{} does not parse; refusing to overwrite it",
+                        path.display()
+                    ),
                 ));
             }
         }
@@ -1413,7 +1416,10 @@ mod tests {
                        "agent_restore": {"gemini": true, "antigravity": false}}"#;
         let settings: AppSettings = serde_json::from_str(json).expect("both keys must parse");
         assert_eq!(settings.theme, ThemeMode::Dark);
-        assert!(!settings.agent_restore.antigravity, "antigravity wins over gemini");
+        assert!(
+            !settings.agent_restore.antigravity,
+            "antigravity wins over gemini"
+        );
     }
 
     /// A throwaway directory, removed when the test ends. Avoids a `tempfile`
@@ -1466,7 +1472,10 @@ mod tests {
             .expect("a file holding every key this build ever wrote must parse");
 
         assert_eq!(settings.socket_access, SocketAccess::JmuxOnly);
-        assert_eq!(settings.link_routing.default_target, LinkTarget::JmuxBrowser);
+        assert_eq!(
+            settings.link_routing.default_target,
+            LinkTarget::JmuxBrowser
+        );
         // `antigravity` is present too (defaults serialize it), and wins.
         assert!(settings.agent_restore.antigravity);
     }
@@ -1567,7 +1576,10 @@ mod tests {
         let settings: AppSettings = serde_json::from_str(json).expect("legacy file must parse");
         assert_eq!(settings.theme, ThemeMode::Dark);
         assert_eq!(settings.socket_access, SocketAccess::JmuxOnly);
-        assert_eq!(settings.link_routing.default_target, LinkTarget::JmuxBrowser);
+        assert_eq!(
+            settings.link_routing.default_target,
+            LinkTarget::JmuxBrowser
+        );
         assert_eq!(settings.sidebar_font_size, 10.0);
     }
 
@@ -1619,7 +1631,10 @@ mod tests {
         let input = r#"{"msg": "he said \"hello\" // not comment"}"#;
         let output = strip_jsonc_comments(input);
         let v: serde_json::Value = serde_json::from_str(&output).unwrap();
-        assert_eq!(v["msg"].as_str().unwrap(), r#"he said "hello" // not comment"#);
+        assert_eq!(
+            v["msg"].as_str().unwrap(),
+            r#"he said "hello" // not comment"#
+        );
     }
 
     #[test]

@@ -54,7 +54,9 @@ pub fn create_graph_widget(
     let selection: Selection = Rc::new(RefCell::new(None));
     let dragging: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let last_sig: Rc<Cell<u64>> = Rc::new(Cell::new(0));
-    rebuild(&content, graph_name, state, &selection, &dragging, &last_sig);
+    rebuild(
+        &content, graph_name, state, &selection, &dragging, &last_sig,
+    );
 
     // Live refresh while the widget is alive — but never while the user is
     // typing into a TextView inside this panel (goal editor) or dragging a
@@ -447,8 +449,7 @@ fn build_dag_canvas(
     let selected_owned = selected_id.map(str::to_string);
 
     // Positions shared between layout, the draw func, and drag handlers.
-    let positions: Rc<RefCell<HashMap<String, (f64, f64, f64, f64)>>> =
-        Rc::new(RefCell::new(pos));
+    let positions: Rc<RefCell<HashMap<String, (f64, f64, f64, f64)>>> = Rc::new(RefCell::new(pos));
 
     let area = gtk4::DrawingArea::new();
     area.set_content_width(canvas_w as i32);
@@ -510,7 +511,9 @@ fn build_dag_canvas(
     // passes a threshold (so plain clicks still toggle the detail card),
     // move the chip + redraw edges live, persist the position on release.
     for node in nodes {
-        let Some(chip) = chips.get(node.id.as_str()) else { continue };
+        let Some(chip) = chips.get(node.id.as_str()) else {
+            continue;
+        };
         let drag = gtk4::GestureDrag::new();
         let origin: Rc<Cell<(f64, f64)>> = Rc::new(Cell::new((0.0, 0.0)));
         let moved: Rc<Cell<bool>> = Rc::new(Cell::new(false));
@@ -669,7 +672,8 @@ fn detail_card(
     if !proposal_mode {
         facts.push_str(&format!(
             " · iteration {}/{}",
-            node.iteration.max(run.as_ref().map(|r| r.iteration).unwrap_or(0)),
+            node.iteration
+                .max(run.as_ref().map(|r| r.iteration).unwrap_or(0)),
             spec.max_iterations,
         ));
     }
@@ -677,7 +681,10 @@ fn detail_card(
         facts.push_str(&format!(
             " · agent: {}{}",
             run_status_label(&r.status),
-            r.status.detail().map(|d| format!(" ({d})")).unwrap_or_default(),
+            r.status
+                .detail()
+                .map(|d| format!(" ({d})"))
+                .unwrap_or_default(),
         ));
         if r.nudges_sent > 0 {
             facts.push_str(&format!(" · {} reminders sent", r.nudges_sent));
@@ -707,7 +714,11 @@ fn detail_card(
     if let Some(r) = &run {
         let panel_id = r.panel_id;
         let is_paused = state.shared.is_hibernated(&panel_id);
-        let btn = gtk4::Button::with_label(if is_paused { "Resume agent" } else { "Pause agent" });
+        let btn = gtk4::Button::with_label(if is_paused {
+            "Resume agent"
+        } else {
+            "Pause agent"
+        });
         btn.set_tooltip_text(Some(if is_paused {
             "Wake the node's agent process (SIGCONT)"
         } else {

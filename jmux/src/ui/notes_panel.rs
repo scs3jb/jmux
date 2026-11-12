@@ -697,7 +697,10 @@ mod tests {
 
     #[test]
     fn mirror_rel_strips_leading_slash() {
-        assert_eq!(mirror_rel("/home/u/src/dog"), PathBuf::from("home/u/src/dog"));
+        assert_eq!(
+            mirror_rel("/home/u/src/dog"),
+            PathBuf::from("home/u/src/dog")
+        );
         assert_eq!(mirror_rel("rel/path"), PathBuf::from("rel/path"));
     }
 

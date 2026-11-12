@@ -7,9 +7,9 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::app::{lock_or_recover, AppState};
-use crate::settings::custom_commands::CommandEntry;
 use crate::model::panel::SplitOrientation;
 use crate::model::{PanelType, Workspace};
+use crate::settings::custom_commands::CommandEntry;
 
 /// A registered command palette action.
 #[derive(Default)]
@@ -454,8 +454,8 @@ fn populate_list(list_box: &gtk4::ListBox, actions: &[PaletteAction], query: &st
 
         if !filter_query.is_empty() {
             let label_match = fuzzy_match(&action.label, &filter_query);
-            let terms_match = !action.search_terms.is_empty()
-                && fuzzy_match(&action.search_terms, &filter_query);
+            let terms_match =
+                !action.search_terms.is_empty() && fuzzy_match(&action.search_terms, &filter_query);
             if !label_match && !terms_match {
                 continue;
             }
@@ -636,8 +636,7 @@ pub fn insert_notes_panel(state: &Rc<AppState>) {
             }
             return;
         }
-        let panel =
-            crate::model::Panel::new_notes(&crate::ui::notes_panel::default_notes_path());
+        let panel = crate::model::Panel::new_notes(&crate::ui::notes_panel::default_notes_path());
         ws.insert_panel(panel, SplitOrientation::Horizontal);
     }
 }
@@ -696,13 +695,19 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
         "workspace.open_history" => {
             let mut tm = lock_or_recover(&state.shared.tab_manager);
             if let Some(ws) = tm.selected_mut() {
-                ws.insert_panel(crate::model::Panel::new_history(), SplitOrientation::Horizontal);
+                ws.insert_panel(
+                    crate::model::Panel::new_history(),
+                    SplitOrientation::Horizontal,
+                );
             }
         }
         "workspace.open_vault" => {
             let mut tm = lock_or_recover(&state.shared.tab_manager);
             if let Some(ws) = tm.selected_mut() {
-                ws.insert_panel(crate::model::Panel::new_vault(), SplitOrientation::Horizontal);
+                ws.insert_panel(
+                    crate::model::Panel::new_vault(),
+                    SplitOrientation::Horizontal,
+                );
             }
         }
         "pane.split_horizontal" => {
@@ -990,9 +995,7 @@ fn execute_action(name: &str, state: &Rc<AppState>, on_refresh: &Rc<dyn Fn()>) {
             return; // UiEvent handled
         }
         "notification.defer_unread" => {
-            state
-                .shared
-                .send_ui_event(crate::app::UiEvent::DeferUnread);
+            state.shared.send_ui_event(crate::app::UiEvent::DeferUnread);
             return; // UiEvent handled
         }
         "notification.toggle_unread" => {

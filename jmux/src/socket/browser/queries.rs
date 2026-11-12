@@ -826,9 +826,7 @@ pub(super) fn handle_import_cookies(
                     serde_json::json!({"imported": count, "source": source_str}),
                 )
             }
-            Ok((_, Some(err))) => {
-                return Response::error(id, "import_failed", &err)
-            }
+            Ok((_, Some(err))) => return Response::error(id, "import_failed", &err),
             Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
                 return Response::error(id, "channel_closed", "UI event channel closed")
             }

@@ -209,7 +209,8 @@ pub fn show_settings(
         if themes.is_empty() {
             let empty_row = adw::ActionRow::new();
             empty_row.set_title("No themes found");
-            empty_row.set_subtitle("Install ghostty themes or add them to ~/.config/ghostty/themes/");
+            empty_row
+                .set_subtitle("Install ghostty themes or add them to ~/.config/ghostty/themes/");
             ghostty_theme_group.add(&empty_row);
         } else {
             let theme_row = adw::ComboRow::new();
@@ -473,7 +474,8 @@ pub fn show_settings(
 
     let port_external_row = adw::SwitchRow::new();
     port_external_row.set_title("Open Ports Externally");
-    port_external_row.set_subtitle("Click port badges to open in the system browser instead of a panel");
+    port_external_row
+        .set_subtitle("Click port badges to open in the system browser instead of a panel");
     port_external_row.set_active(current_settings.sidebar.port_link_external);
     sidebar_group.add(&port_external_row);
 
@@ -517,7 +519,8 @@ pub fn show_settings(
         0,
     );
     width_row.set_title("Sidebar Width");
-    width_row.set_subtitle("Width of the workspace sidebar in pixels (applies on next window open)");
+    width_row
+        .set_subtitle("Width of the workspace sidebar in pixels (applies on next window open)");
     sidebar_group.add(&width_row);
 
     let match_terminal_bg_row = adw::SwitchRow::new();
@@ -557,8 +560,7 @@ pub fn show_settings(
 
     let split_ratio_persist_row = adw::SwitchRow::new();
     split_ratio_persist_row.set_title("Persist Split Ratios");
-    split_ratio_persist_row
-        .set_subtitle("Save and restore pane split positions across sessions");
+    split_ratio_persist_row.set_subtitle("Save and restore pane split positions across sessions");
     split_ratio_persist_row.set_active(current_settings.split_ratio_persist);
     workspace_group.add(&split_ratio_persist_row);
 
@@ -570,8 +572,7 @@ pub fn show_settings(
 
     let copy_on_select_row = adw::SwitchRow::new();
     copy_on_select_row.set_title("Copy on Select");
-    copy_on_select_row
-        .set_subtitle("Automatically copy terminal selection to the clipboard");
+    copy_on_select_row.set_subtitle("Automatically copy terminal selection to the clipboard");
     copy_on_select_row.set_active(current_settings.copy_on_select);
     terminal_group.add(&copy_on_select_row);
 
@@ -796,7 +797,8 @@ pub fn show_settings(
 
     let browser_enabled_row = adw::SwitchRow::new();
     browser_enabled_row.set_title("Enable Browser");
-    browser_enabled_row.set_subtitle("Enable the built-in browser engine (takes effect on next open)");
+    browser_enabled_row
+        .set_subtitle("Enable the built-in browser engine (takes effect on next open)");
     browser_enabled_row.set_active(current_settings.browser.enabled);
     browser_group.add(&browser_enabled_row);
 
@@ -841,8 +843,7 @@ pub fn show_settings(
 
     let memory_saver_row = adw::SwitchRow::new();
     memory_saver_row.set_title("Memory Saver");
-    memory_saver_row
-        .set_subtitle("Suspend hidden browser tabs after 60 seconds to free memory");
+    memory_saver_row.set_subtitle("Suspend hidden browser tabs after 60 seconds to free memory");
     memory_saver_row.set_active(current_settings.browser.memory_saver_enabled);
     browser_group.add(&memory_saver_row);
 
@@ -853,12 +854,23 @@ pub fn show_settings(
     {
         let import_group = adw::PreferencesGroup::new();
         import_group.set_title("Import Browser Data");
-        import_group.set_description(Some("Import cookies from another browser. Requires sqlite3 to be installed."));
+        import_group.set_description(Some(
+            "Import cookies from another browser. Requires sqlite3 to be installed.",
+        ));
 
         for (label, source) in [
-            ("Import from Firefox", crate::browser_import::ImportSource::Firefox),
-            ("Import from Chrome", crate::browser_import::ImportSource::Chrome),
-            ("Import from Chromium", crate::browser_import::ImportSource::Chromium),
+            (
+                "Import from Firefox",
+                crate::browser_import::ImportSource::Firefox,
+            ),
+            (
+                "Import from Chrome",
+                crate::browser_import::ImportSource::Chrome,
+            ),
+            (
+                "Import from Chromium",
+                crate::browser_import::ImportSource::Chromium,
+            ),
         ] {
             let row = adw::ActionRow::new();
             row.set_title(label);
@@ -870,11 +882,16 @@ pub fn show_settings(
                 let window_ref = window.downgrade();
                 btn.connect_clicked(move |_| {
                     let (count, err) = crate::browser_import::import_from(source);
-                    let Some(win) = window_ref.upgrade() else { return; };
+                    let Some(win) = window_ref.upgrade() else {
+                        return;
+                    };
                     let (title, body) = if let Some(e) = err {
                         ("Import Failed".to_string(), e)
                     } else {
-                        ("Import Complete".to_string(), format!("Imported {count} cookies."))
+                        (
+                            "Import Complete".to_string(),
+                            format!("Imported {count} cookies."),
+                        )
                     };
                     let dialog = libadwaita::AlertDialog::new(Some(&title), Some(&body));
                     dialog.add_response("ok", "OK");
@@ -934,9 +951,8 @@ pub fn show_settings(
     let shortcuts_state =
         std::rc::Rc::new(std::cell::RefCell::new(current_settings.shortcuts.clone()));
     // Handles for the Reset button to update in place: (action, label, clear btn).
-    let row_handles: std::rc::Rc<
-        std::cell::RefCell<Vec<(String, gtk4::Label, gtk4::Button)>>,
-    > = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let row_handles: std::rc::Rc<std::cell::RefCell<Vec<(String, gtk4::Label, gtk4::Button)>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
 
     // Build one labelled row (title = friendly label, subtitle = action id) with
     // click-to-record + clear, and add it to `group`.
@@ -944,204 +960,203 @@ pub fn show_settings(
         let shortcuts_state = shortcuts_state.clone();
         let row_handles = row_handles.clone();
         move |group: &adw::PreferencesGroup, action: &str, label: &str| {
-        let opt_binding: Option<settings::shortcuts::Keybinding> = shortcuts_state
-            .borrow()
-            .bindings
-            .get(action)
-            .cloned()
-            .flatten();
-        let row = adw::ActionRow::new();
-        row.set_title(label);
-        row.set_subtitle(action);
-        row.set_activatable(true);
+            let opt_binding: Option<settings::shortcuts::Keybinding> = shortcuts_state
+                .borrow()
+                .bindings
+                .get(action)
+                .cloned()
+                .flatten();
+            let row = adw::ActionRow::new();
+            row.set_title(label);
+            row.set_subtitle(action);
+            row.set_activatable(true);
 
-        let binding_text = opt_binding
-            .as_ref()
-            .map(|b| b.display())
-            .unwrap_or_else(|| "unbound".to_string());
-        let shortcut_label = gtk4::Label::new(Some(&binding_text));
-        shortcut_label.add_css_class("dim-label");
-        row.add_suffix(&shortcut_label);
+            let binding_text = opt_binding
+                .as_ref()
+                .map(|b| b.display())
+                .unwrap_or_else(|| "unbound".to_string());
+            let shortcut_label = gtk4::Label::new(Some(&binding_text));
+            shortcut_label.add_css_class("dim-label");
+            row.add_suffix(&shortcut_label);
 
-        // Conflict warning label (hidden by default)
-        let conflict_label = gtk4::Label::new(None);
-        conflict_label.add_css_class("warning");
-        conflict_label.set_visible(false);
-        row.add_suffix(&conflict_label);
+            // Conflict warning label (hidden by default)
+            let conflict_label = gtk4::Label::new(None);
+            conflict_label.add_css_class("warning");
+            conflict_label.set_visible(false);
+            row.add_suffix(&conflict_label);
 
-        // Clear button — unbinds the shortcut when clicked
-        let clear_btn = gtk4::Button::from_icon_name("edit-clear-symbolic");
-        clear_btn.set_tooltip_text(Some("Clear shortcut"));
-        clear_btn.add_css_class("flat");
-        clear_btn.add_css_class("circular");
-        clear_btn.set_valign(gtk4::Align::Center);
-        // Only show/enable when there is a binding
-        clear_btn.set_sensitive(opt_binding.is_some());
-        {
-            let action_name_clear = action.to_string();
-            let label_clear = shortcut_label.clone();
-            let conflict_clear = conflict_label.clone();
-            let state_clear = shortcuts_state.clone();
-            let btn_weak = clear_btn.downgrade();
-            clear_btn.connect_clicked(move |_| {
-                state_clear
-                    .borrow_mut()
-                    .bindings
-                    .insert(action_name_clear.clone(), None);
-                label_clear.set_text("unbound");
-                conflict_clear.set_visible(false);
-                if let Some(btn) = btn_weak.upgrade() {
-                    btn.set_sensitive(false);
-                }
-            });
-        }
-        row.add_suffix(&clear_btn);
-
-        // Click-to-record: when the row is activated, listen for a key press
-        let action_name = action.to_string();
-        let label_clone = shortcut_label.clone();
-        let conflict_clone = conflict_label.clone();
-        let state = shortcuts_state.clone();
-        let clear_btn_weak = clear_btn.downgrade();
-        row.connect_activated(move |row| {
-            label_clone.set_text("Press shortcut...");
-            label_clone.remove_css_class("dim-label");
-            label_clone.add_css_class("accent");
-            conflict_clone.set_visible(false);
-
-            let key_controller = gtk4::EventControllerKey::new();
-            let label_inner = label_clone.clone();
-            let conflict_inner = conflict_clone.clone();
-            let action_inner = action_name.clone();
-            let state_inner = state.clone();
-            let row_weak = row.downgrade();
-            let clear_btn_inner = clear_btn_weak.clone();
-            key_controller.connect_key_pressed(move |ctl, keyval, _keycode, modifiers| {
-                // Escape cancels
-                if keyval == gdk4::Key::Escape {
-                    let current = state_inner.borrow();
-                    let text = current
+            // Clear button — unbinds the shortcut when clicked
+            let clear_btn = gtk4::Button::from_icon_name("edit-clear-symbolic");
+            clear_btn.set_tooltip_text(Some("Clear shortcut"));
+            clear_btn.add_css_class("flat");
+            clear_btn.add_css_class("circular");
+            clear_btn.set_valign(gtk4::Align::Center);
+            // Only show/enable when there is a binding
+            clear_btn.set_sensitive(opt_binding.is_some());
+            {
+                let action_name_clear = action.to_string();
+                let label_clear = shortcut_label.clone();
+                let conflict_clear = conflict_label.clone();
+                let state_clear = shortcuts_state.clone();
+                let btn_weak = clear_btn.downgrade();
+                clear_btn.connect_clicked(move |_| {
+                    state_clear
+                        .borrow_mut()
                         .bindings
-                        .get(&action_inner)
-                        .and_then(|opt| opt.as_ref())
-                        .map(|b| b.display())
-                        .unwrap_or_else(|| "unbound".to_string());
-                    label_inner.set_text(&text);
+                        .insert(action_name_clear.clone(), None);
+                    label_clear.set_text("unbound");
+                    conflict_clear.set_visible(false);
+                    if let Some(btn) = btn_weak.upgrade() {
+                        btn.set_sensitive(false);
+                    }
+                });
+            }
+            row.add_suffix(&clear_btn);
+
+            // Click-to-record: when the row is activated, listen for a key press
+            let action_name = action.to_string();
+            let label_clone = shortcut_label.clone();
+            let conflict_clone = conflict_label.clone();
+            let state = shortcuts_state.clone();
+            let clear_btn_weak = clear_btn.downgrade();
+            row.connect_activated(move |row| {
+                label_clone.set_text("Press shortcut...");
+                label_clone.remove_css_class("dim-label");
+                label_clone.add_css_class("accent");
+                conflict_clone.set_visible(false);
+
+                let key_controller = gtk4::EventControllerKey::new();
+                let label_inner = label_clone.clone();
+                let conflict_inner = conflict_clone.clone();
+                let action_inner = action_name.clone();
+                let state_inner = state.clone();
+                let row_weak = row.downgrade();
+                let clear_btn_inner = clear_btn_weak.clone();
+                key_controller.connect_key_pressed(move |ctl, keyval, _keycode, modifiers| {
+                    // Escape cancels
+                    if keyval == gdk4::Key::Escape {
+                        let current = state_inner.borrow();
+                        let text = current
+                            .bindings
+                            .get(&action_inner)
+                            .and_then(|opt| opt.as_ref())
+                            .map(|b| b.display())
+                            .unwrap_or_else(|| "unbound".to_string());
+                        label_inner.set_text(&text);
+                        label_inner.remove_css_class("accent");
+                        label_inner.add_css_class("dim-label");
+                        conflict_inner.set_visible(false);
+                        if let Some(row) = row_weak.upgrade() {
+                            row.remove_controller(ctl);
+                        }
+                        return glib::Propagation::Stop;
+                    }
+
+                    // Ignore bare modifier keys
+                    if matches!(
+                        keyval,
+                        gdk4::Key::Shift_L
+                            | gdk4::Key::Shift_R
+                            | gdk4::Key::Control_L
+                            | gdk4::Key::Control_R
+                            | gdk4::Key::Alt_L
+                            | gdk4::Key::Alt_R
+                            | gdk4::Key::Super_L
+                            | gdk4::Key::Super_R
+                    ) {
+                        return glib::Propagation::Proceed;
+                    }
+
+                    let ctrl = modifiers.contains(gdk4::ModifierType::CONTROL_MASK);
+                    let shift = modifiers.contains(gdk4::ModifierType::SHIFT_MASK);
+                    let alt = modifiers.contains(gdk4::ModifierType::ALT_MASK);
+                    // Normalize the key name: GTK may return " " or an empty string
+                    // for the space bar; canonicalize to "space".
+                    let raw_key_name = keyval.name().map(|n| n.to_string()).unwrap_or_default();
+                    let key_name = if raw_key_name.trim().is_empty() || keyval == gdk4::Key::space {
+                        "space".to_string()
+                    } else {
+                        raw_key_name
+                    };
+
+                    let new_binding = settings::shortcuts::Keybinding {
+                        key: key_name,
+                        ctrl,
+                        shift,
+                        alt,
+                    };
+
+                    // Conflict detection: check if this binding is already used by
+                    // a different action.
+                    let conflict_action = {
+                        let current = state_inner.borrow();
+                        current
+                            .bindings
+                            .iter()
+                            .find(|(other_action, opt)| {
+                                *other_action != &action_inner && opt.as_ref() == Some(&new_binding)
+                            })
+                            .map(|(other_action, _)| other_action.clone())
+                    };
+
+                    if let Some(conflict) = conflict_action {
+                        conflict_inner.set_text(&format!("Already used by: {conflict}"));
+                        conflict_inner.set_visible(true);
+                    } else {
+                        conflict_inner.set_visible(false);
+                    }
+
+                    label_inner.set_text(&new_binding.display());
                     label_inner.remove_css_class("accent");
                     label_inner.add_css_class("dim-label");
-                    conflict_inner.set_visible(false);
+
+                    state_inner
+                        .borrow_mut()
+                        .bindings
+                        .insert(action_inner.clone(), Some(new_binding));
+
+                    // Re-enable the clear button now that a binding exists
+                    if let Some(btn) = clear_btn_inner.upgrade() {
+                        btn.set_sensitive(true);
+                    }
+
                     if let Some(row) = row_weak.upgrade() {
                         row.remove_controller(ctl);
                     }
-                    return glib::Propagation::Stop;
-                }
+                    glib::Propagation::Stop
+                });
+                row.add_controller(key_controller);
 
-                // Ignore bare modifier keys
-                if matches!(
-                    keyval,
-                    gdk4::Key::Shift_L
-                        | gdk4::Key::Shift_R
-                        | gdk4::Key::Control_L
-                        | gdk4::Key::Control_R
-                        | gdk4::Key::Alt_L
-                        | gdk4::Key::Alt_R
-                        | gdk4::Key::Super_L
-                        | gdk4::Key::Super_R
-                ) {
-                    return glib::Propagation::Proceed;
-                }
-
-                let ctrl = modifiers.contains(gdk4::ModifierType::CONTROL_MASK);
-                let shift = modifiers.contains(gdk4::ModifierType::SHIFT_MASK);
-                let alt = modifiers.contains(gdk4::ModifierType::ALT_MASK);
-                // Normalize the key name: GTK may return " " or an empty string
-                // for the space bar; canonicalize to "space".
-                let raw_key_name = keyval.name().map(|n| n.to_string()).unwrap_or_default();
-                let key_name = if raw_key_name.trim().is_empty()
-                    || keyval == gdk4::Key::space
-                {
-                    "space".to_string()
-                } else {
-                    raw_key_name
-                };
-
-                let new_binding = settings::shortcuts::Keybinding {
-                    key: key_name,
-                    ctrl,
-                    shift,
-                    alt,
-                };
-
-                // Conflict detection: check if this binding is already used by
-                // a different action.
-                let conflict_action = {
-                    let current = state_inner.borrow();
-                    current
+                // Cancel recording on focus loss
+                let focus_controller = gtk4::EventControllerFocus::new();
+                let label_focus = label_clone.clone();
+                let action_focus = action_name.clone();
+                let state_focus = state.clone();
+                let row_focus_weak = row.downgrade();
+                focus_controller.connect_leave(move |ctl| {
+                    let current = state_focus.borrow();
+                    let text = current
                         .bindings
-                        .iter()
-                        .find(|(other_action, opt)| {
-                            *other_action != &action_inner
-                                && opt.as_ref() == Some(&new_binding)
-                        })
-                        .map(|(other_action, _)| other_action.clone())
-                };
-
-                if let Some(conflict) = conflict_action {
-                    conflict_inner.set_text(&format!("Already used by: {conflict}"));
-                    conflict_inner.set_visible(true);
-                } else {
-                    conflict_inner.set_visible(false);
-                }
-
-                label_inner.set_text(&new_binding.display());
-                label_inner.remove_css_class("accent");
-                label_inner.add_css_class("dim-label");
-
-                state_inner
-                    .borrow_mut()
-                    .bindings
-                    .insert(action_inner.clone(), Some(new_binding));
-
-                // Re-enable the clear button now that a binding exists
-                if let Some(btn) = clear_btn_inner.upgrade() {
-                    btn.set_sensitive(true);
-                }
-
-                if let Some(row) = row_weak.upgrade() {
-                    row.remove_controller(ctl);
-                }
-                glib::Propagation::Stop
+                        .get(&action_focus)
+                        .and_then(|opt| opt.as_ref())
+                        .map(|b| b.display())
+                        .unwrap_or_else(|| "unbound".to_string());
+                    label_focus.set_text(&text);
+                    label_focus.remove_css_class("accent");
+                    label_focus.add_css_class("dim-label");
+                    if let Some(row) = row_focus_weak.upgrade() {
+                        row.remove_controller(ctl);
+                    }
+                });
+                row.add_controller(focus_controller);
             });
-            row.add_controller(key_controller);
 
-            // Cancel recording on focus loss
-            let focus_controller = gtk4::EventControllerFocus::new();
-            let label_focus = label_clone.clone();
-            let action_focus = action_name.clone();
-            let state_focus = state.clone();
-            let row_focus_weak = row.downgrade();
-            focus_controller.connect_leave(move |ctl| {
-                let current = state_focus.borrow();
-                let text = current
-                    .bindings
-                    .get(&action_focus)
-                    .and_then(|opt| opt.as_ref())
-                    .map(|b| b.display())
-                    .unwrap_or_else(|| "unbound".to_string());
-                label_focus.set_text(&text);
-                label_focus.remove_css_class("accent");
-                label_focus.add_css_class("dim-label");
-                if let Some(row) = row_focus_weak.upgrade() {
-                    row.remove_controller(ctl);
-                }
-            });
-            row.add_controller(focus_controller);
-        });
-
-        row_handles
-            .borrow_mut()
-            .push((action.to_string(), shortcut_label.clone(), clear_btn.clone()));
-        group.add(&row);
+            row_handles.borrow_mut().push((
+                action.to_string(),
+                shortcut_label.clone(),
+                clear_btn.clone(),
+            ));
+            group.add(&row);
         }
     };
 

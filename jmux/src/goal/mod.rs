@@ -203,8 +203,16 @@ pub fn resolve_permission_mode(
 ) -> String {
     let sources = [
         ("permission_mode request", requested.unwrap_or(""), true),
-        ("runner permission_mode", runner.permission_mode.as_str(), false),
-        ("goal.permission_mode", settings.permission_mode.as_str(), false),
+        (
+            "runner permission_mode",
+            runner.permission_mode.as_str(),
+            false,
+        ),
+        (
+            "goal.permission_mode",
+            settings.permission_mode.as_str(),
+            false,
+        ),
     ];
     for (origin, value, allow_bypass) in sources {
         if value.trim().is_empty() {
@@ -597,23 +605,21 @@ pub fn resolve_goal_source(
     let (path, text, cwd, name, inline) = match str_param("goal_text") {
         Some(text) => {
             if text.len() > MAX_GOAL_BYTES {
-                return Err(("invalid_params", "Goal text is too large (256 KiB max)".into()));
+                return Err((
+                    "invalid_params",
+                    "Goal text is too large (256 KiB max)".into(),
+                ));
             }
             let cwd = explicit_cwd
                 .clone()
-                .or_else(|| {
-                    client_cwd
-                        .clone()
-                        .map(|c| find_git_root(&c).unwrap_or(c))
-                })
+                .or_else(|| client_cwd.clone().map(|c| find_git_root(&c).unwrap_or(c)))
                 .ok_or((
                     "invalid_params",
                     "Inline goal text needs a working directory ('cwd' or 'client_cwd')"
                         .to_string(),
                 ))?;
             let name = slugify_goal(text);
-            let path = write_inline_goal(&name, text)
-                .map_err(|e| ("internal", e))?;
+            let path = write_inline_goal(&name, text).map_err(|e| ("internal", e))?;
             (path, text.to_string(), cwd, name, true)
         }
         None => {
@@ -630,12 +636,15 @@ pub fn resolve_goal_source(
             let text = std::fs::read_to_string(goal_path)
                 .map_err(|e| ("not_found", format!("Cannot read goal file: {e}")))?;
             if text.len() > MAX_GOAL_BYTES {
-                return Err(("invalid_params", "Goal file is too large (256 KiB max)".into()));
+                return Err((
+                    "invalid_params",
+                    "Goal file is too large (256 KiB max)".into(),
+                ));
             }
             let parent = goal_path.parent().unwrap_or(Path::new("/"));
-            let cwd = explicit_cwd.clone().unwrap_or_else(|| {
-                find_git_root(parent).unwrap_or_else(|| parent.to_path_buf())
-            });
+            let cwd = explicit_cwd
+                .clone()
+                .unwrap_or_else(|| find_git_root(parent).unwrap_or_else(|| parent.to_path_buf()));
             // File stem, or the parent directory when the stem is the
             // generic "goal".
             let stem = goal_path
@@ -1271,9 +1280,7 @@ pub fn advance_iteration(
     if state_detection_is_claude(&run.runner) {
         let live = crate::session::claude_resume::all_local_claude_cwds();
         if !live.contains_key(&run.panel_id) {
-            return Err(
-                "the agent process is not running in that pane — resume it first".into(),
-            );
+            return Err("the agent process is not running in that pane — resume it first".into());
         }
     }
     let next = run.iteration + 1;
@@ -1529,7 +1536,13 @@ mod tests {
     #[test]
     fn launch_command_claude_defaults() {
         let runner = GoalRunner::default();
-        let cmd = launch_command(&runner, "abc", "do it", Path::new("/tmp/s.md"), "acceptEdits");
+        let cmd = launch_command(
+            &runner,
+            "abc",
+            "do it",
+            Path::new("/tmp/s.md"),
+            "acceptEdits",
+        );
         assert!(cmd.starts_with("claude --session-id abc"));
         assert!(cmd.contains("--permission-mode 'acceptEdits'"));
         // Seed is read from the seed file at spawn — never inlined (panel
@@ -1551,7 +1564,13 @@ mod tests {
             ],
             ..Default::default()
         };
-        let cmd = launch_command(&runner, "abc", "do it", Path::new("/tmp/s.md"), "acceptEdits");
+        let cmd = launch_command(
+            &runner,
+            "abc",
+            "do it",
+            Path::new("/tmp/s.md"),
+            "acceptEdits",
+        );
         // `--allowedTools` is variadic: it must be terminated by a flag,
         // never by the trailing seed argument.
         assert!(
@@ -1581,7 +1600,10 @@ mod tests {
         assert_eq!(settings.permission_mode, "acceptEdits");
 
         // Nothing configured anywhere → the default.
-        assert_eq!(resolve_permission_mode(None, &plain, &settings), "acceptEdits");
+        assert_eq!(
+            resolve_permission_mode(None, &plain, &settings),
+            "acceptEdits"
+        );
 
         // Settings < runner < per-invocation request.
         settings.permission_mode = "plan".into();
@@ -1590,13 +1612,19 @@ mod tests {
             permission_mode: "acceptEdits".into(),
             ..Default::default()
         };
-        assert_eq!(resolve_permission_mode(None, &runner, &settings), "acceptEdits");
+        assert_eq!(
+            resolve_permission_mode(None, &runner, &settings),
+            "acceptEdits"
+        );
         assert_eq!(
             resolve_permission_mode(Some("supervised"), &runner, &settings),
             "supervised"
         );
         // An empty request is "no flag given", not a mode.
-        assert_eq!(resolve_permission_mode(Some(""), &runner, &settings), "acceptEdits");
+        assert_eq!(
+            resolve_permission_mode(Some(""), &runner, &settings),
+            "acceptEdits"
+        );
 
         // Bypass: allowed per invocation, refused from every ambient source.
         assert_eq!(
@@ -1607,7 +1635,10 @@ mod tests {
             permission_mode: "bypassPermissions".into(),
             ..Default::default()
         };
-        assert_eq!(resolve_permission_mode(None, &bypass_runner, &settings), "plan");
+        assert_eq!(
+            resolve_permission_mode(None, &bypass_runner, &settings),
+            "plan"
+        );
         settings.permission_mode = "bypassPermissions".into();
         assert_eq!(
             resolve_permission_mode(None, &bypass_runner, &settings),
@@ -1618,7 +1649,10 @@ mod tests {
 
         // Unknown values are ignored (with a warning), falling through.
         settings.permission_mode = "yolo".into();
-        assert_eq!(resolve_permission_mode(Some("nope"), &plain, &settings), "acceptEdits");
+        assert_eq!(
+            resolve_permission_mode(Some("nope"), &plain, &settings),
+            "acceptEdits"
+        );
         assert!(validate_permission_mode("acceptedits", false).is_err());
     }
 
@@ -1630,14 +1664,26 @@ mod tests {
             command_template: "codex exec --model {model} {seed_file}".into(),
             ..Default::default()
         };
-        let cmd = launch_command(&runner, "abc", "seed", Path::new("/tmp/s.md"), "acceptEdits");
+        let cmd = launch_command(
+            &runner,
+            "abc",
+            "seed",
+            Path::new("/tmp/s.md"),
+            "acceptEdits",
+        );
         assert_eq!(cmd, "codex exec --model gpt-sol '/tmp/s.md'");
         let runner_inline = GoalRunner {
             agent: "custom".into(),
             command_template: "mytool {seed}".into(),
             ..Default::default()
         };
-        let cmd = launch_command(&runner_inline, "abc", "multi\nline", Path::new("/tmp/s.md"), "");
+        let cmd = launch_command(
+            &runner_inline,
+            "abc",
+            "multi\nline",
+            Path::new("/tmp/s.md"),
+            "",
+        );
         assert_eq!(cmd, "mytool \"$(cat '/tmp/s.md')\"");
     }
 
@@ -1704,7 +1750,10 @@ mod tests {
         let a_id = a.workspace_id;
         let reg = registry(vec![a]);
         // Exact name, bare node id, and UUID all land on the same run.
-        assert_eq!(resolve_run(&reg, Some("mapsite/map-core"), None).unwrap(), a_id);
+        assert_eq!(
+            resolve_run(&reg, Some("mapsite/map-core"), None).unwrap(),
+            a_id
+        );
         assert_eq!(resolve_run(&reg, Some("map-core"), None).unwrap(), a_id);
         assert_eq!(
             resolve_run(&reg, Some(&a_id.to_string()), None).unwrap(),
@@ -1734,15 +1783,11 @@ mod tests {
         assert!(resolve_run(&reg, None, Some(Uuid::new_v4())).is_err());
         // A finished run loses to its live namesake.
         let done = test_run("g/one", GoalStatus::Done);
-        let reg = registry(vec![
-            test_run("g/two", GoalStatus::Running),
-            done,
-            {
-                let mut r = test_run("g/one", GoalStatus::Running);
-                r.workspace_id = a_id;
-                r
-            },
-        ]);
+        let reg = registry(vec![test_run("g/two", GoalStatus::Running), done, {
+            let mut r = test_run("g/one", GoalStatus::Running);
+            r.workspace_id = a_id;
+            r
+        }]);
         assert_eq!(resolve_run(&reg, Some("g/one"), None).unwrap(), a_id);
     }
 
@@ -1793,8 +1838,14 @@ mod tests {
     #[test]
     fn output_dir_must_stay_inside_the_repo() {
         assert_eq!(validate_output_dir("docs/roadmap").unwrap(), "docs/roadmap");
-        assert_eq!(validate_output_dir(" .jmux/goals/ ").unwrap(), ".jmux/goals");
-        assert_eq!(validate_output_dir("./docs/roadmap").unwrap(), "docs/roadmap");
+        assert_eq!(
+            validate_output_dir(" .jmux/goals/ ").unwrap(),
+            ".jmux/goals"
+        );
+        assert_eq!(
+            validate_output_dir("./docs/roadmap").unwrap(),
+            "docs/roadmap"
+        );
         for bad in ["/tmp/out", "/", "../out", "docs/../../out", "", "  ", "."] {
             assert!(validate_output_dir(bad).is_err(), "accepted {bad:?}");
         }
@@ -1820,9 +1871,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("jmux-goal-scan-{}", std::process::id()));
         let roadmap = dir.join("docs/roadmap");
         std::fs::create_dir_all(&roadmap).unwrap();
-        assert_eq!(next_iteration_number(dir.to_str().unwrap(), "docs/roadmap"), 1);
+        assert_eq!(
+            next_iteration_number(dir.to_str().unwrap(), "docs/roadmap"),
+            1
+        );
         std::fs::write(roadmap.join("iteration-3.md"), "x").unwrap();
-        assert_eq!(next_iteration_number(dir.to_str().unwrap(), "docs/roadmap"), 4);
+        assert_eq!(
+            next_iteration_number(dir.to_str().unwrap(), "docs/roadmap"),
+            4
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -269,9 +269,7 @@ pub fn create_window(
 
     // Sub-agent monitor toggle — read-only panes tailing Claude's sub-agents.
     let monitor_btn = gtk4::Button::from_icon_name("utilities-system-monitor-symbolic");
-    monitor_btn.set_tooltip_text(Some(
-        "Toggle sub-agent monitor panes (Ctrl+Shift+S)",
-    ));
+    monitor_btn.set_tooltip_text(Some("Toggle sub-agent monitor panes (Ctrl+Shift+S)"));
     monitor_btn.add_css_class("flat");
     // Keep it out of the focus chain — a focused header button turns stray
     // Space/Enter presses into surprise activations while typing (see the
@@ -703,7 +701,11 @@ fn page_signature(
     h.finish()
 }
 
-pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id: Option<uuid::Uuid>) {
+pub fn rebuild_content(
+    content_box: &gtk4::Box,
+    state: &Rc<AppState>,
+    window_id: Option<uuid::Uuid>,
+) {
     tracing::debug!("rebuild_content triggered");
 
     // Which window are we rendering for? Use the explicit id, else derive it
@@ -739,7 +741,13 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
         } else {
             None
         };
-        let signature = page_signature(state, &layout, &panels, effective_attention, zoomed_panel_id);
+        let signature = page_signature(
+            state,
+            &layout,
+            &panels,
+            effective_attention,
+            zoomed_panel_id,
+        );
         let page_name = id.to_string();
 
         // Rebuild this workspace's page only when its structure actually changed
@@ -778,8 +786,13 @@ pub fn rebuild_content(content_box: &gtk4::Box, state: &Rc<AppState>, window_id:
             stack.add_named(&widget, Some(&page_name));
             // Record the *post-build* signature: the build itself creates and
             // initializes surfaces, which are part of the signature.
-            let built_signature =
-                page_signature(state, &layout, &panels, effective_attention, zoomed_panel_id);
+            let built_signature = page_signature(
+                state,
+                &layout,
+                &panels,
+                effective_attention,
+                zoomed_panel_id,
+            );
             state
                 .workspace_page_signatures
                 .borrow_mut()
@@ -953,7 +966,11 @@ fn refresh_ui(list_box: &gtk4::ListBox, content_box: &gtk4::Box, state: &Rc<AppS
 ///
 /// Returns true if the caller should continue rendering, false if it quit.
 fn enforce_workspace_invariant(content_box: &gtk4::Box, state: &Rc<AppState>) -> bool {
-    if lock_or_recover(&state.shared.tab_manager).iter().next().is_some() {
+    if lock_or_recover(&state.shared.tab_manager)
+        .iter()
+        .next()
+        .is_some()
+    {
         return true;
     }
     // The welcome screen legitimately shows no workspaces — don't act on it.

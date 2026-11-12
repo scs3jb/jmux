@@ -267,10 +267,7 @@ impl SessionWorkspaceLayoutSnapshot {
 /// - Antigravity:     `agy`     (Google's replacement for the retired
 ///   Gemini CLI; matched on either name, and on `agy` as a whole word so
 ///   it cannot fire inside an unrelated title)
-pub fn detect_agent_resume_command(
-    title: Option<&str>,
-    command: Option<&str>,
-) -> Option<String> {
+pub fn detect_agent_resume_command(title: Option<&str>, command: Option<&str>) -> Option<String> {
     // Build a single string to search: "<title> <command>" (lowercase).
     let haystack = {
         let mut s = String::new();
@@ -492,7 +489,10 @@ mod tests {
     fn agy_does_not_match_inside_another_word() {
         // Substring matching on three letters would fire on any title that
         // happens to contain them.
-        assert_eq!(detect_agent_resume_command(Some("magyar notes"), None), None);
+        assert_eq!(
+            detect_agent_resume_command(Some("magyar notes"), None),
+            None
+        );
     }
 
     #[test]
@@ -562,10 +562,7 @@ mod tests {
     fn test_detect_agent_resume_none_for_plain_shell() {
         assert_eq!(detect_agent_resume_command(Some("zsh"), None), None);
         assert_eq!(detect_agent_resume_command(Some("bash"), None), None);
-        assert_eq!(
-            detect_agent_resume_command(Some("vim"), Some("vim")),
-            None
-        );
+        assert_eq!(detect_agent_resume_command(Some("vim"), Some("vim")), None);
     }
 
     #[test]

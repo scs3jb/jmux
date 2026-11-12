@@ -53,7 +53,8 @@ pub fn create_agent_monitor_widget(
     // shell-quoted.
     let command = format!("{} agent view {}", cli_binary(), shell_quote(&transcript));
 
-    let gl_surface = state.terminal_surface_for(panel.id, panel.directory.as_deref(), Some(&command));
+    let gl_surface =
+        state.terminal_surface_for(panel.id, panel.directory.as_deref(), Some(&command));
     {
         let state = Rc::clone(state);
         let panel_id = panel.id;

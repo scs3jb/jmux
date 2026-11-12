@@ -3,7 +3,6 @@
 //! Uses the `sqlite3` CLI tool to read Firefox's cookies.sqlite without
 //! adding a Rust SQLite dependency. Must be called on the GTK main thread.
 
-
 /// A parsed cookie ready to inject into WebKit.
 #[derive(Debug)]
 pub struct ImportedCookie {
@@ -97,10 +96,7 @@ fn find_chrome_cookies_db(source: ImportSource) -> Option<std::path::PathBuf> {
         ],
         ImportSource::Firefox => return None,
     };
-    candidates
-        .iter()
-        .map(|p| home.join(p))
-        .find(|p| p.exists())
+    candidates.iter().map(|p| home.join(p)).find(|p| p.exists())
 }
 
 /// Read Firefox cookies using the `sqlite3` CLI tool.
@@ -147,7 +143,11 @@ pub fn read_firefox_cookies() -> Result<Vec<ImportedCookie>, String> {
 /// rows are skipped).
 pub fn read_chrome_cookies(source: ImportSource) -> Result<Vec<ImportedCookie>, String> {
     let db_path = find_chrome_cookies_db(source).ok_or_else(|| {
-        let name = if source == ImportSource::Chrome { "Chrome" } else { "Chromium" };
+        let name = if source == ImportSource::Chrome {
+            "Chrome"
+        } else {
+            "Chromium"
+        };
         format!("{name} profile not found")
     })?;
 
@@ -211,7 +211,13 @@ pub fn inject_cookies_into_webkit(cookies: Vec<ImportedCookie>) -> usize {
         if max_age == 0 && cookie.expiry > 0 {
             continue; // already expired
         }
-        let mut sc = soup::Cookie::new(&cookie.name, &cookie.value, &cookie.domain, &cookie.path, max_age);
+        let mut sc = soup::Cookie::new(
+            &cookie.name,
+            &cookie.value,
+            &cookie.domain,
+            &cookie.path,
+            max_age,
+        );
         sc.set_secure(cookie.is_secure);
         sc.set_http_only(cookie.is_http_only);
         mgr.add_cookie(&sc, gio::Cancellable::NONE, |_: Result<(), _>| {});

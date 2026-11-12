@@ -86,7 +86,9 @@ impl FileExplorer {
         {
             let store_weak = store.downgrade();
             tree_view.connect_row_expanded(move |tv, iter, path| {
-                let Some(store) = store_weak.upgrade() else { return };
+                let Some(store) = store_weak.upgrade() else {
+                    return;
+                };
                 let has_dummy = tree_model_get_bool(&store, iter, COL_HAS_DUMMY);
                 if !has_dummy {
                     return;
@@ -120,10 +122,13 @@ impl FileExplorer {
                     if n_press != 2 {
                         return;
                     }
-                    let Some(tree_view) = tree_view_weak.upgrade() else { return };
-                    let Some(store) = store_weak.upgrade() else { return };
-                    if let Some((Some(path), _, _, _)) = tree_view.path_at_pos(x as i32, y as i32)
-                    {
+                    let Some(tree_view) = tree_view_weak.upgrade() else {
+                        return;
+                    };
+                    let Some(store) = store_weak.upgrade() else {
+                        return;
+                    };
+                    if let Some((Some(path), _, _, _)) = tree_view.path_at_pos(x as i32, y as i32) {
                         if let Some(iter) = store.iter(&path) {
                             let is_dir = tree_model_get_bool(&store, &iter, COL_IS_DIR);
                             if !is_dir {
@@ -143,8 +148,7 @@ impl FileExplorer {
         // Callback for the context-menu insert actions, set later via
         // `set_insert_callback`. Stored here so the secondary-click gesture
         // (built before the callback exists) can capture a clone.
-        let insert_cb: Rc<RefCell<Option<Rc<dyn Fn(String, bool)>>>> =
-            Rc::new(RefCell::new(None));
+        let insert_cb: Rc<RefCell<Option<Rc<dyn Fn(String, bool)>>>> = Rc::new(RefCell::new(None));
 
         // Right-click (secondary button) on a file row shows a popover with
         // "Insert Path" / "Insert Relative Path" actions.
@@ -155,12 +159,18 @@ impl FileExplorer {
             let gesture = gtk4::GestureClick::new();
             gesture.set_button(3);
             gesture.connect_pressed(move |gesture, _n_press, x, y| {
-                let Some(tree_view) = tree_view_weak.upgrade() else { return };
-                let Some(store) = store_weak.upgrade() else { return };
+                let Some(tree_view) = tree_view_weak.upgrade() else {
+                    return;
+                };
+                let Some(store) = store_weak.upgrade() else {
+                    return;
+                };
                 let Some((Some(path), _, _, _)) = tree_view.path_at_pos(x as i32, y as i32) else {
                     return;
                 };
-                let Some(iter) = store.iter(&path) else { return };
+                let Some(iter) = store.iter(&path) else {
+                    return;
+                };
                 let is_dir = tree_model_get_bool(&store, &iter, COL_IS_DIR);
                 if is_dir {
                     return;
@@ -175,9 +185,7 @@ impl FileExplorer {
                 popover.set_parent(&tree_view);
                 popover.set_has_arrow(true);
                 popover.set_autohide(true);
-                popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
-                    x as i32, y as i32, 1, 1,
-                )));
+                popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
 
                 let menu_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
@@ -307,13 +315,27 @@ impl FileExplorer {
             let open_btn_w = open_btn.downgrade();
 
             tree_view.connect_cursor_changed(move |tv| {
-                let Some(store) = store_weak.upgrade() else { return };
-                let Some(preview_box) = preview_box_w.upgrade() else { return };
-                let Some(preview_name) = preview_name_w.upgrade() else { return };
-                let Some(text_view) = text_view_w.upgrade() else { return };
-                let Some(picture) = picture_w.upgrade() else { return };
-                let Some(stack) = stack_w.upgrade() else { return };
-                let Some(open_btn) = open_btn_w.upgrade() else { return };
+                let Some(store) = store_weak.upgrade() else {
+                    return;
+                };
+                let Some(preview_box) = preview_box_w.upgrade() else {
+                    return;
+                };
+                let Some(preview_name) = preview_name_w.upgrade() else {
+                    return;
+                };
+                let Some(text_view) = text_view_w.upgrade() else {
+                    return;
+                };
+                let Some(picture) = picture_w.upgrade() else {
+                    return;
+                };
+                let Some(stack) = stack_w.upgrade() else {
+                    return;
+                };
+                let Some(open_btn) = open_btn_w.upgrade() else {
+                    return;
+                };
 
                 let (cursor_path, _) = gtk4::prelude::TreeViewExt::cursor(tv);
                 let Some(path) = cursor_path else {
@@ -474,13 +496,17 @@ fn open_file_with_action(full_path: &str) {
         // which fires before the double-click), so "preview" needs no extra work.
         FileOpenAction::Preview => {}
         FileOpenAction::DefaultApp => {
-            let _ = std::process::Command::new("xdg-open").arg(full_path).spawn();
+            let _ = std::process::Command::new("xdg-open")
+                .arg(full_path)
+                .spawn();
         }
         FileOpenAction::PreferredEditor => {
             let editor = crate::settings::load().preferred_editor;
             if editor.trim().is_empty() {
                 // Fall back to the system default if no editor is configured.
-                let _ = std::process::Command::new("xdg-open").arg(full_path).spawn();
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(full_path)
+                    .spawn();
                 return;
             }
             // Split the configured command into program + args, substituting {path}.
@@ -627,7 +653,12 @@ fn tree_model_get_bool(store: &gtk4::TreeStore, iter: &gtk4::TreeIter, col: u32)
         let raw_model = store.as_ptr() as *mut gtk4::ffi::GtkTreeModel;
         let raw_iter = iter.to_glib_none().0 as *mut gtk4::ffi::GtkTreeIter;
         let mut value = std::mem::MaybeUninit::<glib::gobject_ffi::GValue>::zeroed();
-        gtk4::ffi::gtk_tree_model_get_value(raw_model, raw_iter, col as std::ffi::c_int, value.as_mut_ptr());
+        gtk4::ffi::gtk_tree_model_get_value(
+            raw_model,
+            raw_iter,
+            col as std::ffi::c_int,
+            value.as_mut_ptr(),
+        );
         let v = value.assume_init();
         let result = glib::gobject_ffi::g_value_get_boolean(&v) != 0;
         glib::gobject_ffi::g_value_unset(value.as_mut_ptr());
@@ -641,15 +672,18 @@ fn tree_model_get_string(store: &gtk4::TreeStore, iter: &gtk4::TreeIter, col: u3
         let raw_model = store.as_ptr() as *mut gtk4::ffi::GtkTreeModel;
         let raw_iter = iter.to_glib_none().0 as *mut gtk4::ffi::GtkTreeIter;
         let mut value = std::mem::MaybeUninit::<glib::gobject_ffi::GValue>::zeroed();
-        gtk4::ffi::gtk_tree_model_get_value(raw_model, raw_iter, col as std::ffi::c_int, value.as_mut_ptr());
+        gtk4::ffi::gtk_tree_model_get_value(
+            raw_model,
+            raw_iter,
+            col as std::ffi::c_int,
+            value.as_mut_ptr(),
+        );
         let v = value.assume_init();
         let ptr = glib::gobject_ffi::g_value_get_string(&v);
         let result = if ptr.is_null() {
             String::new()
         } else {
-            std::ffi::CStr::from_ptr(ptr)
-                .to_string_lossy()
-                .into_owned()
+            std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
         };
         glib::gobject_ffi::g_value_unset(value.as_mut_ptr());
         result

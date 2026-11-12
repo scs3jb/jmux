@@ -428,15 +428,11 @@ impl GhosttyGlSurface {
             return true;
         }
         if imp.pending_spawn.borrow().is_none() {
-            tracing::warn!(
-                "spawn_headless before initialize_with_env — nothing to spawn"
-            );
+            tracing::warn!("spawn_headless before initialize_with_env — nothing to spawn");
             return false;
         }
         if self.root().is_none() {
-            tracing::debug!(
-                "spawn_headless: surface is not in a window yet — deferring"
-            );
+            tracing::debug!("spawn_headless: surface is not in a window yet — deferring");
             return false;
         }
         if !self.is_realized() {
@@ -512,11 +508,7 @@ impl GhosttyGlSurface {
             tracing::warn!("spawn requested before initialize_with_env");
             return;
         };
-        let (app, wd, cmd) = (
-            cfg.app,
-            cfg.working_directory.clone(),
-            cfg.command.clone(),
-        );
+        let (app, wd, cmd) = (cfg.app, cfg.working_directory.clone(), cfg.command.clone());
         let env = cfg.env.clone();
         // `create_surface` runs GTK/ghostty callbacks that can re-enter this
         // widget, so the borrow must be released first.
@@ -761,12 +753,7 @@ impl GhosttyGlSurface {
             #[upgrade_or]
             glib::Propagation::Proceed,
             move |controller, keyval, keycode, state| {
-                tracing::trace!(
-                    keyval = keyval.into_glib(),
-                    keycode,
-                    ?state,
-                    "key_pressed"
-                );
+                tracing::trace!(keyval = keyval.into_glib(), keycode, ?state, "key_pressed");
                 surface_widget.on_key_event(
                     controller,
                     keyval.into_glib(),
@@ -780,12 +767,7 @@ impl GhosttyGlSurface {
             #[weak(rename_to = surface_widget)]
             self,
             move |controller, keyval, keycode, state| {
-                tracing::trace!(
-                    keyval = keyval.into_glib(),
-                    keycode,
-                    ?state,
-                    "key_released"
-                );
+                tracing::trace!(keyval = keyval.into_glib(), keycode, ?state, "key_released");
                 surface_widget.on_key_event(
                     controller,
                     keyval.into_glib(),

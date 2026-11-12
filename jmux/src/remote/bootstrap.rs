@@ -67,9 +67,12 @@ pub fn remote_daemon_path(version: &str, platform: &RemotePlatform) -> String {
 
 /// Check if the daemon binary exists on the remote host.
 pub fn check_remote_binary(ssh_args: &[String], remote_path: &str) -> bool {
-    let output =
-        ssh_command(ssh_args, &format!("test -x {} && echo OK", remote_shell_path(remote_path)), 6)
-            .output();
+    let output = ssh_command(
+        ssh_args,
+        &format!("test -x {} && echo OK", remote_shell_path(remote_path)),
+        6,
+    )
+    .output();
 
     match output {
         Ok(out) => out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "OK",
@@ -241,10 +244,13 @@ pub fn upload_daemon(
     }
 
     // Make executable
-    let chmod_status =
-        ssh_command(ssh_args, &format!("chmod +x {}", remote_shell_path(remote_path)), 6)
-            .status()
-            .map_err(|e| format!("chmod failed: {}", e))?;
+    let chmod_status = ssh_command(
+        ssh_args,
+        &format!("chmod +x {}", remote_shell_path(remote_path)),
+        6,
+    )
+    .status()
+    .map_err(|e| format!("chmod failed: {}", e))?;
 
     if !chmod_status.success() {
         return Err("Failed to chmod daemon binary".to_string());
@@ -327,9 +333,8 @@ fn download_from_github_releases(
     platform: &RemotePlatform,
 ) -> Result<String, String> {
     let asset_name = format!("jmuxd-remote-{}-{}", platform.go_os, platform.go_arch);
-    let url = format!(
-        "https://github.com/manaflow-ai/jmux/releases/download/v{version}/{asset_name}"
-    );
+    let url =
+        format!("https://github.com/manaflow-ai/jmux/releases/download/v{version}/{asset_name}");
 
     tracing::info!(%url, "Downloading jmuxd-remote from GitHub Releases");
 
@@ -490,7 +495,10 @@ mod tests {
         assert_eq!(remote_shell_path("~"), "\"$HOME\"");
         // A space in the remainder is quoted, but the tilde still expands.
         let q = remote_shell_path("~/a b");
-        assert!(q.starts_with("\"$HOME\"/") && q.contains("'a b'"), "got: {q}");
+        assert!(
+            q.starts_with("\"$HOME\"/") && q.contains("'a b'"),
+            "got: {q}"
+        );
     }
 
     #[test]
@@ -502,7 +510,10 @@ mod tests {
             remote_scp_path("~/.jmux/bin/jmuxd-remote/1.2.3/linux-amd64/jmuxd-remote"),
             ".jmux/bin/jmuxd-remote/1.2.3/linux-amd64/jmuxd-remote"
         );
-        assert!(!remote_scp_path("~/.jmux/bin/x").starts_with('~'), "tilde must be stripped");
+        assert!(
+            !remote_scp_path("~/.jmux/bin/x").starts_with('~'),
+            "tilde must be stripped"
+        );
         // A bare ~ becomes the home directory itself.
         assert_eq!(remote_scp_path("~"), ".");
         // Absolute and already-relative paths pass through unchanged.

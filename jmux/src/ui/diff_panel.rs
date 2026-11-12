@@ -138,7 +138,13 @@ pub fn create_diff_widget(
     let staged = Rc::new(Cell::new(matches!(initial_spec, DiffSpec::Staged)));
     staged_toggle.set_active(staged.get());
 
-    let spec_of = |s: bool| if s { DiffSpec::Staged } else { DiffSpec::Working };
+    let spec_of = |s: bool| {
+        if s {
+            DiffSpec::Staged
+        } else {
+            DiffSpec::Working
+        }
+    };
     render_diff(&buffer, &dir, &spec_of(staged.get()));
 
     {
@@ -240,7 +246,9 @@ fn install_diff_tags(buffer: &gtk4::TextBuffer) {
 
 /// Path to the per-directory review-comments store.
 fn comments_path(dir: &str) -> std::path::PathBuf {
-    std::path::Path::new(dir).join(".jmux").join("diff-comments.json")
+    std::path::Path::new(dir)
+        .join(".jmux")
+        .join("diff-comments.json")
 }
 
 /// Load review comments (line-code → comment) for `dir`.
@@ -275,7 +283,11 @@ fn insert_inline_comment(
     }
     if let Some(comment) = comments.get(key) {
         let mut end = buffer.end_iter();
-        buffer.insert_with_tags_by_name(&mut end, &format!("    💬 {comment}\n"), &["diff-comment"]);
+        buffer.insert_with_tags_by_name(
+            &mut end,
+            &format!("    💬 {comment}\n"),
+            &["diff-comment"],
+        );
     }
 }
 
@@ -294,8 +306,7 @@ fn attach_comment_handler(text_view: &gtk4::TextView, dir: &str, rerender: impl 
         let Some(tv) = tv.upgrade() else {
             return;
         };
-        let (bx, by) =
-            tv.window_to_buffer_coords(gtk4::TextWindowType::Widget, x as i32, y as i32);
+        let (bx, by) = tv.window_to_buffer_coords(gtk4::TextWindowType::Widget, x as i32, y as i32);
         let Some(iter) = tv.iter_at_location(bx, by) else {
             return;
         };
@@ -315,7 +326,10 @@ fn attach_comment_handler(text_view: &gtk4::TextView, dir: &str, rerender: impl 
         }
         gesture.set_state(gtk4::EventSequenceState::Claimed);
 
-        let existing = load_comments(&dir).get(&code_key).cloned().unwrap_or_default();
+        let existing = load_comments(&dir)
+            .get(&code_key)
+            .cloned()
+            .unwrap_or_default();
         let popover = gtk4::Popover::new();
         popover.set_parent(&tv);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));

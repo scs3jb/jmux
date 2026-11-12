@@ -37,10 +37,13 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Dry-run for reorder-workspaces: fetch current order, print diff, exit.
-    if let Commands::Workspace(WorkspaceCommands::ReorderWorkspaces { workspaces, dry_run: true }) =
-        &cli.command
+    if let Commands::Workspace(WorkspaceCommands::ReorderWorkspaces {
+        workspaces,
+        dry_run: true,
+    }) = &cli.command
     {
-        let current_resp = rpc::send_request(&cli.socket, "workspace.list", serde_json::json!({}), None)?;
+        let current_resp =
+            rpc::send_request(&cli.socket, "workspace.list", serde_json::json!({}), None)?;
         if current_resp.get("ok").and_then(|v| v.as_bool()) != Some(true) {
             eprintln!("Failed to fetch workspace list for dry-run.");
             std::process::exit(1);
@@ -69,7 +72,8 @@ fn main() -> anyhow::Result<()> {
             ConfigCommands::Doctor => return config::run_doctor(),
             ConfigCommands::Docs => return config::run_docs(),
             ConfigCommands::Reload => {
-                let response = rpc::send_request(&cli.socket, "settings.open", serde_json::json!({}), None)?;
+                let response =
+                    rpc::send_request(&cli.socket, "settings.open", serde_json::json!({}), None)?;
                 if cli.json {
                     println!("{}", serde_json::to_string_pretty(&response)?);
                 } else if response.get("ok").and_then(|v| v.as_bool()) == Some(true) {
@@ -95,7 +99,14 @@ fn main() -> anyhow::Result<()> {
 
     // Agent hook events may involve multiple socket calls; handle them before
     // the single-dispatch main match below.
-    if let Commands::Agent(AgentCommands::Hook { event, cli: agent_cli, message, parent, panel }) = &cli.command {
+    if let Commands::Agent(AgentCommands::Hook {
+        event,
+        cli: agent_cli,
+        message,
+        parent,
+        panel,
+    }) = &cli.command
+    {
         match event.as_str() {
             "session-start" => {
                 rpc::send_request(
@@ -121,9 +132,18 @@ fn main() -> anyhow::Result<()> {
                     let mut input = String::new();
                     use std::io::Read;
                     let _ = std::io::stdin().read_to_string(&mut input);
-                    let v: serde_json::Value = serde_json::from_str(&input).unwrap_or(serde_json::json!({}));
-                    let t = v.get("title").and_then(|x| x.as_str()).unwrap_or(agent_cli).to_string();
-                    let b = v.get("body").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let v: serde_json::Value =
+                        serde_json::from_str(&input).unwrap_or(serde_json::json!({}));
+                    let t = v
+                        .get("title")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or(agent_cli)
+                        .to_string();
+                    let b = v
+                        .get("body")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     (t, b)
                 };
                 rpc::send_request(
@@ -152,7 +172,11 @@ fn main() -> anyhow::Result<()> {
                 )?;
                 if cli.json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
-                } else if let Some(pid) = resp.get("result").and_then(|r| r.get("panel_id")).and_then(|v| v.as_str()) {
+                } else if let Some(pid) = resp
+                    .get("result")
+                    .and_then(|r| r.get("panel_id"))
+                    .and_then(|v| v.as_str())
+                {
                     println!("{pid}");
                 } else {
                     eprintln!("subagent-start failed: {:?}", resp.get("error"));
@@ -205,7 +229,11 @@ fn main() -> anyhow::Result<()> {
             "agent.fork_conversation",
             serde_json::json!({"message": message, "workspace_name": name}),
         ),
-        Commands::Agent(AgentCommands::SpawnSubagent { parent_panel_id, cli_name, working_directory }) => (
+        Commands::Agent(AgentCommands::SpawnSubagent {
+            parent_panel_id,
+            cli_name,
+            working_directory,
+        }) => (
             "agent.spawn_subagent",
             serde_json::json!({
                 "parent_panel_id": parent_panel_id,
@@ -535,10 +563,18 @@ fn main() -> anyhow::Result<()> {
         Commands::Workspace(ws) => match ws {
             WorkspaceCommands::List => ("workspace.list", serde_json::json!({})),
             WorkspaceCommands::Current => ("workspace.current", serde_json::json!({})),
-            WorkspaceCommands::New { directory, title, layout } => {
+            WorkspaceCommands::New {
+                directory,
+                title,
+                layout,
+            } => {
                 // Use workspace.create when a non-single layout is requested so
                 // the server can apply the layout after the workspace is created.
-                let method = if layout == "single" { "workspace.new" } else { "workspace.create" };
+                let method = if layout == "single" {
+                    "workspace.new"
+                } else {
+                    "workspace.create"
+                };
                 let params = serde_json::json!({
                     "directory": directory,
                     "title": title,
@@ -658,7 +694,11 @@ fn main() -> anyhow::Result<()> {
                 "workspace.report_git_branch",
                 serde_json::json!({"branch": branch, "is_dirty": dirty}),
             ),
-            WorkspaceCommands::ImessageMode { enable, disable, workspace } => {
+            WorkspaceCommands::ImessageMode {
+                enable,
+                disable,
+                workspace,
+            } => {
                 let enabled = if *enable {
                     true
                 } else if *disable {
@@ -805,23 +845,19 @@ fn main() -> anyhow::Result<()> {
                     "surface": surface, "send_desktop": !no_desktop,
                 }),
             ),
-            NotificationCommands::List { unread } => (
-                "notification.list",
-                serde_json::json!({"unread": unread}),
-            ),
+            NotificationCommands::List { unread } => {
+                ("notification.list", serde_json::json!({"unread": unread}))
+            }
             NotificationCommands::Clear => ("notification.clear", serde_json::json!({})),
-            NotificationCommands::MarkRead { id } => (
-                "notification.mark_read",
-                serde_json::json!({"id": id}),
-            ),
-            NotificationCommands::Dismiss { id } => (
-                "notification.dismiss",
-                serde_json::json!({"id": id}),
-            ),
-            NotificationCommands::Open { id } => (
-                "notification.open",
-                serde_json::json!({"id": id}),
-            ),
+            NotificationCommands::MarkRead { id } => {
+                ("notification.mark_read", serde_json::json!({"id": id}))
+            }
+            NotificationCommands::Dismiss { id } => {
+                ("notification.dismiss", serde_json::json!({"id": id}))
+            }
+            NotificationCommands::Open { id } => {
+                ("notification.open", serde_json::json!({"id": id}))
+            }
         },
 
         Commands::Notify {
@@ -952,9 +988,10 @@ fn run_graph(cli: &Cli) -> anyhow::Result<()> {
     let (method, params) = if let Some(cmd) = command {
         match cmd {
             GraphCommands::Approve { name } => ("graph.approve", serde_json::json!({"name": name})),
-            GraphCommands::Revise { name, note } => {
-                ("graph.revise", serde_json::json!({"name": name, "note": note}))
-            }
+            GraphCommands::Revise { name, note } => (
+                "graph.revise",
+                serde_json::json!({"name": name, "note": note}),
+            ),
             GraphCommands::Status { name } => ("graph.status", serde_json::json!({"name": name})),
             GraphCommands::Pause { name } => ("graph.pause", serde_json::json!({"name": name})),
             GraphCommands::Resume { name } => ("graph.resume", serde_json::json!({"name": name})),
@@ -1158,10 +1195,7 @@ fn print_goal_status(result: &serde_json::Value) {
             r["runner"].as_str().unwrap_or("?"),
         );
         println!("  output:    {}", r["output"].as_str().unwrap_or("?"));
-        println!(
-            "  workspace: {}",
-            r["workspace_id"].as_str().unwrap_or("?")
-        );
+        println!("  workspace: {}", r["workspace_id"].as_str().unwrap_or("?"));
     }
 }
 
@@ -1492,8 +1526,7 @@ fn run_goal(cli: &Cli) -> anyhow::Result<()> {
 fn run_top(socket: &str, interval: u64) -> anyhow::Result<()> {
     use std::sync::atomic::Ordering;
 
-    static INTERRUPTED: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
+    static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     extern "C" fn handle_sigint(_: libc::c_int) {
         INTERRUPTED.store(true, Ordering::Relaxed);
@@ -1503,7 +1536,10 @@ fn run_top(socket: &str, interval: u64) -> anyhow::Result<()> {
     // SAFETY: signal handler only writes an AtomicBool — async-signal-safe.
     #[allow(clippy::fn_to_numeric_cast)]
     unsafe {
-        libc::signal(libc::SIGINT, handle_sigint as *const () as libc::sighandler_t);
+        libc::signal(
+            libc::SIGINT,
+            handle_sigint as *const () as libc::sighandler_t,
+        );
     }
 
     loop {
@@ -1623,7 +1659,8 @@ mod tests {
     #[test]
     fn goal_subcommand_names_beat_inline_text() {
         // `jmux goal status` must hit the subcommand, not become goal text.
-        let Commands::Goal { command, goal, .. } = parse(&["jmux", "goal", "status"]).command else {
+        let Commands::Goal { command, goal, .. } = parse(&["jmux", "goal", "status"]).command
+        else {
             panic!("not a goal command")
         };
         assert!(goal.is_none());
@@ -1645,17 +1682,31 @@ mod tests {
             let Commands::Goal { command, .. } = parse(&["jmux", "goal", spelling]).command else {
                 panic!("not a goal command")
             };
-            assert!(matches!(command, Some(GoalCommands::Report { .. })), "{spelling}");
+            assert!(
+                matches!(command, Some(GoalCommands::Report { .. })),
+                "{spelling}"
+            );
         }
         // The old `--workspace` spelling still parses.
         let Commands::Goal { command, .. } = parse(&[
-            "jmux", "goal", "complete", "--status", "done", "--workspace", "abc",
+            "jmux",
+            "goal",
+            "complete",
+            "--status",
+            "done",
+            "--workspace",
+            "abc",
         ])
         .command
         else {
             panic!("not a goal command")
         };
-        let Some(GoalCommands::Report { status, workspace, target }) = command else {
+        let Some(GoalCommands::Report {
+            status,
+            workspace,
+            target,
+        }) = command
+        else {
             panic!("not report")
         };
         assert_eq!(status.as_deref(), Some("done"));
@@ -1666,7 +1717,12 @@ mod tests {
     #[test]
     fn goal_verbs_take_a_name_and_a_note() {
         let Commands::Goal { command, .. } = parse(&[
-            "jmux", "goal", "continue", "mapsite/map-core", "--note", "use MapLibre",
+            "jmux",
+            "goal",
+            "continue",
+            "mapsite/map-core",
+            "--note",
+            "use MapLibre",
         ])
         .command
         else {
@@ -1681,13 +1737,20 @@ mod tests {
         let Commands::Goal { command, .. } = parse(&["jmux", "goal", "stop"]).command else {
             panic!("not a goal command")
         };
-        assert!(matches!(command, Some(GoalCommands::Stop { target: None, .. })));
+        assert!(matches!(
+            command,
+            Some(GoalCommands::Stop { target: None, .. })
+        ));
     }
 
     #[test]
     fn goal_plan_flag_takes_inline_text() {
-        let Commands::Goal { command, goal, plan, .. } =
-            parse(&["jmux", "goal", "--plan", "build a trail map site"]).command
+        let Commands::Goal {
+            command,
+            goal,
+            plan,
+            ..
+        } = parse(&["jmux", "goal", "--plan", "build a trail map site"]).command
         else {
             panic!("not a goal command")
         };
@@ -1699,8 +1762,12 @@ mod tests {
     #[test]
     fn graph_positional_is_the_goal_unless_goal_flag_is_used() {
         // New form: the positional is the goal itself.
-        let Commands::Graph { goal_or_name, goal, name, .. } =
-            parse(&["jmux", "graph", "build a trail map site"]).command
+        let Commands::Graph {
+            goal_or_name,
+            goal,
+            name,
+            ..
+        } = parse(&["jmux", "graph", "build a trail map site"]).command
         else {
             panic!("not a graph command")
         };
@@ -1708,8 +1775,9 @@ mod tests {
         assert!(goal.is_none() && name.is_none());
 
         // Compatibility form: `graph <name> --goal <file>`.
-        let Commands::Graph { goal_or_name, goal, .. } =
-            parse(&["jmux", "graph", "mapsite", "--goal", "/tmp/top.md"]).command
+        let Commands::Graph {
+            goal_or_name, goal, ..
+        } = parse(&["jmux", "graph", "mapsite", "--goal", "/tmp/top.md"]).command
         else {
             panic!("not a graph command")
         };
@@ -1737,13 +1805,8 @@ mod tests {
         };
         assert!(!no_worktrees);
 
-        let Commands::Graph { no_worktrees, .. } = parse(&[
-            "jmux",
-            "graph",
-            "build a trail map site",
-            "--no-worktrees",
-        ])
-        .command
+        let Commands::Graph { no_worktrees, .. } =
+            parse(&["jmux", "graph", "build a trail map site", "--no-worktrees"]).command
         else {
             panic!("not a graph command")
         };

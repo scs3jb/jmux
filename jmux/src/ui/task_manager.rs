@@ -168,7 +168,11 @@ fn collect_rows(state: &Rc<AppState>) -> Vec<ProcessRow> {
     let page_size = if page_size == 0 { 4096 } else { page_size };
 
     let ticks_per_sec = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as u64;
-    let ticks_per_sec = if ticks_per_sec == 0 { 100 } else { ticks_per_sec };
+    let ticks_per_sec = if ticks_per_sec == 0 {
+        100
+    } else {
+        ticks_per_sec
+    };
 
     let tm = lock_or_recover(&state.shared.tab_manager);
     let mut rows = Vec::new();
@@ -181,9 +185,7 @@ fn collect_rows(state: &Rc<AppState>) -> Vec<ProcessRow> {
             let Some(ref tty) = panel.tty_name else {
                 continue;
             };
-            let pts_index: Option<u32> = tty
-                .strip_prefix("/dev/pts/")
-                .and_then(|n| n.parse().ok());
+            let pts_index: Option<u32> = tty.strip_prefix("/dev/pts/").and_then(|n| n.parse().ok());
             let Some(pts_idx) = pts_index else {
                 continue;
             };
@@ -353,12 +355,7 @@ fn read_proc_status_char(stat: &str) -> String {
 }
 
 /// Render sorted rows into the TextView buffer.
-fn render_table(
-    tv: &gtk4::TextView,
-    rows: &[ProcessRow],
-    sort_col: SortColumn,
-    sort_dir: SortDir,
-) {
+fn render_table(tv: &gtk4::TextView, rows: &[ProcessRow], sort_col: SortColumn, sort_dir: SortDir) {
     let mut sorted = rows.to_vec();
     sorted.sort_by(|a, b| {
         let ord = match sort_col {

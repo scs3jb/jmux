@@ -341,25 +341,19 @@ pub(crate) fn execute_action(panel_id: uuid::Uuid, action: BrowserActionKind) {
                         return JSON.stringify({ react: false, error: String(e), components: [] });
                     }
                 })()"#;
-                wv.evaluate_javascript(
-                    js,
-                    None,
-                    None,
-                    None::<&gio::Cancellable>,
-                    move |result| {
-                        let resp = match result {
-                            Ok(val) => {
-                                let raw = val.to_str().to_string();
-                                match serde_json::from_str::<Value>(&raw) {
-                                    Ok(parsed) => Ok(parsed),
-                                    Err(_) => Ok(serde_json::json!({"raw": raw})),
-                                }
+                wv.evaluate_javascript(js, None, None, None::<&gio::Cancellable>, move |result| {
+                    let resp = match result {
+                        Ok(val) => {
+                            let raw = val.to_str().to_string();
+                            match serde_json::from_str::<Value>(&raw) {
+                                Ok(parsed) => Ok(parsed),
+                                Err(_) => Ok(serde_json::json!({"raw": raw})),
                             }
-                            Err(e) => Err(e.to_string()),
-                        };
-                        let _ = reply.send(resp);
-                    },
-                );
+                        }
+                        Err(e) => Err(e.to_string()),
+                    };
+                    let _ = reply.send(resp);
+                });
             } else {
                 let _ = reply.send(Err("Browser panel not found".to_string()));
             }

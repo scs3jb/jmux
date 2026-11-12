@@ -85,11 +85,7 @@ pub(super) fn handle_file_open(id: Value, params: &Value, state: &Arc<SharedStat
 
 /// `notes.open` — open an editable notes scratchpad as a tab in the current
 /// (or specified) workspace, mirroring how `file.open` / `markdown.open` work.
-pub(super) fn handle_notes_open(
-    id: Value,
-    params: &Value,
-    state: &Arc<SharedState>,
-) -> Response {
+pub(super) fn handle_notes_open(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
     let file = params
         .get("file")
         .and_then(|v| v.as_str())

@@ -61,7 +61,9 @@ fn is_claude_proc(proc_dir: &Path) -> bool {
 fn panel_id_from_environ(environ: &[u8]) -> Option<Uuid> {
     for kv in environ.split(|&b| b == 0) {
         if let Some(v) = kv.strip_prefix(b"JMUX_PANEL_ID=") {
-            return std::str::from_utf8(v).ok().and_then(|s| Uuid::parse_str(s.trim()).ok());
+            return std::str::from_utf8(v)
+                .ok()
+                .and_then(|s| Uuid::parse_str(s.trim()).ok());
         }
     }
     None
@@ -199,7 +201,10 @@ mod tests {
     fn test_encode_project_dir() {
         assert_eq!(encode_project_dir("/home/u/src/jmux"), "-home-u-src-jmux");
         // Dots become dashes too (so a dotfolder yields the `--` Claude uses).
-        assert_eq!(encode_project_dir("/home/u/.config/app"), "-home-u--config-app");
+        assert_eq!(
+            encode_project_dir("/home/u/.config/app"),
+            "-home-u--config-app"
+        );
         // Existing dashes in a path component are preserved.
         assert_eq!(encode_project_dir("/a/b-c"), "-a-b-c");
     }
@@ -226,10 +231,7 @@ mod tests {
             Some(1263)
         );
         // comm containing spaces and parens.
-        assert_eq!(
-            parse_ppid_stat("42 (weird (proc) name) S 7 7 7"),
-            Some(7)
-        );
+        assert_eq!(parse_ppid_stat("42 (weird (proc) name) S 7 7 7"), Some(7));
         // Malformed input yields None rather than panicking.
         assert_eq!(parse_ppid_stat("garbage without paren"), None);
         assert_eq!(parse_ppid_stat(""), None);

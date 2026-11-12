@@ -47,7 +47,11 @@ impl Keybinding {
         if self.alt {
             parts.push("Alt");
         }
-        let key_display = if self.key == "space" { "Space" } else { &self.key };
+        let key_display = if self.key == "space" {
+            "Space"
+        } else {
+            &self.key
+        };
         parts.push(key_display);
         parts.join("+")
     }
@@ -266,7 +270,10 @@ impl Default for ShortcutConfig {
         );
 
         // Reload ghostty configuration
-        bindings.insert("config.reload".into(), Some(Keybinding::ctrl_shift("comma")));
+        bindings.insert(
+            "config.reload".into(),
+            Some(Keybinding::ctrl_shift("comma")),
+        );
 
         // Find in directory — focuses the file-explorer search entry.
         // Unbound by default; users configure this in shortcuts.json.
@@ -423,9 +430,18 @@ mod when_tests {
         assert!(eval_when("panelFocused", &ctx(false, true)));
         assert!(!eval_when("panelFocused", &ctx(true, false)));
         // || / &&
-        assert!(eval_when("terminalFocused || browserFocused", &ctx(false, true)));
-        assert!(!eval_when("terminalFocused && browserFocused", &ctx(true, false)));
-        assert!(eval_when("browserFocused && !terminalFocused", &ctx(false, true)));
+        assert!(eval_when(
+            "terminalFocused || browserFocused",
+            &ctx(false, true)
+        ));
+        assert!(!eval_when(
+            "terminalFocused && browserFocused",
+            &ctx(true, false)
+        ));
+        assert!(eval_when(
+            "browserFocused && !terminalFocused",
+            &ctx(false, true)
+        ));
         // unknown key is false
         assert!(!eval_when("nopeKey", &ctx(true, true)));
     }

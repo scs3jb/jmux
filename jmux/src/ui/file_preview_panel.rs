@@ -193,14 +193,19 @@ fn render_file(buffer: &gtk4::TextBuffer, path: &str) {
     buf.truncate(n);
     // Binary detection: NUL byte in the read window.
     if buf.contains(&0) {
-        buffer.set_text(&format!("(binary file — {n} bytes shown of preview window)"));
+        buffer.set_text(&format!(
+            "(binary file — {n} bytes shown of preview window)"
+        ));
         return;
     }
     let text = String::from_utf8_lossy(&buf);
     buffer.set_text(&text);
     if n == PREVIEW_LIMIT {
         let mut end = buffer.end_iter();
-        buffer.insert(&mut end, "\n\n… preview truncated (file larger than 2 MB)\n");
+        buffer.insert(
+            &mut end,
+            "\n\n… preview truncated (file larger than 2 MB)\n",
+        );
     }
 }
 
@@ -297,8 +302,10 @@ fn pdf_page_count(pdf: &str) -> i32 {
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .and_then(|s| {
-            s.lines()
-                .find_map(|l| l.strip_prefix("Pages:").and_then(|n| n.trim().parse::<i32>().ok()))
+            s.lines().find_map(|l| {
+                l.strip_prefix("Pages:")
+                    .and_then(|n| n.trim().parse::<i32>().ok())
+            })
         })
         .filter(|&n| n > 0)
         .unwrap_or(1)

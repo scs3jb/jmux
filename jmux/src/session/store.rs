@@ -602,15 +602,17 @@ pub fn create_snapshot(
     let closed_workspaces: Vec<crate::session::snapshot::SessionClosedEntrySnapshot> = tm
         .closed_entries()
         .iter()
-        .map(|entry| crate::session::snapshot::SessionClosedEntrySnapshot {
-            workspace: make_ws_snapshot(&entry.workspace),
-            closed_at_unix: entry
-                .closed_at
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
-            title: entry.title.clone(),
-        })
+        .map(
+            |entry| crate::session::snapshot::SessionClosedEntrySnapshot {
+                workspace: make_ws_snapshot(&entry.workspace),
+                closed_at_unix: entry
+                    .closed_at
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                title: entry.title.clone(),
+            },
+        )
         .collect();
 
     AppSessionSnapshot {
@@ -623,7 +625,9 @@ pub fn create_snapshot(
 
 /// Reset all split divider positions to 0.5 (equal split) in a layout snapshot.
 /// Used when `split_ratio_persist` is disabled so sessions restore with equal splits.
-fn normalize_divider_positions(layout: &mut crate::session::snapshot::SessionWorkspaceLayoutSnapshot) {
+fn normalize_divider_positions(
+    layout: &mut crate::session::snapshot::SessionWorkspaceLayoutSnapshot,
+) {
     use crate::session::snapshot::SessionWorkspaceLayoutSnapshot;
     if let SessionWorkspaceLayoutSnapshot::Split { split } = layout {
         split.divider_position = 0.5;

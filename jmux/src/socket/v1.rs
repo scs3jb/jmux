@@ -898,7 +898,11 @@ mod tests {
             .lock()
             .unwrap()
             .selected()
-            .and_then(|ws| ws.panels.get(&panel_id).and_then(|p| p.agent_session_id.clone()));
+            .and_then(|ws| {
+                ws.panels
+                    .get(&panel_id)
+                    .and_then(|p| p.agent_session_id.clone())
+            });
         assert_eq!(stored.as_deref(), Some(sid));
 
         // A non-UUID session id is rejected without mutating anything.

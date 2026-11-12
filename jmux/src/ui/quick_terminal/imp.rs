@@ -446,7 +446,11 @@ mod tests {
         wait_for(|| qs.revealer.is_child_revealed());
         frames(100);
         let shown = window.height();
-        assert_eq!(qs.content.height(), 400, "visible area is not the pinned height");
+        assert_eq!(
+            qs.content.height(),
+            400,
+            "visible area is not the pinned height"
+        );
         // Closing a tab drops the content's natural size.
         body.remove(&tab);
         frames(200);

@@ -143,7 +143,9 @@ pub fn show_goal_dialog(
     goal_view.set_bottom_margin(8);
     goal_view.set_left_margin(10);
     goal_view.set_right_margin(10);
-    goal_view.buffer().set_text(prefill.as_deref().unwrap_or(""));
+    goal_view
+        .buffer()
+        .set_text(prefill.as_deref().unwrap_or(""));
     let goal_frame = gtk4::Frame::new(None);
     goal_frame.set_height_request(96);
     goal_frame.set_child(Some(&goal_view));
@@ -174,7 +176,9 @@ pub fn show_goal_dialog(
     // Roles.
     let roles_group = adw::PreferencesGroup::new();
     roles_group.set_title("Roles");
-    roles_group.set_description(Some("Click a role to change its model or read its instructions."));
+    roles_group.set_description(Some(
+        "Click a role to change its model or read its instructions.",
+    ));
 
     let worker_row = adw::ActionRow::new();
     worker_row.set_activatable(true);
@@ -202,7 +206,9 @@ pub fn show_goal_dialog(
 
     let plan_row = adw::SwitchRow::new();
     plan_row.set_title("Split into a plan first");
-    plan_row.set_subtitle("Runs a graph: one agent writes a plan, you approve it, then the work starts");
+    plan_row.set_subtitle(
+        "Runs a graph: one agent writes a plan, you approve it, then the work starts",
+    );
     plan_row.set_active(false);
     run_group.add(&plan_row);
 
@@ -326,8 +332,7 @@ pub fn show_goal_dialog(
                         crate::goal::graph::create_graph(&state.shared, &name, &source, &params)
                     })
             } else {
-                crate::socket::v2::goal::create_goal(&state.shared, &params)
-                    .map_err(|(_, msg)| msg)
+                crate::socket::v2::goal::create_goal(&state.shared, &params).map_err(|(_, msg)| msg)
             };
 
             match outcome {

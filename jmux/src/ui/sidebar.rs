@@ -578,9 +578,7 @@ fn setup_row_drag_drop(row: &gtk4::ListBoxRow, index: usize, state: &Rc<AppState
                 let Some(target_ws_id) = tm.get(target_index).map(|w| w.id) else {
                     return false;
                 };
-                let moved = tm
-                    .move_panel_to_workspace(panel_id, target_ws_id)
-                    .is_some();
+                let moved = tm.move_panel_to_workspace(panel_id, target_ws_id).is_some();
                 drop(tm);
                 if moved {
                     state.shared.notify_ui_refresh();
@@ -976,9 +974,11 @@ fn create_workspace_row(
                         if crate::settings::load().sidebar.port_link_external {
                             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
                         } else {
-                            state.shared.send_ui_event(crate::app::UiEvent::OpenUrlInBrowser {
-                                url: url.clone(),
-                            });
+                            state
+                                .shared
+                                .send_ui_event(crate::app::UiEvent::OpenUrlInBrowser {
+                                    url: url.clone(),
+                                });
                         }
                     });
                 }
@@ -1190,7 +1190,10 @@ fn create_workspace_row(
         let dir_label = if workspace.current_directory.is_empty() {
             String::new()
         } else {
-            format!("\nDirectory: {}", compact_path(&workspace.current_directory))
+            format!(
+                "\nDirectory: {}",
+                compact_path(&workspace.current_directory)
+            )
         };
         let desc_label = workspace
             .description
@@ -1335,7 +1338,11 @@ fn create_group_header_row(
     // Right-click context menu.
     let menu = gtk4::gio::Menu::new();
     menu.append(
-        Some(if group.collapsed { "Expand" } else { "Collapse" }),
+        Some(if group.collapsed {
+            "Expand"
+        } else {
+            "Collapse"
+        }),
         Some("group.collapse"),
     );
     menu.append(Some("Rename"), Some("group.rename"));
@@ -1977,8 +1984,10 @@ fn setup_row_context_menu(
                 tm.get(index)
                     .map(|ws| {
                         use crate::model::panel::PanelType;
-                        let has_terminals =
-                            ws.panels.values().any(|p| p.panel_type == PanelType::Terminal);
+                        let has_terminals = ws
+                            .panels
+                            .values()
+                            .any(|p| p.panel_type == PanelType::Terminal);
                         (ws.is_pinned, ws.display_title().to_string(), has_terminals)
                     })
                     .unwrap_or((false, String::new(), false))
@@ -2414,7 +2423,9 @@ fn color_css_value(name: &str) -> &str {
 /// Wire up the hover close button on a row.
 fn setup_row_close_button(row: &gtk4::ListBoxRow, index: usize, state: &Rc<AppState>) {
     // Find the close button (it's the last child in the header box)
-    let Some(outer) = row_outer_box(row) else { return };
+    let Some(outer) = row_outer_box(row) else {
+        return;
+    };
     let Some(header) = outer.first_child() else {
         return;
     };

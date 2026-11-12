@@ -1079,9 +1079,7 @@ pub fn create_browser_widget_with_profile(
             let request = request.clone();
 
             let action = gtk4::FileChooserAction::Open;
-            let window = wv
-                .root()
-                .and_then(|r| r.downcast::<gtk4::Window>().ok());
+            let window = wv.root().and_then(|r| r.downcast::<gtk4::Window>().ok());
 
             let native = gtk4::FileChooserNative::builder()
                 .title("Open File")
@@ -1537,10 +1535,7 @@ pub fn create_browser_widget_with_profile(
                 src.remove();
             }
             // Snapshot current URL before the timer fires.
-            let current_url = wv_unmap
-                .uri()
-                .map(|u| u.to_string())
-                .unwrap_or_default();
+            let current_url = wv_unmap.uri().map(|u| u.to_string()).unwrap_or_default();
             // Schedule a new discard after 60 s.
             let wv = wv_unmap.clone();
             let src = glib::timeout_add_seconds_local(60, move || {

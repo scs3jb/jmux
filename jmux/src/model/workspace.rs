@@ -239,9 +239,7 @@ impl Workspace {
             .and_then(|fid| self.panels.get(&fid))
             .and_then(|p| p.directory.clone())
             .filter(|d| !d.is_empty())
-            .or_else(|| {
-                Some(self.current_directory.clone()).filter(|d| !d.is_empty())
-            })
+            .or_else(|| Some(self.current_directory.clone()).filter(|d| !d.is_empty()))
     }
 
     /// Add a new panel by splitting the focused pane.
@@ -406,7 +404,10 @@ impl Workspace {
             }
         }
         self.layout.remove_panel(source_panel_id);
-        if self.layout.add_panel_to_pane(target_panel_id, source_panel_id) {
+        if self
+            .layout
+            .add_panel_to_pane(target_panel_id, source_panel_id)
+        {
             self.previous_focused_panel_id = self.focused_panel_id;
             self.focused_panel_id = Some(source_panel_id);
             true
@@ -435,10 +436,12 @@ impl Workspace {
         }
         // Detach source from its current pane (keeps it in the panels map).
         self.layout.remove_panel(source_panel_id);
-        if self
-            .layout
-            .split_pane_with_panel(target_panel_id, source_panel_id, orientation, direction)
-        {
+        if self.layout.split_pane_with_panel(
+            target_panel_id,
+            source_panel_id,
+            orientation,
+            direction,
+        ) {
             self.previous_focused_panel_id = self.focused_panel_id;
             self.focused_panel_id = Some(source_panel_id);
             true

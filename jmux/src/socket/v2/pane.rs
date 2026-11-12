@@ -76,7 +76,10 @@ pub(super) fn handle_pane_split_off(
         }
         drop(tm);
         state.notify_ui_refresh();
-        Response::success(id, serde_json::json!({"panel_id": new_panel_id.to_string()}))
+        Response::success(
+            id,
+            serde_json::json!({"panel_id": new_panel_id.to_string()}),
+        )
     } else {
         Response::error(id, "not_found", "No workspace selected")
     }
@@ -653,7 +656,11 @@ pub(super) fn handle_panel_move_to_workspace(
                 }),
             )
         }
-        None => Response::error(id, "invalid_params", "Cannot move panel (already in target or not found)"),
+        None => Response::error(
+            id,
+            "invalid_params",
+            "Cannot move panel (already in target or not found)",
+        ),
     }
 }
 
@@ -681,7 +688,10 @@ pub(super) fn handle_panel_toggle_zoom(
         let zoomed = ws.zoomed_panel_id.is_some();
         drop(tm);
         state.notify_ui_refresh();
-        Response::success(id, serde_json::json!({"zoomed": zoomed, "panel_id": panel_id.to_string()}))
+        Response::success(
+            id,
+            serde_json::json!({"zoomed": zoomed, "panel_id": panel_id.to_string()}),
+        )
     } else {
         Response::error(id, "not_found", "Panel not found in any workspace")
     }

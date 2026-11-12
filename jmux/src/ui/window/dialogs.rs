@@ -89,16 +89,26 @@ pub fn show_rename_tab_dialog(
     };
 
     let state = state.clone();
-    present_rename_dialog(window, "Rename Tab", None, &current_title, move |new_title| {
-        let mut tm = lock_or_recover(&state.shared.tab_manager);
-        if let Some(ws) = tm.find_workspace_with_panel_mut(panel_id) {
-            if let Some(panel) = ws.panels.get_mut(&panel_id) {
-                panel.custom_title = if new_title.is_empty() { None } else { Some(new_title) };
+    present_rename_dialog(
+        window,
+        "Rename Tab",
+        None,
+        &current_title,
+        move |new_title| {
+            let mut tm = lock_or_recover(&state.shared.tab_manager);
+            if let Some(ws) = tm.find_workspace_with_panel_mut(panel_id) {
+                if let Some(panel) = ws.panels.get_mut(&panel_id) {
+                    panel.custom_title = if new_title.is_empty() {
+                        None
+                    } else {
+                        Some(new_title)
+                    };
+                }
             }
-        }
-        drop(tm);
-        state.shared.notify_ui_refresh();
-    });
+            drop(tm);
+            state.shared.notify_ui_refresh();
+        },
+    );
 }
 
 /// Show a dialog to create a new SSH workspace.

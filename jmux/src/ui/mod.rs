@@ -2,13 +2,13 @@
 
 pub mod agent_monitor_panel;
 pub mod all_surfaces_search;
-pub mod file_explorer;
 #[cfg(feature = "webkit")]
 pub mod browser_panel;
 pub mod command_palette;
 pub mod diff_panel;
 pub mod dock;
 pub mod dock_editor;
+pub mod file_explorer;
 pub mod file_preview_panel;
 pub mod goal_dialog;
 pub mod graph_panel;
@@ -16,7 +16,6 @@ pub mod history_panel;
 #[cfg(feature = "webkit")]
 pub mod markdown_panel;
 pub mod notes_panel;
-pub mod vault_panel;
 pub mod notifications_panel;
 pub mod omnibar;
 pub mod pane_overview;
@@ -30,5 +29,6 @@ pub mod state_sprite;
 pub mod task_manager;
 pub mod terminal_panel;
 pub mod textbox;
+pub mod vault_panel;
 pub mod welcome;
 pub mod window;

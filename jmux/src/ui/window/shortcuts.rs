@@ -101,9 +101,7 @@ pub(super) fn setup_shortcuts(
                     {
                         match *action {
                             "notification.defer_unread" => {
-                                state
-                                    .shared
-                                    .send_ui_event(crate::app::UiEvent::DeferUnread);
+                                state.shared.send_ui_event(crate::app::UiEvent::DeferUnread);
                             }
                             // Toggle read-only sub-agent monitor panes.
                             "workspace.toggle_agent_monitor" => {
@@ -170,9 +168,7 @@ pub(super) fn setup_shortcuts(
                             // Toggle the Dock panel for this window.
                             "dock.toggle" => {
                                 if let Some(window) = window_weak.upgrade() {
-                                    if let Ok(wid) =
-                                        uuid::Uuid::parse_str(&window.widget_name())
-                                    {
+                                    if let Ok(wid) = uuid::Uuid::parse_str(&window.widget_name()) {
                                         let dir = {
                                             let tm = lock_or_recover(&state.shared.tab_manager);
                                             tm.selected()
@@ -233,7 +229,9 @@ pub(super) fn setup_shortcuts(
                             // find.in_directory: focus the sidebar file-explorer search entry.
                             // TODO: wire when a file-explorer search entry is added to the sidebar.
                             "find.in_directory" => {
-                                tracing::debug!("find.in_directory — file explorer search not yet wired");
+                                tracing::debug!(
+                                    "find.in_directory — file explorer search not yet wired"
+                                );
                             }
                             _ => {}
                         }
@@ -986,9 +984,7 @@ pub(super) fn setup_shortcuts(
                         && shift == binding.shift
                         && alt == binding.alt
                     {
-                        state
-                            .shared
-                            .send_ui_event(crate::app::UiEvent::AgentResume);
+                        state.shared.send_ui_event(crate::app::UiEvent::AgentResume);
                         return glib::Propagation::Stop;
                     }
                 }

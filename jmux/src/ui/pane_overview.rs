@@ -57,10 +57,7 @@ pub fn show_pane_overview(parent: &adw::ApplicationWindow, state: &Rc<AppState>)
         .flat_map(|s| s.tiles.iter())
         .filter(|t| t.dot_class == "overview-dot-attention")
         .count();
-    let mut subtitle = format!(
-        "{pane_count} panes across {} workspaces",
-        sections.len()
-    );
+    let mut subtitle = format!("{pane_count} panes across {} workspaces", sections.len());
     if attention > 0 {
         subtitle.push_str(&format!(" · {attention} need attention"));
     }
@@ -311,7 +308,10 @@ fn collect_sections(state: &Rc<AppState>) -> Vec<WorkspaceSection> {
 
                     // Activity snippet + busy status.
                     let (activity, busy) = if panel.panel_type == PanelType::Terminal {
-                        (last_line.clone().unwrap_or_default(), crate::app::pane_is_busy(pid))
+                        (
+                            last_line.clone().unwrap_or_default(),
+                            crate::app::pane_is_busy(pid),
+                        )
                     } else if panel.panel_type == PanelType::AgentMonitor {
                         (last_line.clone().unwrap_or_default(), None)
                     } else if is_browser {

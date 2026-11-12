@@ -24,11 +24,7 @@ fn parse_group_param(params: &Value) -> Result<Uuid, ()> {
 // workspace.group.create
 // -----------------------------------------------------------------------
 
-pub(super) fn handle_group_create(
-    id: Value,
-    params: &Value,
-    state: &Arc<SharedState>,
-) -> Response {
+pub(super) fn handle_group_create(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
     let name = params
         .get("name")
         .and_then(|v| v.as_str())
@@ -78,11 +74,7 @@ pub(super) fn handle_group_list(id: Value, state: &Arc<SharedState>) -> Response
 // workspace.group.assign
 // -----------------------------------------------------------------------
 
-pub(super) fn handle_group_assign(
-    id: Value,
-    params: &Value,
-    state: &Arc<SharedState>,
-) -> Response {
+pub(super) fn handle_group_assign(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
     let ws_id = match parse_workspace_param(params) {
         Ok(Some(v)) => v,
         Ok(None) => {
@@ -121,11 +113,7 @@ pub(super) fn handle_group_assign(
 // workspace.group.rename
 // -----------------------------------------------------------------------
 
-pub(super) fn handle_group_rename(
-    id: Value,
-    params: &Value,
-    state: &Arc<SharedState>,
-) -> Response {
+pub(super) fn handle_group_rename(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
     let group_id = match parse_group_param(params) {
         Ok(v) => v,
         Err(()) => return Response::error(id, "invalid_params", "Invalid group UUID"),
@@ -170,11 +158,7 @@ pub(super) fn handle_group_collapse(
 // workspace.group.color
 // -----------------------------------------------------------------------
 
-pub(super) fn handle_group_color(
-    id: Value,
-    params: &Value,
-    state: &Arc<SharedState>,
-) -> Response {
+pub(super) fn handle_group_color(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
     let group_id = match parse_group_param(params) {
         Ok(v) => v,
         Err(()) => return Response::error(id, "invalid_params", "Invalid group UUID"),
@@ -198,11 +182,7 @@ pub(super) fn handle_group_color(
 // workspace.group.delete
 // -----------------------------------------------------------------------
 
-pub(super) fn handle_group_delete(
-    id: Value,
-    params: &Value,
-    state: &Arc<SharedState>,
-) -> Response {
+pub(super) fn handle_group_delete(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
     let group_id = match parse_group_param(params) {
         Ok(v) => v,
         Err(()) => return Response::error(id, "invalid_params", "Invalid group UUID"),

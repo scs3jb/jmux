@@ -269,10 +269,7 @@ impl Renderer {
                     }
                 }
                 Some("tool_use") => {
-                    let name = block
-                        .get("name")
-                        .and_then(|n| n.as_str())
-                        .unwrap_or("Tool");
+                    let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("Tool");
                     let args = block
                         .get("input")
                         .map(|i| summarize_tool_input(name, i))
@@ -569,7 +566,10 @@ mod tests {
     fn wrapping_preserves_explicit_newlines() {
         let r = renderer(80);
         let wrapped = r.wrapped("line one\nline two", 0);
-        assert_eq!(wrapped, vec!["line one".to_string(), "line two".to_string()]);
+        assert_eq!(
+            wrapped,
+            vec!["line one".to_string(), "line two".to_string()]
+        );
     }
 
     #[test]

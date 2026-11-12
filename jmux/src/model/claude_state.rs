@@ -302,7 +302,11 @@ fn has_shell_count(lower: &str) -> bool {
         let Some(before) = before.strip_suffix(' ') else {
             continue;
         };
-        let digits = before.chars().rev().take_while(|c| c.is_ascii_digit()).count();
+        let digits = before
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_digit())
+            .count();
         if digits == 0 {
             continue;
         }
@@ -313,7 +317,11 @@ fn has_shell_count(lower: &str) -> bool {
         // following: optional 's', then a word boundary
         let rest = &lower[pos + "shell".len()..];
         let rest = rest.strip_prefix('s').unwrap_or(rest);
-        if rest.chars().next().map_or(true, |c| !c.is_alphanumeric() && c != '_') {
+        if rest
+            .chars()
+            .next()
+            .map_or(true, |c| !c.is_alphanumeric() && c != '_')
+        {
             return true;
         }
     }
@@ -356,7 +364,11 @@ fn parse_option(line: &str) -> Option<(bool, u32)> {
     let mut s = line.trim_start();
     let pointed = s.starts_with('❯') || s.starts_with('>');
     if pointed {
-        let prefix_len = if s.starts_with('❯') { '❯'.len_utf8() } else { 1 };
+        let prefix_len = if s.starts_with('❯') {
+            '❯'.len_utf8()
+        } else {
+            1
+        };
         s = s[prefix_len..].trim_start();
     }
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
@@ -458,9 +470,10 @@ fn last_response_is_question(text: &str) -> bool {
     }
     recent.iter().flatten().any(|line| {
         let chars: Vec<char> = line.chars().collect();
-        chars.iter().enumerate().any(|(i, c)| {
-            *c == '?' && chars.get(i + 1).map_or(true, |n| n.is_whitespace())
-        })
+        chars
+            .iter()
+            .enumerate()
+            .any(|(i, c)| *c == '?' && chars.get(i + 1).map_or(true, |n| n.is_whitespace()))
     })
 }
 
@@ -486,7 +499,10 @@ mod tests {
 
     #[test]
     fn strips_spinner_frames() {
-        assert_eq!(strip_spinner("⠼ Review spec | torrent-to-plex"), "Review spec | torrent-to-plex");
+        assert_eq!(
+            strip_spinner("⠼ Review spec | torrent-to-plex"),
+            "Review spec | torrent-to-plex"
+        );
         assert_eq!(strip_spinner("◐ UI flickering"), "UI flickering");
         assert_eq!(strip_spinner("✳ Claude Code"), "✳ Claude Code");
         assert_eq!(strip_spinner("jbriggs@host:~"), "jbriggs@host:~");
@@ -596,7 +612,10 @@ mod tests {
     fn agy_generating_is_working() {
         let text = "Analyzing directory...\nGenerating... (Enter/Esc to cancel)\n";
         assert_eq!(classify(text, "bash"), Some(ClaudeState::Working));
-        assert_eq!(classify(text, "jbriggs@bigboy:~/src"), Some(ClaudeState::Working));
+        assert_eq!(
+            classify(text, "jbriggs@bigboy:~/src"),
+            Some(ClaudeState::Working)
+        );
     }
 
     #[test]

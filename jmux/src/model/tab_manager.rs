@@ -485,13 +485,9 @@ impl TabManager {
         self.workspace(target_workspace_id)?;
 
         // Detach from source
-        let panel = self
-            .workspace_mut(source_ws_id)?
-            .detach_panel(panel_id)?;
+        let panel = self.workspace_mut(source_ws_id)?.detach_panel(panel_id)?;
 
-        let source_empty = self
-            .workspace(source_ws_id)
-            .is_some_and(|ws| ws.is_empty());
+        let source_empty = self.workspace(source_ws_id).is_some_and(|ws| ws.is_empty());
         if source_empty {
             self.remove_by_id(source_ws_id);
         }

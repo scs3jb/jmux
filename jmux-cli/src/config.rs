@@ -2,8 +2,7 @@
 
 use std::path::PathBuf;
 
-const DOCS_URL: &str =
-    "https://github.com/douglas/jmux/blob/main/README.md";
+const DOCS_URL: &str = "https://github.com/douglas/jmux/blob/main/README.md";
 
 /// Return the active jmux config file path.
 ///
@@ -130,10 +129,7 @@ pub fn run_doctor() -> anyhow::Result<()> {
     // Check 3: value range validation on known numeric fields
     let mut issues: Vec<String> = Vec::new();
 
-    if let Some(size) = value
-        .get("tab_bar_font_size")
-        .and_then(|v| v.as_f64())
-    {
+    if let Some(size) = value.get("tab_bar_font_size").and_then(|v| v.as_f64()) {
         // 0.0 means "use system default" — only validate if explicitly set
         if size != 0.0 && !(6.0..=100.0).contains(&size) {
             issues.push(format!(

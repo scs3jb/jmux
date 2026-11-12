@@ -42,7 +42,11 @@ pub(super) fn handle_graph_create(id: Value, params: &Value, state: &Arc<SharedS
     wrap(id, graph::create_graph(state, &name, &source, params))
 }
 
-pub(super) fn handle_graph_approve(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
+pub(super) fn handle_graph_approve(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
     let Ok(name) = name_param(params) else {
         return Response::error(id, "invalid_params", "Missing graph name");
     };

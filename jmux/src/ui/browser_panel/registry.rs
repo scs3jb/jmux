@@ -156,7 +156,11 @@ pub(crate) fn prune_browser_panels(live_panel_ids: &std::collections::HashSet<uu
     // Cancel any pending discard timer before dropping the source id.
     DISCARD_TIMERS.with(|r| {
         let mut map = r.borrow_mut();
-        let dead: Vec<uuid::Uuid> = map.keys().filter(|id| !live_panel_ids.contains(id)).copied().collect();
+        let dead: Vec<uuid::Uuid> = map
+            .keys()
+            .filter(|id| !live_panel_ids.contains(id))
+            .copied()
+            .collect();
         for id in dead {
             if let Some(source) = map.remove(&id) {
                 source.remove();
@@ -186,7 +190,10 @@ pub(crate) fn prune_browser_panels(live_panel_ids: &std::collections::HashSet<uu
     );
 
     // ELEMENT_REFS is keyed by ref string; drop entries whose panel is gone.
-    ELEMENT_REFS.with(|r| r.borrow_mut().retain(|_, v| live_panel_ids.contains(&v.panel_id)));
+    ELEMENT_REFS.with(|r| {
+        r.borrow_mut()
+            .retain(|_, v| live_panel_ids.contains(&v.panel_id))
+    });
 }
 
 /// Register a panel's browser chrome (nav bar) for focus-mode toggling.

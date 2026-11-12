@@ -95,7 +95,12 @@ fn add_control_row(
 
     let title_row = adw::EntryRow::new();
     title_row.set_title("Title");
-    title_row.set_text(control.as_ref().and_then(|c| c.title.as_deref()).unwrap_or(""));
+    title_row.set_text(
+        control
+            .as_ref()
+            .and_then(|c| c.title.as_deref())
+            .unwrap_or(""),
+    );
     expander.add_row(&title_row);
 
     let command_row = adw::EntryRow::new();
@@ -108,7 +113,11 @@ fn add_control_row(
         let expander = expander.clone();
         id_row.connect_changed(move |e| {
             let t = e.text();
-            expander.set_title(if t.is_empty() { "New control" } else { t.as_str() });
+            expander.set_title(if t.is_empty() {
+                "New control"
+            } else {
+                t.as_str()
+            });
         });
     }
 

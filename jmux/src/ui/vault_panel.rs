@@ -132,8 +132,7 @@ fn populate(list: &gtk4::Box, state: &Rc<AppState>, sessions: &Rc<Vec<Session>>,
             needle.is_empty()
                 || s.title.to_lowercase().contains(&needle)
                 || s.preview.to_lowercase().contains(&needle)
-                || s
-                    .directory
+                || s.directory
                     .as_deref()
                     .map(|d| d.to_lowercase().contains(&needle))
                     .unwrap_or(false)

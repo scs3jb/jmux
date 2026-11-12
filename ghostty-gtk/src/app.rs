@@ -260,10 +260,13 @@ fn ensure_bundled_themes(resources_dir: &std::path::Path) {
     }
 
     // Find a system themes dir that actually has themes.
-    let system = ["/usr/share/ghostty/themes", "/usr/local/share/ghostty/themes"]
-        .into_iter()
-        .map(std::path::PathBuf::from)
-        .find(|p| p.is_dir());
+    let system = [
+        "/usr/share/ghostty/themes",
+        "/usr/local/share/ghostty/themes",
+    ]
+    .into_iter()
+    .map(std::path::PathBuf::from)
+    .find(|p| p.is_dir());
     let Some(system) = system else {
         return;
     };

@@ -1045,9 +1045,9 @@ fn event_refresh_kind(event: &UiEvent) -> RefreshKind {
     match event {
         // Metadata changes: only sidebar labels + window title need updating.
         // Must NOT trigger rebuild_content — browser panels would unparent.
-        UiEvent::SetTitle { .. }
-        | UiEvent::SetPwd { .. }
-        | UiEvent::DesktopNotification { .. } => RefreshKind::MetadataOnly,
+        UiEvent::SetTitle { .. } | UiEvent::SetPwd { .. } | UiEvent::DesktopNotification { .. } => {
+            RefreshKind::MetadataOnly
+        }
 
         // Notification shortcut events: only sidebar badge needs updating.
         UiEvent::DeferUnread | UiEvent::ToggleUnread => RefreshKind::MetadataOnly,
@@ -1159,9 +1159,18 @@ mod tests {
     fn structural_events_are_full_refresh() {
         // Events that change layout must still trigger a full rebuild.
         assert_eq!(event_refresh_kind(&UiEvent::Refresh), RefreshKind::Full);
-        assert_eq!(event_refresh_kind(&UiEvent::ToggleNotifications), RefreshKind::Full);
-        assert_eq!(event_refresh_kind(&UiEvent::OpenFolderAsWorkspace), RefreshKind::Full);
-        assert_eq!(event_refresh_kind(&UiEvent::CreateWindow), RefreshKind::Full);
+        assert_eq!(
+            event_refresh_kind(&UiEvent::ToggleNotifications),
+            RefreshKind::Full
+        );
+        assert_eq!(
+            event_refresh_kind(&UiEvent::OpenFolderAsWorkspace),
+            RefreshKind::Full
+        );
+        assert_eq!(
+            event_refresh_kind(&UiEvent::CreateWindow),
+            RefreshKind::Full
+        );
     }
 
     #[test]

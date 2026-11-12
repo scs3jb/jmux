@@ -447,7 +447,11 @@ pub fn parse_proposal(path: &Path) -> Result<Vec<GraphNode>, String> {
         .nodes
         .into_iter()
         .map(|n| GraphNode {
-            title: if n.title.is_empty() { n.id.clone() } else { n.title },
+            title: if n.title.is_empty() {
+                n.id.clone()
+            } else {
+                n.title
+            },
             id: n.id,
             goal: n.goal,
             deps: n.deps,
@@ -570,10 +574,7 @@ pub fn create_graph(
     let seed = super::Guidance::Orchestrator
         .text()
         .replace("{graph_name}", name)
-        .replace(
-            "{proposal_path}",
-            &spec.proposal_json().to_string_lossy(),
-        )
+        .replace("{proposal_path}", &spec.proposal_json().to_string_lossy())
         .replace(
             "{proposal_md_path}",
             &spec.dir().join("proposal.md").to_string_lossy(),
@@ -813,7 +814,10 @@ fn set_graph_state(
     Ok(spec.to_json())
 }
 
-pub fn graph_status(shared: &Arc<SharedState>, name: Option<&str>) -> Result<serde_json::Value, String> {
+pub fn graph_status(
+    shared: &Arc<SharedState>,
+    name: Option<&str>,
+) -> Result<serde_json::Value, String> {
     ensure_loaded(shared);
     let registry = lock_or_recover(&shared.graphs);
     match name {
@@ -899,8 +903,7 @@ pub fn update_proposal_node(
             .ok_or_else(|| format!("unknown graph '{name}'"))?;
         spec.proposal_json()
     };
-    let text =
-        std::fs::read_to_string(&path).map_err(|e| format!("cannot read proposal: {e}"))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read proposal: {e}"))?;
     let mut v: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("proposal.json is invalid: {e}"))?;
     let node = v
@@ -1150,17 +1153,17 @@ fn tick_running(shared: &Arc<SharedState>, spec: &mut GraphSpec) {
     sync_node_states(shared, spec);
 
     // All done?
-    if spec
-        .nodes
-        .iter()
-        .all(|n| n.status == NodeState::Done)
-    {
+    if spec.nodes.iter().all(|n| n.status == NodeState::Done) {
         spec.status = GraphState::Complete;
         notify_graph(
             shared,
             spec,
             "Graph finished",
-            &format!("'{}' is done — all {} nodes finished", spec.name, spec.nodes.len()),
+            &format!(
+                "'{}' is done — all {} nodes finished",
+                spec.name,
+                spec.nodes.len()
+            ),
         );
         return;
     }
@@ -1206,16 +1209,20 @@ fn tick_running(shared: &Arc<SharedState>, spec: &mut GraphSpec) {
     }
 
     // Stalled? (nothing running, nothing launchable, not everything done)
-    let any_active = spec
+    let any_active = spec.nodes.iter().any(|n| {
+        matches!(
+            n.status,
+            NodeState::Running | NodeState::Review | NodeState::Pending
+        )
+    });
+    let any_progressable = spec
         .nodes
         .iter()
-        .any(|n| matches!(n.status, NodeState::Running | NodeState::Review | NodeState::Pending));
-    let any_progressable = spec.nodes.iter().any(|n| {
-        n.status == NodeState::Pending && n.deps.iter().all(|d| done_ids.contains(d))
-    }) || spec
-        .nodes
-        .iter()
-        .any(|n| matches!(n.status, NodeState::Running | NodeState::Review));
+        .any(|n| n.status == NodeState::Pending && n.deps.iter().all(|d| done_ids.contains(d)))
+        || spec
+            .nodes
+            .iter()
+            .any(|n| matches!(n.status, NodeState::Running | NodeState::Review));
     if any_active && !any_progressable {
         spec.status = GraphState::Paused;
         notify_graph(
@@ -1294,7 +1301,9 @@ fn finish_node(shared: &Arc<SharedState>, spec: &mut GraphSpec, node_id: &str) {
     let name = spec.name.clone();
     let base = spec.base_cwd.clone();
     let own_dir = format!("{}/{}/", spec.output_dir_rel(), spec.name);
-    let Some(node) = spec.node_mut(node_id) else { return };
+    let Some(node) = spec.node_mut(node_id) else {
+        return;
+    };
     if node.status == NodeState::Done {
         return;
     }
@@ -1321,7 +1330,16 @@ fn finish_node(shared: &Arc<SharedState>, spec: &mut GraphSpec, node_id: &str) {
         // directory to "docs/roadmap/", which no per-graph prefix can match.
         match git(&base, &["status", "--porcelain", "--untracked-files=all"]) {
             Ok(out) if base_is_clean(&out, &own_dir) => {
-                match git(&base, &["merge", "--no-ff", "-m", &format!("graph({name}): merge {node_id}"), &branch]) {
+                match git(
+                    &base,
+                    &[
+                        "merge",
+                        "--no-ff",
+                        "-m",
+                        &format!("graph({name}): merge {node_id}"),
+                        &branch,
+                    ],
+                ) {
                     Ok(_) => {}
                     Err(e) => {
                         let _ = git(&base, &["merge", "--abort"]);
@@ -1373,7 +1391,11 @@ fn finish_node(shared: &Arc<SharedState>, spec: &mut GraphSpec, node_id: &str) {
     );
 }
 
-fn launch_node(shared: &Arc<SharedState>, spec: &mut GraphSpec, node_id: &str) -> Result<(), String> {
+fn launch_node(
+    shared: &Arc<SharedState>,
+    spec: &mut GraphSpec,
+    node_id: &str,
+) -> Result<(), String> {
     let settings = crate::settings::load().goal;
     let node = spec
         .node(node_id)
@@ -1382,7 +1404,11 @@ fn launch_node(shared: &Arc<SharedState>, spec: &mut GraphSpec, node_id: &str) -
 
     // Working directory: base checkout, or a per-node worktree.
     let (cwd, branch, worktree) = if spec.use_worktrees {
-        let wt = format!("{}-worktrees/{}", spec.base_cwd.trim_end_matches('/'), node_id);
+        let wt = format!(
+            "{}-worktrees/{}",
+            spec.base_cwd.trim_end_matches('/'),
+            node_id
+        );
         let branch = format!("graph/{}/{}", spec.name, node_id);
         if Path::new(&wt).exists() {
             // A previous run's worktree — recreate it fresh. Reusing the
@@ -1548,10 +1574,7 @@ mod tests {
     #[test]
     fn proposal_bad_ids_rejected() {
         let dir = std::env::temp_dir().join(format!("jmux-graph-bad-{}", std::process::id()));
-        let p = write_proposal(
-            &dir,
-            r#"{"nodes":[{"id":"../evil","goal":"x","deps":[]}]}"#,
-        );
+        let p = write_proposal(&dir, r#"{"nodes":[{"id":"../evil","goal":"x","deps":[]}]}"#);
         assert!(parse_proposal(&p).is_err());
         let p = write_proposal(
             &dir,

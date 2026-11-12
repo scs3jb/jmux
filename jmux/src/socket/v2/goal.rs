@@ -25,11 +25,9 @@ fn resolve_runner(
     let mut runner = if name.is_empty() {
         crate::settings::GoalRunner::default()
     } else {
-        settings
-            .runners
-            .get(&name)
-            .cloned()
-            .ok_or_else(|| format!("Unknown runner '{name}' (configure it in settings goal.runners)"))?
+        settings.runners.get(&name).cloned().ok_or_else(|| {
+            format!("Unknown runner '{name}' (configure it in settings goal.runners)")
+        })?
     };
     if let Some(a) = params.get("agent").and_then(|v| v.as_str()) {
         runner.agent = a.to_string();
@@ -49,7 +47,11 @@ fn resolve_runner(
             runner.agent
         ));
     }
-    let display = if name.is_empty() { "claude".to_string() } else { name };
+    let display = if name.is_empty() {
+        "claude".to_string()
+    } else {
+        name
+    };
     Ok((display, runner))
 }
 
@@ -80,9 +82,7 @@ pub(super) fn handle_goal_configure(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    if !state
-        .send_ui_event(crate::app::UiEvent::OpenGoalDialog { prefill })
-    {
+    if !state.send_ui_event(crate::app::UiEvent::OpenGoalDialog { prefill }) {
         return Response::error(
             id,
             "internal",
@@ -208,7 +208,11 @@ pub(super) fn handle_goal_status(id: Value, params: &Value, state: &Arc<SharedSt
     }
 }
 
-pub(super) fn handle_goal_complete(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
+pub(super) fn handle_goal_complete(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
     let ws_id = match resolve_target(params, state) {
         Ok(v) => v,
         Err(e) => return Response::error(id, "not_found", &e),
@@ -256,7 +260,11 @@ pub(super) fn handle_goal_complete(id: Value, params: &Value, state: &Arc<Shared
         let mut notifications = lock_or_recover(&state.notifications);
         notifications.add(
             "Goal finished",
-            &format!("'{}' is done — read {}", run.goal_name, run.output_rel(run.iteration)),
+            &format!(
+                "'{}' is done — read {}",
+                run.goal_name,
+                run.output_rel(run.iteration)
+            ),
             Some(ws_id),
             None,
             true,
@@ -295,7 +303,11 @@ fn sanitize_note(note: &str) -> String {
 /// Human verdict: run another iteration, seeded with the (possibly
 /// human-edited) feedback section of the current iteration file. An optional
 /// `note` steers it without editing the file.
-pub(super) fn handle_goal_continue(id: Value, params: &Value, state: &Arc<SharedState>) -> Response {
+pub(super) fn handle_goal_continue(
+    id: Value,
+    params: &Value,
+    state: &Arc<SharedState>,
+) -> Response {
     let ws_id = match resolve_target(params, state) {
         Ok(v) => v,
         Err(e) => return Response::error(id, "not_found", &e),

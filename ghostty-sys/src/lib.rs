@@ -549,8 +549,7 @@ pub enum ghostty_surface_io_mode_e {
     GHOSTTY_SURFACE_IO_MANUAL = 1,
 }
 
-pub type ghostty_io_write_cb =
-    Option<unsafe extern "C" fn(*mut c_void, *const c_char, usize)>;
+pub type ghostty_io_write_cb = Option<unsafe extern "C" fn(*mut c_void, *const c_char, usize)>;
 
 /// Mirrors `ghostty_surface_config_s` in ghostty/include/ghostty.h **exactly**.
 ///

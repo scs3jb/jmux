@@ -309,11 +309,26 @@ fn build_pane(
                 return false;
             };
             let did = if fx > 0.66 {
-                ws.split_panel_into_pane(source, target, SplitOrientation::Horizontal, Direction::Right)
+                ws.split_panel_into_pane(
+                    source,
+                    target,
+                    SplitOrientation::Horizontal,
+                    Direction::Right,
+                )
             } else if fx < 0.34 {
-                ws.split_panel_into_pane(source, target, SplitOrientation::Horizontal, Direction::Left)
+                ws.split_panel_into_pane(
+                    source,
+                    target,
+                    SplitOrientation::Horizontal,
+                    Direction::Left,
+                )
             } else if fy > 0.66 {
-                ws.split_panel_into_pane(source, target, SplitOrientation::Vertical, Direction::Down)
+                ws.split_panel_into_pane(
+                    source,
+                    target,
+                    SplitOrientation::Vertical,
+                    Direction::Down,
+                )
             } else if fy < 0.34 {
                 ws.split_panel_into_pane(source, target, SplitOrientation::Vertical, Direction::Up)
             } else {

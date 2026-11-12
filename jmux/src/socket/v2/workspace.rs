@@ -677,7 +677,8 @@ fn open_side_panel(id: Value, state: &Arc<SharedState>, panel: crate::model::Pan
 pub(super) fn handle_workspace_reopen_closed_tab(id: Value, state: &Arc<SharedState>) -> Response {
     let reopened = {
         let mut tm = lock_or_recover(&state.tab_manager);
-        tm.selected_mut().and_then(|ws| ws.reopen_last_closed_panel())
+        tm.selected_mut()
+            .and_then(|ws| ws.reopen_last_closed_panel())
     };
     match reopened {
         Some(panel_id) => {
@@ -1671,7 +1672,9 @@ pub(super) fn handle_workspace_reorder_workspaces(
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect::<Vec<_>>(),
-        None => return Response::error(id, "invalid_params", "Provide 'workspaces' array of names"),
+        None => {
+            return Response::error(id, "invalid_params", "Provide 'workspaces' array of names")
+        }
     };
 
     if names.is_empty() {
@@ -2296,7 +2299,10 @@ pub(super) fn handle_workspace_set_imessage_mode(
         ws.imessage_mode = enabled;
         drop(tm);
         state.notify_metadata_refresh();
-        Response::success(id, serde_json::json!({"ok": true, "imessage_mode": enabled}))
+        Response::success(
+            id,
+            serde_json::json!({"ok": true, "imessage_mode": enabled}),
+        )
     } else {
         Response::error(id, "not_found", "Workspace not found")
     }
@@ -2414,7 +2420,9 @@ pub(super) fn handle_agent_fork_conversation(
         .and_then(|v| v.as_str())
     {
         Some(s) => s.to_string(),
-        None => return Response::error(id, "internal", "workspace_id missing from create response"),
+        None => {
+            return Response::error(id, "internal", "workspace_id missing from create response")
+        }
     };
 
     // If a message was provided, send it to the new workspace's terminal.
@@ -2422,8 +2430,10 @@ pub(super) fn handle_agent_fork_conversation(
         if let Ok(ws_id) = Uuid::parse_str(&ws_id_str) {
             let panel_id = {
                 let tm = lock_or_recover(&state.tab_manager);
-                tm.workspace(ws_id)
-                    .and_then(|ws| ws.focused_panel_id.or_else(|| ws.panel_ids().into_iter().next()))
+                tm.workspace(ws_id).and_then(|ws| {
+                    ws.focused_panel_id
+                        .or_else(|| ws.panel_ids().into_iter().next())
+                })
             };
             if let Some(panel_id) = panel_id {
                 state.send_ui_event(crate::app::UiEvent::SendInput {

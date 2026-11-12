@@ -221,9 +221,7 @@ impl AppState {
         let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok();
         let anthropic_base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
         let claude_config_dir = std::env::var("CLAUDE_CONFIG_DIR").ok();
-        let is_claude_command = command
-            .map(|c| c.starts_with("claude"))
-            .unwrap_or(false);
+        let is_claude_command = command.map(|c| c.starts_with("claude")).unwrap_or(false);
         if is_claude_command {
             if let Some(ref v) = anthropic_api_key {
                 env_vars.push(("ANTHROPIC_API_KEY", v));
@@ -383,8 +381,7 @@ impl AppState {
             (panel.directory.clone(), panel.command.clone())
         };
 
-        let surface =
-            self.terminal_surface_for(panel_id, directory.as_deref(), command.as_deref());
+        let surface = self.terminal_surface_for(panel_id, directory.as_deref(), command.as_deref());
         if surface.has_spawned() {
             return true;
         }
@@ -1319,7 +1316,10 @@ fn build_remote_claude_resume(
     if let Some(ref identity) = remote_config.identity {
         cmd += &format!(" -i {}", shell_escape::escape(identity.into()));
     }
-    cmd += &format!(" {}", shell_escape::escape(remote_config.destination.clone().into()));
+    cmd += &format!(
+        " {}",
+        shell_escape::escape(remote_config.destination.clone().into())
+    );
 
     // Remote-side command: cd into the tab's directory (best-effort — a missing
     // dir shouldn't block the resume) then exec Claude resuming the session.
@@ -1392,7 +1392,10 @@ fn build_workspace_from_snapshot(
                 .browser
                 .as_ref()
                 .and_then(|b| b.url_string.clone()),
-            markdown_file: panel_snapshot.markdown.as_ref().map(|m| m.file_path.clone()),
+            markdown_file: panel_snapshot
+                .markdown
+                .as_ref()
+                .map(|m| m.file_path.clone()),
             command: {
                 let claude_enabled = agent_restore_settings.is_enabled_for("claude");
                 let claude_id = panel_snapshot

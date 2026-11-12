@@ -116,7 +116,7 @@ pub(super) fn handle_notification_create(
                     panel.command.as_deref(),
                 )
                 .as_deref()
-                == Some("codex")
+                    == Some("codex")
             })
             .unwrap_or(false);
 
@@ -314,7 +314,11 @@ pub(super) fn handle_notification_open(
     };
 
     let Some(workspace_id) = workspace_id else {
-        return Response::error(id, "not_found", "Notification not found or has no source workspace");
+        return Response::error(
+            id,
+            "not_found",
+            "Notification not found or has no source workspace",
+        );
     };
 
     // Select the workspace (focus it).

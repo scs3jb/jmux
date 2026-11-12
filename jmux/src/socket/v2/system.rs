@@ -131,7 +131,11 @@ fn collect_processes(state: &Arc<SharedState>) -> Vec<Value> {
 
     // Clock ticks per second for CPU% calculation.
     let ticks_per_sec = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as u64;
-    let ticks_per_sec = if ticks_per_sec == 0 { 100 } else { ticks_per_sec };
+    let ticks_per_sec = if ticks_per_sec == 0 {
+        100
+    } else {
+        ticks_per_sec
+    };
 
     // Snapshot 1 — before sleep.
     let snap1 = snapshot_all_procs();
@@ -169,9 +173,7 @@ fn collect_processes(state: &Arc<SharedState>) -> Vec<Value> {
     let mut results = Vec::new();
     for (ws_id, ws_name, panel_id, tty) in &tty_entries {
         // Parse the pts index from the tty path like /dev/pts/N.
-        let pts_index: Option<u32> = tty
-            .strip_prefix("/dev/pts/")
-            .and_then(|n| n.parse().ok());
+        let pts_index: Option<u32> = tty.strip_prefix("/dev/pts/").and_then(|n| n.parse().ok());
 
         let Some(pts_idx) = pts_index else {
             continue;
@@ -279,7 +281,11 @@ pub(super) fn handle_quick_terminal(
     state: &Arc<SharedState>,
 ) -> Response {
     use crate::app::QuickTermAction;
-    let action = match params.get("action").and_then(|v| v.as_str()).unwrap_or("toggle") {
+    let action = match params
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("toggle")
+    {
         "show" => QuickTermAction::Show,
         "hide" => QuickTermAction::Hide,
         "toggle" => QuickTermAction::Toggle,
