@@ -234,6 +234,73 @@ impl<H: std::hash::Hasher> std::fmt::Write for HashWriter<'_, H> {
     }
 }
 
+/// Most log entries the sidebar renders for one workspace (iMessage mode).
+const SIDEBAR_LOG_ROWS: usize = 5;
+
+/// Hashes the Debug form of every workspace field the sidebar could render.
+///
+/// `log_entries` is the exception: it holds up to 1000 entries of up to 8 KB
+/// each, and Debug-formatting all of them for every workspace was ~75% of the
+/// app's idle CPU (this runs at 1 Hz per window). The sidebar renders only the
+/// last [`SIDEBAR_LOG_ROWS`], and logs change only by append (with front trim),
+/// clear, or restore — so the length plus the rendered tail catches every
+/// visible change.
+///
+/// The destructure is exhaustive on purpose: a new `Workspace` field fails to
+/// compile here until it is hashed, so the signature can't silently go stale.
+fn hash_workspace<H: std::hash::Hasher>(h: &mut H, ws: &Workspace) {
+    use std::fmt::Write as _;
+    let Workspace {
+        id,
+        process_title,
+        custom_title,
+        custom_color,
+        is_pinned,
+        current_directory,
+        focused_panel_id,
+        previous_focused_panel_id,
+        zoomed_panel_id,
+        layout,
+        panels,
+        status_entries,
+        metadata_entries,
+        metadata_blocks,
+        log_entries,
+        progress,
+        git_branch,
+        unread_count,
+        latest_notification,
+        latest_notification_at,
+        attention_panel_id,
+        pr_status,
+        pr_url,
+        pr_checks,
+        window_id,
+        group_id,
+        remote_config,
+        remote_state,
+        imessage_mode,
+        closed_panels,
+        env,
+        description,
+        subagent_monitor,
+    } = ws;
+    let log_tail = &log_entries[log_entries.len().saturating_sub(SIDEBAR_LOG_ROWS)..];
+    let _ = write!(
+        HashWriter(h),
+        "{id:?}{process_title:?}{custom_title:?}{custom_color:?}{is_pinned:?}\
+         {current_directory:?}{focused_panel_id:?}{previous_focused_panel_id:?}\
+         {zoomed_panel_id:?}{layout:?}{panels:?}{status_entries:?}\
+         {metadata_entries:?}{metadata_blocks:?}{progress:?}{git_branch:?}\
+         {unread_count:?}{latest_notification:?}{latest_notification_at:?}\
+         {attention_panel_id:?}{pr_status:?}{pr_url:?}{pr_checks:?}{window_id:?}\
+         {group_id:?}{remote_config:?}{remote_state:?}{imessage_mode:?}\
+         {closed_panels:?}{env:?}{description:?}{subagent_monitor:?}\
+         {}{log_tail:?}",
+        log_entries.len()
+    );
+}
+
 thread_local! {
     /// Render signature of each sidebar ListBox's last build, keyed by widget
     /// pointer. Shell integration re-reports identical titles/pwds many times
@@ -291,7 +358,7 @@ pub fn refresh_sidebar(list_box: &gtk4::ListBox, state: &Rc<AppState>) {
         let tab_manager = lock_or_recover(&state.shared.tab_manager);
         let mut h = std::collections::hash_map::DefaultHasher::new();
         for ws in tab_manager.iter() {
-            let _ = write!(HashWriter(&mut h), "{ws:?}");
+            hash_workspace(&mut h, ws);
             // The Claude-state sprite is classified from live terminal screen
             // text, which can change without any model event (a turn ending,
             // a background shell finishing). Fold the classified state in so
@@ -933,7 +1000,12 @@ fn create_workspace_row(
     if !sidebar.hide_all_details && sidebar.show_logs {
         if workspace.imessage_mode {
             // iMessage mode: show up to 5 recent log entries as alternating bubbles
-            let entries: Vec<_> = workspace.log_entries.iter().rev().take(5).collect();
+            let entries: Vec<_> = workspace
+                .log_entries
+                .iter()
+                .rev()
+                .take(SIDEBAR_LOG_ROWS)
+                .collect();
             for (i, log_entry) in entries.into_iter().rev().enumerate() {
                 let log_text = if let Some(ref source) = log_entry.source {
                     format!("[{}] {}", source, log_entry.message)
@@ -2453,5 +2525,40 @@ mod tests {
         assert_eq!(hash("⠦ Review spec | x"), hash("⠇ Review spec | x"));
         assert_eq!(hash("◐ Fix flicker"), hash("◑ Fix flicker"));
         assert_ne!(hash("⠦ Review spec | x"), hash("⠦ Other task | x"));
+    }
+
+    fn ws_hash(ws: &crate::model::Workspace) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        super::hash_workspace(&mut h, ws);
+        h.finish()
+    }
+
+    #[test]
+    fn workspace_signature_tracks_rendered_log_tail() {
+        let mut ws = crate::model::Workspace::new();
+        for i in 0..50 {
+            ws.append_log(&format!("old {i}"), "info", None);
+        }
+        let before = ws_hash(&ws);
+        assert_eq!(before, ws_hash(&ws.clone()));
+
+        // An entry outside the rendered tail doesn't affect the signature.
+        ws.log_entries[0].message = "rewritten".into();
+        assert_eq!(before, ws_hash(&ws));
+
+        ws.append_log("new", "info", None);
+        assert_ne!(before, ws_hash(&ws));
+
+        let appended = ws_hash(&ws);
+        ws.log_entries.clear();
+        assert_ne!(appended, ws_hash(&ws));
+    }
+
+    #[test]
+    fn workspace_signature_tracks_other_fields() {
+        let mut ws = crate::model::Workspace::new();
+        let before = ws_hash(&ws);
+        ws.custom_title = Some("renamed".into());
+        assert_ne!(before, ws_hash(&ws));
     }
 }
