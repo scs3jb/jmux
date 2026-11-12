@@ -92,7 +92,16 @@ if [[ -d "$REPO_ROOT/data/icons/hicolor" ]]; then
     rel="${icon#"$REPO_ROOT"/data/icons/hicolor/}"
     install -Dm644 "$icon" "$PREFIX/share/icons/hicolor/$rel"
   done < <(find "$REPO_ROOT/data/icons/hicolor" \
-    \( -name '*.svg' -o -name '*.png' -o -name 'index.theme' \) -print0)
+    \( -name '*.svg' -o -name '*.png' \) -print0)
+  # gtk-update-icon-cache needs an index.theme here, or KDE shows a gray icon.
+  # GTK reads hicolor's folder list from the first index.theme it finds, and
+  # /usr/local comes before /usr. A stub listing only apps/ hides every
+  # actions/ and status/ icon (satty's toolbar showed red missing icons), so
+  # copy the system index when there is one.
+  theme_src="$REPO_ROOT/data/icons/hicolor/index.theme"
+  [[ -f /usr/share/icons/hicolor/index.theme ]] && theme_src=/usr/share/icons/hicolor/index.theme
+  [[ "$PREFIX/share/icons/hicolor/index.theme" -ef "$theme_src" ]] || \
+    install -Dm644 "$theme_src" "$PREFIX/share/icons/hicolor/index.theme"
   # Pixmaps fallback — some launchers look here directly by Icon= name.
   install -Dm644 "$REPO_ROOT/data/icons/hicolor/256x256/apps/com.jacobbriggs.jmux.png" \
     "$PREFIX/share/pixmaps/com.jacobbriggs.jmux.png" 2>/dev/null || true
