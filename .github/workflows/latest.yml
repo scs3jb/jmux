@@ -25,7 +25,7 @@ jobs:
       - name: Install build tools
         run: |
           pacman -Syu --noconfirm --needed \
-            base-devel git rust github-cli \
+            base-devel git rust github-cli openssl-3 \
             gtk4 libadwaita webkitgtk-6.0 gtk4-layer-shell
 
       - uses: actions/checkout@v4
@@ -39,7 +39,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Arch's openssl is 4.x; openssl-sys 0.9 accepts only 1.1 and 3.x.
       - name: Build
+        env:
+          PKG_CONFIG_PATH: /usr/lib/openssl-3/pkgconfig
         run: bash scripts/build.sh
 
       - name: Attach to the latest release
