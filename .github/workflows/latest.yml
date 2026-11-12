@@ -1,0 +1,63 @@
+name: Latest build
+
+# Every push to main builds the release binaries the same way scripts/build.sh
+# does (ghostty linked + quick-terminal) and attaches them to the "latest"
+# pre-release, replacing the previous files.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: latest-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Arch: the binaries run on Arch, and Ubuntu's gtk4-layer-shell is too old.
+    container: archlinux:latest
+    steps:
+      - name: Install build tools
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git rust github-cli \
+            gtk4 libadwaita webkitgtk-6.0 gtk4-layer-shell
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ghostty needs exactly this zig; Arch's may be newer.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: bash scripts/build.sh
+
+      - name: Attach to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cd target/release
+          sha256sum jmux-app jmux-cli > checksums-sha256.txt
+          notes="Built from ${SHA} on $(date -u +%Y-%m-%d). Replaced on every push to main."
+          if gh release view latest -R "$REPO" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${REPO}/git/refs/tags/latest" -f sha="$SHA" -F force=true >/dev/null
+            gh release edit latest -R "$REPO" --notes "$notes"
+          else
+            gh release create latest -R "$REPO" --target "$SHA" --prerelease \
+              --title "Latest main build" --notes "$notes"
+          fi
+          gh release upload latest -R "$REPO" --clobber \
+            jmux-app jmux-cli checksums-sha256.txt
